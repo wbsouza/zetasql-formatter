@@ -1,8 +1,8 @@
 name: release
 on:
-  create:
-    tags:
-      - v*.*.*
+  push:
+    branches:
+      - refs/tags/v*
 jobs:
   generate:
     name: Create release-artifacts
