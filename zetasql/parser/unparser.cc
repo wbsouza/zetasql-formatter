@@ -2518,9 +2518,6 @@ void Unparser::visitASTStructColumnSchema(const ASTStructColumnSchema* node,
 void Unparser::visitASTGeneratedColumnInfo(const ASTGeneratedColumnInfo* node,
                                            void* data) {
   PrintCommentsPassedBy(node->GetParseLocationRange().start(), data);
-  if (node->is_on_write()) {
-    print("GENERATED ON WRITE");
-  }
   print("AS (");
   ZETASQL_DCHECK(node->expression() != nullptr);
   node->expression()->Accept(this, data);
@@ -3990,7 +3987,6 @@ void Unparser::visitASTCreateProcedureStatement(
     node->options_list()->Accept(this, data);
     println();
   }
-  node->begin_end_block()->Accept(this, data);
 
   // CREATE PROCEDURE statements are constructed so that the body always
   // consists of a single ASTBeginEndBlock statement.
