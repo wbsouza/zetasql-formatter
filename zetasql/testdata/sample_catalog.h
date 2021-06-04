@@ -79,6 +79,8 @@ class SampleCatalog {
   void LoadNestedCatalogs();
   void AddFunctionWithArgumentType(std::string type_name, const Type* arg_type);
   void LoadFunctions();
+  void LoadExtendedSubscriptFunctions();
+  void LoadFunctionsWithDefaultArguments();
   void LoadTemplatedSQLUDFs();
 
   // Loads several table-valued functions into the sample catalog. For a full
@@ -87,16 +89,29 @@ class SampleCatalog {
   // split it up in order to avoid lint warnings.
   void LoadTableValuedFunctions1();
   void LoadTableValuedFunctions2();
+  void LoadTableValuedFunctionsWithStructArgs();
   void LoadTVFWithExtraColumns();
   void LoadConnectionTableValuedFunctions();
   void LoadDescriptorTableValuedFunctions();
   void LoadTableValuedFunctionsWithDeprecationWarnings();
   void LoadTemplatedSQLTableValuedFunctions();
+  void LoadTableValuedFunctionsWithAnonymizationUid();
   void AddProcedureWithArgumentType(std::string type_name,
                                     const Type* arg_type);
   void LoadProcedures();
   void LoadConstants();
   void LoadConnections();
+  // Load signatures for well known functional programming functions for example
+  // FILTER, TRANSFORM, REDUCE.
+  void LoadWellKnownLambdaArgFunctions();
+  // Contrived signatures are loaded in order to demonstrate the behavior of
+  // lambda signature matching and resolving for unusual cases.
+  // This include:
+  //  * Using lambda with repeated arguments.
+  //  * Using lambda with named arguments.
+  //  * Possible signatures that could result in type inference failure for
+  //  various combinations of templated lambda arguments and other arguments.
+  void LoadContrivedLambdaArgFunctions();
 
   void AddOwnedTable(SimpleTable* table);
 
@@ -116,6 +131,7 @@ class SampleCatalog {
   const ArrayType* timestamp_array_type_;
   const ArrayType* proto_array_type_;
   const ArrayType* struct_array_type_;
+  const ArrayType* json_array_type_;
 
   const EnumType* enum_TestEnum_;
   const EnumType* enum_AnotherTestEnum_;
@@ -124,8 +140,12 @@ class SampleCatalog {
   const ProtoType* proto_MessageWithKitchenSinkPB_;
   const ProtoType* proto_CivilTimeTypesSinkPB_;
   const ProtoType* proto_TestExtraPB_;
+  const ProtoType* proto_abPB_;
+  const ProtoType* proto_bcPB_;
+
   const ProtoType* proto_EmptyMessage_;
   const ProtoType* proto3_KitchenSinkPB_;
+  const ProtoType* proto3_MessageWithInvalidMap_;
   const ProtoType* proto_ambiguous_has_;
   const ProtoType* proto_field_formats_proto_;
   const ProtoType* proto_MessageWithMapField_;

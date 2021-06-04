@@ -65,6 +65,8 @@ enum class FunctionKind {
   kSafeNegate,
   // Comparison functions
   kEqual,
+  kIsDistinct,
+  kIsNotDistinct,
   kLess,
   kLessOrEqual,
   // Logical functions
@@ -91,11 +93,16 @@ enum class FunctionKind {
   kLogicalOr,
   kMax,
   kMin,
-  kOrAgg,       // private function that ORs all input values incl. NULLs
+  kOrAgg,  // private function that ORs all input values incl. NULLs
+  kStddevPop,
+  kStddevSamp,
   kStringAgg,
   kSum,
   kVarPop,
   kVarSamp,
+  // Anonymization functions (broken link)
+  kAnonSum,
+  kAnonAvg,
   // Exists function
   kExists,
   // IsNull function
@@ -165,21 +172,37 @@ enum class FunctionKind {
   kArrayAtOffset,
   kSafeArrayAtOrdinal,
   kSafeArrayAtOffset,
+  kSubscript,
   kArrayIsDistinct,
   kGenerateArray,
   kGenerateDateArray,
   kGenerateTimestampArray,
   kRangeBucket,
+
+  // Proto map functions. Like array functions, the map functions must use
+  // MaybeSetNonDeterministicArrayOutput.
+  kProtoMapAtKey,
+  kSafeProtoMapAtKey,
+  kContainsKey,
+  kModifyMap,
+  // JSON functions
   kJsonExtract,
   kJsonExtractScalar,
   kJsonExtractArray,
+  kJsonExtractStringArray,
+  kJsonQueryArray,
+  kJsonValueArray,
   kJsonQuery,
   kJsonValue,
+  kToJson,
+  kToJsonString,
+  kParseJson,
   // Proto functions
   kFromProto,
   kToProto,
   kMakeProto,
   kReplaceFields,
+  kFilterFields,
   // Enum functions
   kEnumValueDescriptorProto,
   // String functions
@@ -279,6 +302,29 @@ enum class FunctionKind {
   kParseDatetime,
   kParseTime,
   kParseTimestamp,
+  // Interval functions
+  kIntervalCtor,
+  kMakeInterval,
+  kJustifyHours,
+  kJustifyDays,
+  kJustifyInterval,
+  // Net functions
+  kNetFormatIP,
+  kNetParseIP,
+  kNetFormatPackedIP,
+  kNetParsePackedIP,
+  kNetIPInNet,
+  kNetMakeNet,
+  kNetHost,
+  kNetRegDomain,
+  kNetPublicSuffix,
+  kNetIPFromString,
+  kNetSafeIPFromString,
+  kNetIPToString,
+  kNetIPNetMask,
+  kNetIPTrunc,
+  kNetIPv4FromInt64,
+  kNetIPv4ToInt64,
   // Numbering functions
   kDenseRank,
   kRank,
@@ -294,6 +340,10 @@ enum class FunctionKind {
   kLag,
   kPercentileCont,
   kPercentileDisc,
+
+  // Numeric functions
+  kParseNumeric,
+  kParseBignumeric,
 
   // Random functions
   kRand,
@@ -356,8 +406,9 @@ class BuiltinScalarFunction : public ScalarFunctionBody {
 
   static zetasql_base::StatusOr<std::unique_ptr<ScalarFunctionCallExpr>> CreateCast(
       const LanguageOptions& language_options, const Type* output_type,
-      std::unique_ptr<ValueExpr> argument, bool return_null_on_error,
-      ResolvedFunctionCallBase::ErrorMode error_mode,
+      std::unique_ptr<ValueExpr> argument, std::unique_ptr<ValueExpr> format,
+      std::unique_ptr<ValueExpr> time_zone, const TypeParameters& type_params,
+      bool return_null_on_error, ResolvedFunctionCallBase::ErrorMode error_mode,
       std::unique_ptr<ExtendedCompositeCastEvaluator> extended_cast_evaluator);
 
   // If 'arguments' is not empty, validates the types of the inputs. Currently
@@ -520,6 +571,12 @@ class ArithmeticFunction : public BuiltinScalarFunction {
   using BuiltinScalarFunction::BuiltinScalarFunction;
   bool Eval(absl::Span<const Value> args, EvaluationContext* context,
             Value* result, absl::Status* status) const override;
+
+ private:
+  // Helper function to add/subtract INTERVAL.
+  absl::Status AddIntervalHelper(const Value& arg,
+                                 const IntervalValue& interval, Value* result,
+                                 EvaluationContext* context) const;
 };
 
 class ComparisonFunction : public BuiltinScalarFunction {
@@ -590,9 +647,11 @@ class CastFunction : public SimpleBuiltinScalarFunction {
  public:
   CastFunction(
       const Type* output_type,
-      std::unique_ptr<ExtendedCompositeCastEvaluator> extended_cast_evaluator)
+      std::unique_ptr<ExtendedCompositeCastEvaluator> extended_cast_evaluator,
+      const TypeParameters type_params)
       : SimpleBuiltinScalarFunction(FunctionKind::kCast, output_type),
-        extended_cast_evaluator_(std::move(extended_cast_evaluator)) {}
+        extended_cast_evaluator_(std::move(extended_cast_evaluator)),
+        type_params_(std::move(type_params)) {}
   CastFunction(FunctionKind kind, const Type* output_type)
       : SimpleBuiltinScalarFunction(kind, output_type) {}
 
@@ -601,6 +660,7 @@ class CastFunction : public SimpleBuiltinScalarFunction {
 
  private:
   std::unique_ptr<ExtendedCompositeCastEvaluator> extended_cast_evaluator_;
+  const TypeParameters type_params_;
 };
 
 class BitCastFunction : public BuiltinScalarFunction {
@@ -653,7 +713,7 @@ class ArrayElementFunction : public BuiltinScalarFunction {
             output_type),
         base_(base),
         safe_(safe) {
-    CHECK(base_ == 0 || base_ == 1) << base_;
+    ZETASQL_CHECK(base_ == 0 || base_ == 1) << base_;
   }
   bool Eval(absl::Span<const Value> args, EvaluationContext* context,
             Value* result, absl::Status* status) const override;
@@ -733,7 +793,21 @@ class MathFunction : public BuiltinScalarFunction {
             Value* result, absl::Status* status) const override;
 };
 
+class NetFunction : public BuiltinScalarFunction {
+ public:
+  using BuiltinScalarFunction::BuiltinScalarFunction;
+  bool Eval(absl::Span<const Value> args, EvaluationContext* context,
+            Value* result, absl::Status* status) const override;
+};
+
 class StringFunction : public BuiltinScalarFunction {
+ public:
+  using BuiltinScalarFunction::BuiltinScalarFunction;
+  bool Eval(absl::Span<const Value> args, EvaluationContext* context,
+            Value* result, absl::Status* status) const override;
+};
+
+class NumericFunction : public BuiltinScalarFunction {
  public:
   using BuiltinScalarFunction::BuiltinScalarFunction;
   bool Eval(absl::Span<const Value> args, EvaluationContext* context,
@@ -801,6 +875,50 @@ class MakeProtoFunction : public SimpleBuiltinScalarFunction {
 
  private:
   std::vector<FieldAndFormat> fields_;  // Not owned.
+};
+
+// This class is used to evaluate the FILTER_FIELDS() SQL function. The resolved
+// argument list contains only the root proto to be modified, the field paths of
+// the root object must be added before evaluation.
+class FilterFieldsFunction : public SimpleBuiltinScalarFunction {
+ public:
+  explicit FilterFieldsFunction(const Type* output_type);
+
+  ~FilterFieldsFunction() final;
+
+  // Add a field path that denotes the path to a proto field, `include` denotes
+  // whether the proto field is include or exclude.
+  absl::Status AddFieldPath(
+      bool include,
+      const std::vector<const google::protobuf::FieldDescriptor*>& field_path);
+
+  zetasql_base::StatusOr<Value> Eval(absl::Span<const Value> args,
+                             EvaluationContext* context) const override;
+
+ private:
+  struct FieldPathTrieNode;
+  using TagToNodeMap =
+      absl::flat_hash_map<int, std::unique_ptr<FieldPathTrieNode>>;
+
+  // Recursively prune on a node. It is guaranteed that this node has children.
+  absl::Status RecursivelyPrune(const FieldPathTrieNode* node,
+                                google::protobuf::Message* message) const;
+
+  // Prune on an excluded message, may prune recursively on child nodes.
+  absl::Status HandleExcludedMessage(const TagToNodeMap& child_nodes,
+                                     google::protobuf::Message* message) const;
+
+  // Prune on an included message, may prune recursively on child nodes.
+  absl::Status HandleIncludedMessage(const TagToNodeMap& child_nodes,
+                                     google::protobuf::Message* message) const;
+
+  // Prune recursively on a message field.
+  absl::Status PruneOnMessageField(
+      const google::protobuf::Reflection& reflection, const FieldPathTrieNode* child,
+      const google::protobuf::FieldDescriptor* field_descriptor,
+      google::protobuf::Message* message) const;
+
+  std::unique_ptr<FieldPathTrieNode> root_node_;
 };
 
 // This class is used to evaluate the REPLACE_FIELDS() SQL function, given
@@ -1006,6 +1124,13 @@ class ExtractTimeFromFunction : public SimpleBuiltinScalarFunction {
 };
 
 class ExtractDatetimeFromFunction : public SimpleBuiltinScalarFunction {
+ public:
+  using SimpleBuiltinScalarFunction::SimpleBuiltinScalarFunction;
+  zetasql_base::StatusOr<Value> Eval(absl::Span<const Value> args,
+                             EvaluationContext* context) const override;
+};
+
+class IntervalFunction : public SimpleBuiltinScalarFunction {
  public:
   using SimpleBuiltinScalarFunction::SimpleBuiltinScalarFunction;
   zetasql_base::StatusOr<Value> Eval(absl::Span<const Value> args,

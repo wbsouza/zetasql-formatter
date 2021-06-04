@@ -29,7 +29,7 @@
 #include "zetasql/resolved_ast/resolved_column.h"
 #include "absl/container/flat_hash_set.h"
 #include "zetasql/base/status.h"
-
+#include "zetasql/base/status_builder.h"
 namespace zetasql {
 
 // Used to validate generated Resolved AST structures.
@@ -50,14 +50,22 @@ class Validator {
 
  private:
   // Statements.
+  absl::Status ValidateResolvedStatementInternal(
+      const ResolvedStatement* statement);
   absl::Status ValidateResolvedQueryStmt(const ResolvedQueryStmt* query);
   absl::Status ValidateResolvedCreateDatabaseStmt(
       const ResolvedCreateDatabaseStmt* stmt);
   absl::Status ValidateResolvedIndexStmt(const ResolvedCreateIndexStmt* stmt);
   absl::Status ValidateResolvedCreateModelStmt(
       const ResolvedCreateModelStmt* stmt);
+  absl::Status ValidateResolvedCreateSnapshotTableStmt(
+      const ResolvedCreateSnapshotTableStmt* stmt);
   absl::Status ValidateResolvedCreateTableStmt(
       const ResolvedCreateTableStmt* stmt);
+  absl::Status ValidateResolvedCloneDataSource(const ResolvedScan* source,
+                                               const Table* target = nullptr);
+  absl::Status ValidateSingleCloneDataSource(const ResolvedScan* source,
+                                             const Table* target);
   absl::Status ValidateResolvedGeneratedColumnInfo(
       const ResolvedColumnDefinition* column_definition,
       const std::set<ResolvedColumn>& visible_columns);
@@ -83,6 +91,8 @@ class Validator {
       const ResolvedCreateEntityStmt* stmt);
   absl::Status ValidateResolvedAlterEntityStmt(
       const ResolvedAlterEntityStmt* stmt);
+  absl::Status ValidateResolvedCloneDataStmt(
+      const ResolvedCloneDataStmt* stmt);
   absl::Status ValidateResolvedExportDataStmt(
       const ResolvedExportDataStmt* stmt);
   absl::Status ValidateResolvedExportModelStmt(
@@ -107,8 +117,14 @@ class Validator {
       const ResolvedDropMaterializedViewStmt* stmt);
   absl::Status ValidateResolvedDropFunctionStmt(
       const ResolvedDropFunctionStmt* stmt);
+  absl::Status ValidateResolvedDropTableFunctionStmt(
+      const ResolvedDropTableFunctionStmt* stmt);
   absl::Status ValidateResolvedDropRowAccessPolicyStmt(
       const ResolvedDropRowAccessPolicyStmt* stmt);
+  absl::Status ValidateResolvedDropSnapshotTableStmt(
+      const ResolvedDropSnapshotTableStmt* stmt);
+  absl::Status ValidateResolvedDropSearchIndexStmt(
+      const ResolvedDropSearchIndexStmt* stmt);
   absl::Status ValidateResolvedGrantStmt(const ResolvedGrantStmt* stmt);
   absl::Status ValidateResolvedRevokeStmt(const ResolvedRevokeStmt* stmt);
   absl::Status ValidateResolvedGrantToAction(const ResolvedGrantToAction* stmt);
@@ -125,11 +141,14 @@ class Validator {
       const ResolvedAlterRowAccessPolicyStmt* stmt);
   absl::Status ValidateResolvedAlterAllRowAccessPoliciesStmt(
       const ResolvedAlterAllRowAccessPoliciesStmt* stmt);
+  absl::Status ValidateResolvedAlterSchemaStmt(
+      const ResolvedAlterSchemaStmt* stmt);
   absl::Status ValidateResolvedAlterTableSetOptionsStmt(
       const ResolvedAlterTableSetOptionsStmt* stmt);
   absl::Status ValidateResolvedRenameStmt(const ResolvedRenameStmt* stmt);
   absl::Status ValidateResolvedImportStmt(const ResolvedImportStmt* stmt);
   absl::Status ValidateResolvedModuleStmt(const ResolvedModuleStmt* stmt);
+  absl::Status ValidateResolvedAnalyzeStmt(const ResolvedAnalyzeStmt* stmt);
   absl::Status ValidateResolvedAssertStmt(const ResolvedAssertStmt* stmt);
   absl::Status ValidateResolvedAssignmentStmt(
       const ResolvedAssignmentStmt* stmt);
@@ -200,6 +219,9 @@ class Validator {
   absl::Status ValidateResolvedAggregateScan(
       const ResolvedAggregateScan* scan,
       const std::set<ResolvedColumn>& visible_parameters);
+  absl::Status ValidateResolvedAnonymizedAggregateScan(
+      const ResolvedAnonymizedAggregateScan* scan,
+      const std::set<ResolvedColumn>& visible_parameters);
   absl::Status ValidateResolvedTableScan(
       const ResolvedTableScan* scan,
       const std::set<ResolvedColumn>& visible_parameters);
@@ -249,6 +271,17 @@ class Validator {
       const ResolvedWithScan* scan,
       const std::set<ResolvedColumn>& visible_parameters);
 
+  absl::Status ValidateGroupRowsScan(const ResolvedGroupRowsScan* scan);
+
+  absl::Status ValidateResolvedReturningClause(
+      const ResolvedReturningClause* returning,
+      std::set<ResolvedColumn>& visible_columns);
+
+  absl::Status ValidateOrderByAndLimitClausesOfAggregateFunctionCall(
+      const std::set<ResolvedColumn>& input_scan_visible_columns,
+      const std::set<ResolvedColumn>& visible_parameters,
+      const ResolvedAggregateFunctionCall* aggregate_function_call);
+
   absl::Status ValidateResolvedAggregateComputedColumn(
       const ResolvedComputedColumn* computed_column,
       const std::set<ResolvedColumn>& input_scan_visible_columns,
@@ -261,10 +294,25 @@ class Validator {
       const std::set<ResolvedColumn>& visible_parameters,
       const ResolvedExpr* expr);
 
+  absl::Status ValidateResolvedAggregateFunctionCall(
+      const std::set<ResolvedColumn>& visible_columns,
+      const std::set<ResolvedColumn>& visible_parameters,
+      const ResolvedAggregateFunctionCall* aggregate_function);
+
+  absl::Status ValidateResolvedAnalyticFunctionCall(
+      const std::set<ResolvedColumn>& visible_columns,
+      const std::set<ResolvedColumn>& visible_parameters,
+      const ResolvedAnalyticFunctionCall* call);
+
   absl::Status ValidateResolvedGetProtoFieldExpr(
       const std::set<ResolvedColumn>& visible_columns,
       const std::set<ResolvedColumn>& visible_parameters,
       const ResolvedGetProtoField* get_proto_field);
+
+  absl::Status ValidateResolvedGetJsonFieldExpr(
+      const std::set<ResolvedColumn>& visible_columns,
+      const std::set<ResolvedColumn>& visible_parameters,
+      const ResolvedGetJsonField* get_json_field);
 
   absl::Status ValidateResolvedFlatten(
       const std::set<ResolvedColumn>& visible_columns,
@@ -278,6 +326,11 @@ class Validator {
       const std::set<ResolvedColumn>& visible_parameters,
       const ResolvedReplaceField* replace_field);
 
+  absl::Status ValidateResolvedInlineLambda(
+      const std::set<ResolvedColumn>& visible_columns,
+      const std::set<ResolvedColumn>& visible_parameters,
+      const ResolvedInlineLambda* resolved_lambda);
+
   absl::Status ValidateResolvedSubqueryExpr(
       const std::set<ResolvedColumn>& visible_columns,
       const std::set<ResolvedColumn>& visible_parameters,
@@ -289,6 +342,12 @@ class Validator {
       const std::set<ResolvedColumn>& visible_columns,
       const std::set<ResolvedColumn>& visible_parameters,
       const std::vector<std::unique_ptr<const ResolvedExpr>>& expr_list);
+
+  absl::Status ValidateResolvedFunctionArgumentList(
+      const std::set<ResolvedColumn>& visible_columns,
+      const std::set<ResolvedColumn>& visible_parameters,
+      const std::vector<std::unique_ptr<const ResolvedFunctionArgument>>&
+          expr_list);
 
   absl::Status ValidateResolvedComputedColumn(
       const std::set<ResolvedColumn>& visible_columns,
@@ -328,6 +387,11 @@ class Validator {
       const std::set<ResolvedColumn>& visible_parameters,
       const ResolvedConstant* resolved_constant);
 
+  absl::Status ValidateResolvedFilterField(
+      const std::set<ResolvedColumn>& visible_columns,
+      const std::set<ResolvedColumn>& visible_parameters,
+      const ResolvedFilterField* filter_field);
+
   absl::Status ValidateResolvedFunctionCallBase(
       const std::set<ResolvedColumn>& visible_columns,
       const std::set<ResolvedColumn>& visible_parameters,
@@ -336,23 +400,33 @@ class Validator {
   absl::Status ValidateHintList(
       const std::vector<std::unique_ptr<const ResolvedOption>>& hint_list);
 
+  absl::Status ValidateResolvedTableAndColumnInfo(
+      const ResolvedTableAndColumnInfo* table_and_column_info);
+
+  absl::Status ValidateResolvedTableAndColumnInfoList(
+      const std::vector<std::unique_ptr<const ResolvedTableAndColumnInfo>>&
+          table_and_column_info_list);
+
   absl::Status ValidateColumnAnnotations(
       const ResolvedColumnAnnotations* annotations);
+
+  absl::Status ValidatePercentArgument(const ResolvedExpr* expr);
 
   // Verifies that only one of the parameter name and position is set.
   absl::Status ValidateResolvedParameter(
       const ResolvedParameter* resolved_param);
 
-  absl::Status ValidateResolvedTVFArgument(
+  absl::Status ValidateResolvedFunctionArgument(
+      const std::set<ResolvedColumn>& visible_columns,
       const std::set<ResolvedColumn>& visible_parameters,
-      const ResolvedTVFArgument* resolved_tvf_arg);
+      const ResolvedFunctionArgument* resolved_arg);
 
   // Validates TVF relation argument schema against the required input schema
   // in function signature.
-  absl::Status ValidateRelationSchemaInResolvedTVFArgument(
+  absl::Status ValidateRelationSchemaInResolvedFunctionArgument(
       const TVFRelation& required_input_schema,
       const TVFRelation& input_relation,
-      const ResolvedTVFArgument* resolved_tvf_arg);
+      const ResolvedFunctionArgument* resolved_arg);
 
   absl::Status CheckColumnIsPresentInColumnSet(
       const ResolvedColumn& column,
@@ -365,6 +439,11 @@ class Validator {
 
   absl::Status AddColumnList(const ResolvedColumnList& column_list,
                              std::set<ResolvedColumn>* visible_columns);
+  absl::Status AddColumnList(
+      const ResolvedColumnList& column_list,
+      absl::flat_hash_set<ResolvedColumn>* visible_columns);
+  absl::Status AddColumn(const ResolvedColumn& column,
+                         absl::flat_hash_set<ResolvedColumn>* visible_columns);
   absl::Status AddColumnFromComputedColumn(
       const ResolvedComputedColumn* computed_column,
       std::set<ResolvedColumn>* visible_columns);
@@ -372,6 +451,11 @@ class Validator {
       const std::vector<std::unique_ptr<const ResolvedComputedColumn>>&
           computed_column_list,
       std::set<ResolvedColumn>* visible_columns);
+
+  absl::Status ValidateResolvedOrderByItem(
+      const std::set<ResolvedColumn>& visible_columns,
+      const std::set<ResolvedColumn>& visible_parameters,
+      const ResolvedOrderByItem* item);
 
   absl::Status ValidateResolvedAnalyticFunctionGroup(
       const ResolvedAnalyticFunctionGroup* group,
@@ -411,12 +495,38 @@ class Validator {
   absl::Status ValidateResolvedRecursiveRefScan(
       const ResolvedRecursiveRefScan* scan);
 
+  absl::Status ValidateResolvedPivotScan(
+      const ResolvedPivotScan* scan,
+      const std::set<ResolvedColumn>& visible_parameters);
+
+  absl::Status ValidateResolvedUnpivotScan(
+      const ResolvedUnpivotScan* scan,
+      const std::set<ResolvedColumn>& visible_parameters);
+
   absl::Status ValidateResolvedWithPartitionColumns(
       const ResolvedWithPartitionColumns* with_partition_columns,
       std::set<ResolvedColumn>* visible_columns);
 
-  // Check that <expr> contains only ColumnRefs, GetProtoField and
-  // GetStructField expressions. Sets 'ref' to point to the leaf
+  absl::Status ValidateResolvedForeignKey(
+      const ResolvedForeignKey* foreign_key,
+      const std::vector<const Type*> column_types,
+      absl::flat_hash_set<std::string>* constraint_names);
+
+  absl::Status ValidateResolvedPrimaryKey(
+      const std::vector<const Type*>& resolved_column_types,
+      const ResolvedPrimaryKey* primary_key,
+      absl::flat_hash_set<std::string>* constraint_names);
+
+  absl::Status ValidateAddForeignKeyAction(
+      const ResolvedAddConstraintAction* action,
+      absl::flat_hash_set<std::string>* constraint_names);
+
+  absl::Status ValidateAddPrimaryKeyAction(
+      const ResolvedAddConstraintAction* action,
+      absl::flat_hash_set<std::string>* constraint_names);
+
+  // Checks that <expr> contains only ColumnRefs, GetProtoField, GetStructField
+  // and GetJsonField expressions. Sets 'ref' to point to the leaf
   // ResolvedColumnRef.
   absl::Status CheckExprIsPath(const ResolvedExpr* expr,
                                const ResolvedColumnRef** ref);
@@ -425,10 +535,65 @@ class Validator {
   // should be of type int64_t.
   absl::Status ValidateArgumentIsInt64Constant(const ResolvedExpr* expr);
 
+  absl::Status ValidateGenericArgumentsAgainstConcreteArguments(
+      const ResolvedFunctionCallBase* resolved_function_call,
+      const FunctionSignature& signature);
+
+  // Validates that CheckUniqueColumnId() was never previously called with the
+  // same column id as that of <column>.
+  absl::Status CheckUniqueColumnId(const ResolvedColumn& column);
+
+  absl::Status ValidateCompatibleSchemaForClone(const Table* source,
+                                                const Table* target);
+
+  absl::Status CheckFunctionArgumentType(
+      const FunctionArgumentTypeList& argument_type_list,
+      absl::string_view statement_type);
+
+  // Replacement for ::zetasql_base::InternalErrorBuilder(), which also records the
+  // context of the error for use in the tree dump.
+  zetasql_base::StatusBuilder InternalErrorBuilder() {
+    RecordContext();
+    return ::zetasql_base::InternalErrorBuilder();
+  }
+
+  std::string RecordContext();
+
+  // Clears internal Validator state from prior validation.
+  void Reset();
+
   // Which ArgumentKinds are allowed in the current expression.
   // Set using scoped VarSetters.
   typedef absl::flat_hash_set<ResolvedArgumentDefEnums::ArgumentKind>
       ArgumentKindSet;
+
+  // Helper class to push a node onto the context stack in the constructor and
+  // pop the same node off the context stack in the destructor.
+  //
+  // An instance of this class should be created at the start of each
+  // ValidateXXX() function. If an error occurs, the top of the stack, at the
+  // point of the failed VALIDATOR_RET_CHECK() indicates the subtree that failed
+  // validation, and will be emphasized in the tree dump.
+  class PushErrorContext {
+   public:
+    PushErrorContext(Validator* validator, const ResolvedNode* node)
+        : validator_(validator), node_(node) {
+      if (node != nullptr) {
+        validator->context_stack_.push_back(node);
+      }
+    }
+    ~PushErrorContext() {
+      if (node_ != nullptr) {
+        ZETASQL_DCHECK(!validator_->context_stack_.empty());
+        ZETASQL_DCHECK_EQ(validator_->context_stack_.back(), node_);
+        validator_->context_stack_.pop_back();
+      }
+    }
+
+   private:
+    Validator* validator_;
+    const ResolvedNode* node_;
+  };
 
   struct RecursiveScanInfo {
     explicit RecursiveScanInfo(const ResolvedRecursiveScan* scan) {
@@ -457,6 +622,27 @@ class Validator {
   // term of. Used to ensure that each ResolvedRecursiveRefScan matches up
   // with a ResolvedRecursiveScan.
   std::vector<RecursiveScanInfo> nested_recursive_scans_;
+
+  // Pre-aggregation columns, reflecting the columns available from the related
+  // FROM clause. Captured by WITH GROUP_ROWS expression, to be used by
+  // GROUP_ROWS() function in it.
+  std::optional<std::set<ResolvedColumn>> input_columns_for_group_rows_;
+
+  // List of column ids seen so far. Used to ensure that every unique column
+  // has a distinct id.
+  absl::flat_hash_set<int> column_ids_seen_;
+
+  // The node at the top of the stack is the innermost node being validated.
+  std::vector<const ResolvedNode*> context_stack_;
+
+  // If validation fails, this is set to the innermost element being validated
+  // (context_stack_.back()) at the point of the error. This allows the record
+  // of the node that caused the error to be retained, even as various helper
+  // functions terminate. At the root level (ValidateStandaloneExpression()/
+  // ValidateResolvedStatement()), this node will be annotated in the tree dump.
+  //
+  // If no validation error has yet occurred, this value is nullptr.
+  const ResolvedNode* error_context_ = nullptr;
 };
 
 }  // namespace zetasql

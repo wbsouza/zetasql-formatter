@@ -22,15 +22,22 @@ import static com.google.common.truth.Truth.assertWithMessage;
 import static com.google.zetasql.TypeTestBase.getDescriptorPoolWithTypeProtoAndTypeKind;
 import static org.junit.Assert.fail;
 
+import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableMap;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.zetasql.ZetaSQLOptions.ErrorMessageMode;
+import com.google.zetasql.ZetaSQLOptions.LanguageFeature;
 import com.google.zetasql.ZetaSQLOptions.ProductMode;
 import com.google.zetasql.ZetaSQLType.TypeKind;
 import com.google.zetasql.ZetaSQLType.TypeProto;
 
 
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Queue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -234,6 +241,8 @@ public class PreparedExpressionTest {
     try (PreparedExpression exp = new PreparedExpression("42")) {
       exp.prepare(new AnalyzerOptions());
       assertThat(exp.getOutputType().isInt64()).isTrue();
+      assertThat(exp.getReferencedColumns()).isEmpty();
+      assertThat(exp.getReferencedParameters()).isEmpty();
     }
   }
 
@@ -250,6 +259,8 @@ public class PreparedExpressionTest {
       exp.prepare(options);
       assertThat(exp.getOutputType().isEnum()).isTrue();
       assertThat(exp.getOutputType()).isEqualTo(typeKind);
+      assertThat(exp.getReferencedColumns()).containsExactly("value");
+      assertThat(exp.getReferencedParameters()).isEmpty();
       HashMap<String, Value> columns = new HashMap<>();
       columns.put(
           "value",
@@ -272,6 +283,8 @@ public class PreparedExpressionTest {
       exp.prepare(options);
       assertThat(exp.getOutputType().isEnum()).isTrue();
       assertThat(exp.getOutputType()).isEqualTo(typeKind);
+      assertThat(exp.getReferencedColumns()).containsExactly("a", "b");
+      assertThat(exp.getReferencedParameters()).isEmpty();
     }
   }
 
@@ -287,6 +300,8 @@ public class PreparedExpressionTest {
       exp.prepare(options);
       assertThat(exp.getOutputType().isEnum()).isTrue();
       assertThat(exp.getOutputType()).isEqualTo(typeKind);
+      assertThat(exp.getReferencedColumns()).isEmpty();
+      assertThat(exp.getReferencedParameters()).containsExactly("a", "b");
     }
   }
 
@@ -302,6 +317,8 @@ public class PreparedExpressionTest {
       exp.prepare(options);
       assertThat(exp.getOutputType().isEnum()).isTrue();
       assertThat(exp.getOutputType()).isEqualTo(typeKind);
+      assertThat(exp.getReferencedColumns()).containsExactly("a");
+      assertThat(exp.getReferencedParameters()).containsExactly("b");
     }
   }
 
@@ -317,6 +334,8 @@ public class PreparedExpressionTest {
       exp.prepare(options);
       assertThat(exp.getOutputType().isEnum()).isTrue();
       assertThat(exp.getOutputType()).isEqualTo(typeKind);
+      assertThat(exp.getReferencedColumns()).containsExactly("b");
+      assertThat(exp.getReferencedParameters()).containsExactly("a");
     }
   }
 
@@ -434,6 +453,28 @@ public class PreparedExpressionTest {
   }
 
   @Test
+  public void testPrepareAndExecuteRespectsOptionsForDefaultCatalog() {
+    try (PreparedExpression exp = new PreparedExpression("datetime('2021-04-30 00:01:02')")) {
+      LanguageOptions languageOptions = new LanguageOptions();
+      languageOptions.enableLanguageFeature(LanguageFeature.FEATURE_V_1_2_CIVIL_TIME);
+      languageOptions.enableLanguageFeature(LanguageFeature.FEATURE_V_1_3_DATE_TIME_CONSTRUCTORS);
+      AnalyzerOptions options = new AnalyzerOptions();
+      options.setLanguageOptions(languageOptions);
+      exp.prepare(options);
+      assertThat(exp.getOutputType().isDatetime()).isTrue();
+      exp.execute();
+    }
+    try (PreparedExpression exp = new PreparedExpression("datetime('2021-04-30 00:01:02')")) {
+      LanguageOptions languageOptions = new LanguageOptions();
+      AnalyzerOptions options = new AnalyzerOptions();
+      options.setLanguageOptions(languageOptions);
+      exp.prepare(options);
+      fail();
+    } catch (SqlException expected) {
+    }
+  }
+
+  @Test
   public void testPrepareAndExecuteTwice() {
     try (PreparedExpression exp = new PreparedExpression("a")) {
       AnalyzerOptions options = new AnalyzerOptions();
@@ -496,6 +537,18 @@ public class PreparedExpressionTest {
 
     try {
       exp.getOutputType();
+      fail();
+    } catch (IllegalStateException expected) {
+    }
+
+    try {
+      exp.getReferencedColumns();
+      fail();
+    } catch (IllegalStateException expected) {
+    }
+
+    try {
+      exp.getReferencedParameters();
       fail();
     } catch (IllegalStateException expected) {
     }
@@ -591,6 +644,210 @@ public class PreparedExpressionTest {
       fail();
     } catch (SqlException expected) {
       checkSqlExceptionErrorSubstr(expected, "Unexpected query parameter 'b'");
+    }
+  }
+
+  @Test
+  public void testStreamWithLiteral() {
+    try (PreparedExpression exp = new PreparedExpression("\"hello\"")) {
+      exp.prepare(new AnalyzerOptions());
+      PreparedExpression.Stream stream = exp.stream();
+      Future<Value> future = stream.execute(ImmutableMap.of(), ImmutableMap.of());
+      final Value value;
+      try {
+        value = future.get();
+      } catch (InterruptedException | ExecutionException e) {
+        throw new RuntimeException(e);
+      }
+      assertThat(value.getType().getKind()).isEqualTo(TypeKind.TYPE_STRING);
+      assertThat(value.getStringValue()).isEqualTo("hello");
+    }
+  }
+
+  @Test
+  public void testStreamOrder() {
+    try (PreparedExpression exp = new PreparedExpression("a")) {
+      AnalyzerOptions options = new AnalyzerOptions();
+      options.addExpressionColumn("a", TypeFactory.createSimpleType(TypeKind.TYPE_INT32));
+      exp.prepare(options);
+
+      PreparedExpression.Stream stream = exp.stream();
+      Queue<Future<Value>> futures = new ArrayDeque<>();
+
+      final int requestCount = 3;
+      for (int i = 0; i < requestCount; i++) {
+        ImmutableMap<String, Value> columns = ImmutableMap.of("a", Value.createInt32Value(i));
+        futures.add(stream.execute(columns, ImmutableMap.of()));
+      }
+
+      for (int i = 0; i < requestCount; i++) {
+        final Value value;
+        try {
+          Future<Value> future = futures.remove();
+
+          value = future.get();
+        } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+        }
+        assertThat(value.getType().getKind()).isEqualTo(TypeKind.TYPE_INT32);
+        assertThat(value.getInt32Value()).isEqualTo(i);
+      }
+    }
+  }
+
+  @Test
+  public void testStreamBigResponse() {
+    try (PreparedExpression exp = new PreparedExpression("REPEAT('a', 1024*1024)")) {
+      exp.prepare(new AnalyzerOptions());
+
+      PreparedExpression.Stream stream = exp.stream();
+      Queue<Future<Value>> futures = new ArrayDeque<>();
+
+      final int requestCount = 8;
+      for (int i = 0; i < requestCount; i++) {
+        futures.add(stream.execute(ImmutableMap.of(), ImmutableMap.of()));
+      }
+
+      for (int i = 0; i < requestCount; i++) {
+        try {
+          Future<Value> future = futures.remove();
+
+          future.get();
+        } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+        }
+      }
+    }
+  }
+
+  @Test
+  public void testStreamBigRequest() {
+    try (PreparedExpression exp = new PreparedExpression("a")) {
+      AnalyzerOptions options = new AnalyzerOptions();
+      options.addExpressionColumn("a", TypeFactory.createSimpleType(TypeKind.TYPE_STRING));
+      exp.prepare(options);
+
+      PreparedExpression.Stream stream = exp.stream();
+      Queue<Future<Value>> futures = new ArrayDeque<>();
+
+      final int requestCount = 8;
+      ImmutableMap<String, Value> columns =
+          ImmutableMap.of("a", Value.createStringValue(Strings.repeat("a", 1024 * 1024)));
+      for (int i = 0; i < requestCount; i++) {
+        futures.add(stream.execute(columns, ImmutableMap.of()));
+      }
+
+      for (int i = 0; i < requestCount; i++) {
+        try {
+          Future<Value> future = futures.remove();
+
+          future.get();
+        } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+        }
+      }
+    }
+  }
+
+  @Test
+  public void testExecuteError() {
+    try (PreparedExpression exp = new PreparedExpression("REPEAT('a', a)")) {
+      AnalyzerOptions options = new AnalyzerOptions();
+      options.addExpressionColumn("a", TypeFactory.createSimpleType(TypeKind.TYPE_INT32));
+      exp.prepare(options);
+
+      ImmutableMap<String, Value> columns =
+          ImmutableMap.of("a", Value.createInt32Value(2 * 1024 * 1024));
+
+      try {
+        exp.execute(columns, ImmutableMap.of());
+        fail();
+      } catch (SqlException expected) {
+        checkSqlExceptionErrorSubstr(
+            expected, "Output of REPEAT exceeds max allowed output size of 1MB");
+      }
+    }
+  }
+
+  @Test
+  public void testStreamError() {
+    try (PreparedExpression exp = new PreparedExpression("REPEAT('a', a)")) {
+      AnalyzerOptions options = new AnalyzerOptions();
+      options.addExpressionColumn("a", TypeFactory.createSimpleType(TypeKind.TYPE_INT32));
+      exp.prepare(options);
+
+      PreparedExpression.Stream stream = exp.stream();
+      ImmutableMap<String, Value> columns =
+          ImmutableMap.of("a", Value.createInt32Value(2 * 1024 * 1024));
+      Future<Value> future = stream.execute(columns, ImmutableMap.of());
+
+      try {
+        future.get();
+        fail();
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+      } catch (ExecutionException e) {
+        if (!(e.getCause() instanceof SqlException)) {
+          throw new RuntimeException(e);
+        }
+        SqlException expected = (SqlException) e.getCause();
+        checkSqlExceptionErrorSubstr(
+            expected, "Output of REPEAT exceeds max allowed output size of 1MB");
+      }
+    }
+  }
+
+  @Test
+  public void testPrepareAndExecuteUnused() {
+    try (PreparedExpression exp = new PreparedExpression("42")) {
+      AnalyzerOptions options = new AnalyzerOptions();
+      options.addExpressionColumn("a", TypeFactory.createSimpleType(TypeKind.TYPE_INT32));
+      options.addQueryParameter("b", TypeFactory.createSimpleType(TypeKind.TYPE_INT32));
+      exp.prepare(options);
+      assertThat(exp.getOutputType().isInt64()).isTrue();
+      assertThat(exp.getReferencedColumns()).isEmpty();
+      assertThat(exp.getReferencedParameters()).isEmpty();
+      Value result = exp.execute();
+      assertThat(result.getType().isInt64()).isTrue();
+      assertThat(result.getInt64Value()).isEqualTo(42);
+    }
+  }
+
+  @Test
+  public void testPrepareAndExecuteUppercase() {
+    try (PreparedExpression exp = new PreparedExpression("A+@B")) {
+      AnalyzerOptions options = new AnalyzerOptions();
+      options.addExpressionColumn("A", TypeFactory.createSimpleType(TypeKind.TYPE_INT32));
+      options.addQueryParameter("B", TypeFactory.createSimpleType(TypeKind.TYPE_INT32));
+      exp.prepare(options);
+      assertThat(exp.getOutputType().isInt64()).isTrue();
+      assertThat(exp.getReferencedColumns()).containsExactly("a");
+      assertThat(exp.getReferencedParameters()).containsExactly("b");
+      ImmutableMap<String, Value> columns = ImmutableMap.of("A", Value.createInt32Value(21));
+      ImmutableMap<String, Value> parameters = ImmutableMap.of("B", Value.createInt32Value(21));
+      Value result = exp.execute(columns, parameters);
+      assertThat(result.getType().isInt64()).isTrue();
+      assertThat(result.getInt64Value()).isEqualTo(42);
+    }
+  }
+
+  @Test
+  public void testPrepareAndExecuteUppercaseDuplicate() {
+    try (PreparedExpression exp = new PreparedExpression("A")) {
+      AnalyzerOptions options = new AnalyzerOptions();
+      options.addExpressionColumn("A", TypeFactory.createSimpleType(TypeKind.TYPE_INT32));
+      exp.prepare(options);
+      assertThat(exp.getOutputType().isInt32()).isTrue();
+      assertThat(exp.getReferencedColumns()).containsExactly("a");
+      assertThat(exp.getReferencedParameters()).isEmpty();
+      ImmutableMap<String, Value> columns =
+          ImmutableMap.of("A", Value.createInt32Value(21), "a", Value.createInt32Value(21));
+      try {
+        exp.execute(columns, ImmutableMap.of());
+        fail();
+      } catch (SqlException expected) {
+        checkSqlExceptionErrorSubstr(expected, "Duplicate expression column name 'a'");
+      }
     }
   }
 

@@ -23,6 +23,7 @@ import static org.junit.Assert.fail;
 
 import com.google.zetasql.ZetaSQLOptions.ErrorMessageMode;
 import com.google.zetasql.ZetaSQLOptions.ParameterMode;
+import com.google.zetasql.ZetaSQLOptions.ResolvedASTRewrite;
 import com.google.zetasql.ZetaSQLOptionsProto.AnalyzerOptionsProto;
 import com.google.zetasql.ZetaSQLType.TypeKind;
 import com.google.zetasql.ZetaSQLType.TypeProto;
@@ -122,6 +123,21 @@ public class AnalyzerOptionsTest {
     AnalyzerOptionsProto proto = options.serialize(builder);
     assertThat(proto.getLanguageOptions()).isEqualTo(languageOptions.serialize());
     checkDeserialize(proto, builder.getDescriptorPools());
+  }
+
+  @Test
+  public void testRewriteEnabled() {
+    AnalyzerOptions options = new AnalyzerOptions();
+    FileDescriptorSetsBuilder builder = new FileDescriptorSetsBuilder();
+    int defaultRewrites = options.serialize(builder).getEnabledRewritesCount();
+    assertThat(defaultRewrites).isGreaterThan(0);
+
+    options.enableRewrite(ResolvedASTRewrite.REWRITE_FLATTEN, false);
+    assertThat(options.rewriteEnabled(ResolvedASTRewrite.REWRITE_FLATTEN)).isFalse();
+    assertThat(options.serialize(builder).getEnabledRewritesCount()).isEqualTo(defaultRewrites - 1);
+    options.enableRewrite(ResolvedASTRewrite.REWRITE_FLATTEN);
+    assertThat(options.rewriteEnabled(ResolvedASTRewrite.REWRITE_FLATTEN)).isTrue();
+    assertThat(options.serialize(builder).getEnabledRewritesCount()).isEqualTo(defaultRewrites);
   }
 
   @Test
@@ -290,7 +306,7 @@ public class AnalyzerOptionsTest {
     checkDeserialize(proto, builder.getDescriptorPools());
   }
 
-  public void checkDeserialize(AnalyzerOptionsProto proto, List<ZetaSQLDescriptorPool> pools) {
+  public void checkDeserialize(AnalyzerOptionsProto proto, List<DescriptorPool> pools) {
     TypeFactory factory = TypeFactory.nonUniqueNames();
     AnalyzerOptions options = AnalyzerOptions.deserialize(proto, pools, factory);
     FileDescriptorSetsBuilder builder = new FileDescriptorSetsBuilder();
@@ -320,7 +336,7 @@ public class AnalyzerOptionsTest {
             "The number of fields of AnalyzerOptionsProto has changed, please also update the "
                 + "serialization code accordingly.")
         .that(AnalyzerOptionsProto.getDescriptor().getFields())
-        .hasSize(18);
+        .hasSize(20);
     assertWithMessage(
             "The number of fields in AnalyzerOptions class has changed, please also update the "
                 + "proto and serialization code accordingly.")

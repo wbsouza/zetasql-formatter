@@ -16,9 +16,11 @@
 
 #include "zetasql/public/evaluator.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "zetasql/base/logging.h"
 #include "google/protobuf/descriptor.pb.h"
@@ -31,6 +33,7 @@
 #include "zetasql/common/testing/testing_proto_util.h"
 #include "zetasql/public/analyzer.h"
 #include "zetasql/public/civil_time.h"
+#include "zetasql/public/evaluator_base.h"
 #include "zetasql/public/function.h"
 #include "zetasql/public/function.pb.h"
 #include "zetasql/public/functions/date_time_util.h"
@@ -46,6 +49,7 @@
 #include "zetasql/resolved_ast/resolved_ast.h"
 #include "zetasql/resolved_ast/resolved_column.h"
 #include "zetasql/resolved_ast/resolved_node_kind.pb.h"
+#include "zetasql/resolved_ast/sql_builder.h"
 #include "zetasql/testdata/populate_sample_tables.h"
 #include "zetasql/testdata/sample_catalog.h"
 #include "zetasql/testdata/test_schema.pb.h"
@@ -59,6 +63,7 @@
 #include "zetasql/base/statusor.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
@@ -719,6 +724,63 @@ TEST(EvaluatorTest, PrepareExecuteExtraQueryParameter) {
   EXPECT_EQ(result, Value::Int64(11));
 }
 
+TEST(EvaluatorTest, PrepareExecuteMissingQueryParameter) {
+  PreparedExpression expr("@param + col");
+  AnalyzerOptions options;
+  ZETASQL_ASSERT_OK(options.AddExpressionColumn("col", types::Int64Type()));
+  EXPECT_THAT(expr.Prepare(options),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr("Query parameter 'param' not found")));
+}
+
+TEST(EvaluatorTest, PrepareExecuteAllowUndeclaredQueryParameters) {
+  PreparedExpression expr("@param + col");
+  AnalyzerOptions analyzer_options;
+  analyzer_options.set_allow_undeclared_parameters(true);
+  ZETASQL_ASSERT_OK(analyzer_options.AddExpressionColumn("col", types::Int64Type()));
+  ZETASQL_ASSERT_OK(expr.Prepare(analyzer_options));
+  ZETASQL_ASSERT_OK_AND_ASSIGN(std::vector<std::string> params,
+                       expr.GetReferencedParameters());
+  EXPECT_THAT(params, testing::ElementsAre("param"));
+  EXPECT_TRUE(types::Int64Type()->Equals(expr.output_type()));
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      Value result,
+      expr.ExecuteAfterPrepare(
+          {{"col", Value::Int64(5)}}, {{"param", Value::Int64(6)}}));
+  EXPECT_EQ(result, Value::Int64(11));
+}
+
+TEST(EvaluatorTest, PrepareExecuteAllowUndeclaredQueryParametersResolvedExpr) {
+  AnalyzerOptions analyzer_options;
+  analyzer_options.set_allow_undeclared_parameters(true);
+  ZETASQL_ASSERT_OK(analyzer_options.AddExpressionColumn("col", types::Int64Type()));
+
+  auto catalog = absl::make_unique<SimpleCatalog>("foo");
+  catalog->AddZetaSQLFunctions();
+  TypeFactory type_factory;
+
+  std::unique_ptr<const AnalyzerOutput> analyzer_output;
+  ZETASQL_ASSERT_OK(AnalyzeExpression(
+      "@param + col", analyzer_options,
+      catalog.get(), &type_factory, &analyzer_output));
+
+  EvaluatorOptions evaluator_options;
+  PreparedExpression expr(analyzer_output->resolved_expr(),
+                          evaluator_options);
+  ZETASQL_ASSERT_OK(expr.Prepare(analyzer_options));
+  ZETASQL_ASSERT_OK_AND_ASSIGN(std::vector<std::string> params,
+                       expr.GetReferencedParameters());
+  EXPECT_THAT(params, testing::ElementsAre("param"));
+  EXPECT_TRUE(types::Int64Type()->Equals(expr.output_type()));
+  EXPECT_THAT(
+      expr.ExecuteAfterPrepare(
+          {{"col", Value::Int64(5)}}, {{"param", Value::Int64(6)}}),
+      StatusIs(
+          absl::StatusCode::kInternal,
+          HasSubstr("Expected type not found for variable param")));
+}
+
 TEST(EvaluatorTest, PrepareExecuteWrongQueryParameterType) {
   PreparedExpression expr("@param + col");
   AnalyzerOptions options;
@@ -733,6 +795,66 @@ TEST(EvaluatorTest, PrepareExecuteWrongQueryParameterType) {
       StatusIs(
           absl::StatusCode::kInvalidArgument,
           HasSubstr("Expected query parameter 'param' to be of type INT64")));
+}
+
+TEST(EvaluatorTest, PrepareExecuteMissingPositionalQueryParameter) {
+  PreparedExpression expr("? + col");
+  AnalyzerOptions options;
+  options.set_parameter_mode(PARAMETER_POSITIONAL);
+  ZETASQL_ASSERT_OK(options.AddExpressionColumn("col", types::Int64Type()));
+  EXPECT_THAT(expr.Prepare(options),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr("Query parameter number 1 is not defined")));
+}
+
+TEST(EvaluatorTest, PrepareExecuteAllowUndeclaredPositionalQueryParameters) {
+  PreparedExpression expr("CONCAT(CAST((? + col) AS STRING), ?)");
+  AnalyzerOptions analyzer_options;
+  analyzer_options.set_allow_undeclared_parameters(true);
+  analyzer_options.set_parameter_mode(PARAMETER_POSITIONAL);
+  ZETASQL_ASSERT_OK(analyzer_options.AddExpressionColumn("col", types::Int64Type()));
+  ZETASQL_ASSERT_OK(expr.Prepare(analyzer_options));
+  EXPECT_TRUE(types::StringType()->Equals(expr.output_type()));
+  ZETASQL_ASSERT_OK_AND_ASSIGN(int count, expr.GetPositionalParameterCount());
+  EXPECT_EQ(2, count);
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      Value result,
+      expr.ExecuteAfterPrepareWithPositionalParams(
+          {{"col", Value::Int64(5)}}, {Value::Int64(6),
+                                        Value::StringValue("foo")}));
+  EXPECT_EQ(result, Value::StringValue("11foo"));
+}
+
+TEST(EvaluatorTest,
+     PrepareExecuteAllowUndeclaredPositionalQueryParametersResolvedExpr) {
+  AnalyzerOptions analyzer_options;
+  analyzer_options.set_allow_undeclared_parameters(true);
+  analyzer_options.set_parameter_mode(PARAMETER_POSITIONAL);
+  ZETASQL_ASSERT_OK(analyzer_options.AddExpressionColumn("col", types::Int64Type()));
+
+  auto catalog = absl::make_unique<SimpleCatalog>("foo");
+  catalog->AddZetaSQLFunctions();
+  TypeFactory type_factory;
+
+  std::unique_ptr<const AnalyzerOutput> analyzer_output;
+  ZETASQL_ASSERT_OK(AnalyzeExpression(
+      "CONCAT(CAST((? + col) AS STRING), ?)", analyzer_options,
+      catalog.get(), &type_factory, &analyzer_output));
+
+  EvaluatorOptions evaluator_options;
+  PreparedExpression expr(analyzer_output->resolved_expr(), evaluator_options);
+  ZETASQL_ASSERT_OK(expr.Prepare(analyzer_options));
+  EXPECT_TRUE(types::StringType()->Equals(expr.output_type()));
+  ZETASQL_ASSERT_OK_AND_ASSIGN(int count, expr.GetPositionalParameterCount());
+  EXPECT_EQ(2, count);
+  EXPECT_THAT(
+      expr.ExecuteAfterPrepareWithPositionalParams(
+          {{"col", Value::Int64(5)}}, {Value::Int64(6),
+                                        Value::StringValue("foo")}),
+      StatusIs(absl::StatusCode::kInternal,
+               HasSubstr("Mismatch in number of analyzer parameters versus "
+                         "algebrizer parameters")));
 }
 
 TEST(EvaluatorTest, PrepareExecuteWrongPositionalQueryParameterType) {
@@ -1380,7 +1502,7 @@ TEST(EvaluatorTest, CurrentTimestamp) {
 
 absl::Time GetTestTime() {
   absl::TimeZone gst;
-  CHECK(absl::LoadTimeZone("America/Los_Angeles", &gst));
+  ZETASQL_CHECK(absl::LoadTimeZone("America/Los_Angeles", &gst));
   return absl::FromCivil(absl::CivilSecond(2016, 11, 22, 1, 2, 3), gst);
 }
 
@@ -1713,8 +1835,52 @@ TEST(EvaluatorTest, ExecuteAfterPreparePositonalColumnsNamedParameters) {
                                  "columns are positional")));
 }
 
+TEST(EvaluatorTest, ResolvedExprValidatedWithCorrectLanguageOptions) {
+  // When a resolved tree is passed to the PreparedQuery constructor, it
+  // validates the tree. Make sure the correct language options are being
+  // plumbed through to the validator.
+  //
+  // We choose a WITH RECURSIVE query for this, since the validator will give an
+  // error if it sees a ResolvedRecursiveScan without the corresopnding language
+  // option enabled.
+  std::string query = R"(
+    ARRAY(WITH RECURSIVE t AS (
+      SELECT 1 AS x UNION ALL SELECT x + 1 FROM t WHERE x < 5)
+    SELECT * FROM t))";
+
+  std::unique_ptr<const AnalyzerOutput> analyzer_output;
+  AnalyzerOptions analyzer_options;
+  analyzer_options.mutable_language()->EnableLanguageFeature(
+      FEATURE_V_1_3_WITH_RECURSIVE);
+  analyzer_options.mutable_language()->EnableLanguageFeature(
+      FEATURE_V_1_1_WITH_ON_SUBQUERY);
+
+  SimpleCatalog catalog("TestCatalog");
+  catalog.AddZetaSQLFunctions();
+
+  TypeFactory type_factory;
+
+  ZETASQL_ASSERT_OK(AnalyzeExpression(query, analyzer_options, &catalog, &type_factory,
+                              &analyzer_output));
+  const ResolvedExpr* resolved_expr = analyzer_output->resolved_expr();
+
+  EvaluatorOptions evaluator_options;
+
+  // Try to prepare the query with feature enabled in analyzer options
+  PreparedExpression prepared_expr(resolved_expr, evaluator_options);
+  ZETASQL_EXPECT_OK(prepared_expr.Prepare(analyzer_options));
+
+  // Now, try to prepare the query again with the same resolved tree, but
+  // feature disabled.
+  PreparedExpression prepared_expr2(resolved_expr, evaluator_options);
+  EXPECT_THAT(prepared_expr2.Prepare(AnalyzerOptions()),
+              StatusIs(absl::StatusCode::kInternal,
+                       HasSubstr("Found recursive scan, but WITH RECURSIVE is "
+                                 "disabled in language features")));
+}
+
 TEST_F(UDFEvalTest, OkUDFEvaluator) {
-  function_options_.set_evaluator([](const absl::Span<const Value>& args) {
+  function_options_.set_evaluator([](const absl::Span<const Value> args) {
     // Returns string length as int64_t.
     return Value::Int64(args[0].string_value().size());
   });
@@ -1730,11 +1896,11 @@ TEST_F(UDFEvalTest, OkUDFEvaluator) {
 
 TEST_F(UDFEvalTest, OkPolymorphicUDFEvaluator) {
   static FunctionEvaluator evaluator_int64 =
-      [](const absl::Span<const Value>& args) {
+      [](const absl::Span<const Value> args) {
         return Value::Int64(args[0].int64_value() * 2);
       };
   static FunctionEvaluator evaluator_string =
-      [](const absl::Span<const Value>& args) {
+      [](const absl::Span<const Value> args) {
         return Value::Int64(args[0].string_value().size());
       };
   function_options_.set_evaluator_factory(
@@ -1791,7 +1957,7 @@ TEST_F(UDFEvalTest, NoUDFEvaluator) {
 
 TEST_F(UDFEvalTest, UDFEvaluatorRuntimeErrors) {
   function_options_.set_evaluator(
-      [](const absl::Span<const Value>& args) -> zetasql_base::StatusOr<Value> {
+      [](const absl::Span<const Value> args) -> zetasql_base::StatusOr<Value> {
         std::string arg = args[0].string_value();
         if (arg == "not found") {
           return absl::Status(absl::StatusCode::kNotFound, "Wrong number");
@@ -2038,6 +2204,213 @@ TEST(PreparedQuery, FromTable) {
   ZETASQL_EXPECT_OK(iter->Status());
 }
 
+TEST(PreparedQuery, PrepareExecuteMissingQueryParameter) {
+  SimpleTable test_table(
+      "TestTable", {{"col", types::Int64Type()}});
+  test_table.SetContents({{Int64(5)}});
+
+  SimpleCatalog catalog("TestCatalog");
+  catalog.AddTable(test_table.Name(), &test_table);
+  catalog.AddZetaSQLFunctions();
+
+  EvaluatorOptions evaluator_options;
+  PreparedQuery query("SELECT @param + col FROM TestTable", evaluator_options);
+  EXPECT_THAT(query.Prepare(AnalyzerOptions(), &catalog),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr("Query parameter 'param' not found")));
+}
+
+TEST(PreparedQuery, PrepareExecuteAllowUndeclaredQueryParameters) {
+  SimpleTable test_table(
+      "TestTable", {{"col", types::Int64Type()}});
+  test_table.SetContents({{Int64(5)}});
+
+  SimpleCatalog catalog("TestCatalog");
+  catalog.AddTable(test_table.Name(), &test_table);
+  catalog.AddZetaSQLFunctions();
+
+  EvaluatorOptions evaluator_options;
+  PreparedQuery query("SELECT @param + col FROM TestTable", evaluator_options);
+
+  AnalyzerOptions analyzer_options;
+  analyzer_options.set_allow_undeclared_parameters(true);
+  ZETASQL_ASSERT_OK(query.Prepare(analyzer_options, &catalog));
+  ZETASQL_ASSERT_OK_AND_ASSIGN(std::vector<std::string> params,
+                       query.GetReferencedParameters());
+  EXPECT_THAT(params, testing::ElementsAre("param"));
+  ZETASQL_ASSERT_OK_AND_ASSIGN(std::unique_ptr<EvaluatorTableIterator> iter,
+                       query.Execute({{"param", Value::Int64(6)}}));
+  EXPECT_EQ(1, iter->NumColumns());
+  ASSERT_TRUE(iter->NextRow());
+  EXPECT_EQ(Int64(11), iter->GetValue(0));
+  EXPECT_FALSE(iter->NextRow());
+  ZETASQL_EXPECT_OK(iter->Status());
+}
+
+TEST(PreparedQuery, PrepareExecuteAllowUndeclaredQueryParametersResolvedStmt) {
+  SimpleTable test_table(
+      "TestTable", {{"col", types::Int64Type()}});
+  test_table.SetContents({{Int64(5)}});
+
+  SimpleCatalog catalog("TestCatalog");
+  catalog.AddTable(test_table.Name(), &test_table);
+  catalog.AddZetaSQLFunctions();
+
+  AnalyzerOptions analyzer_options;
+  analyzer_options.set_allow_undeclared_parameters(true);
+
+  std::unique_ptr<const AnalyzerOutput> analyzer_output;
+  TypeFactory type_factory;
+  ZETASQL_ASSERT_OK(AnalyzeStatement("SELECT @param + col FROM TestTable",
+                             analyzer_options, &catalog, &type_factory,
+                             &analyzer_output));
+  ASSERT_TRUE(analyzer_output->resolved_statement()->Is<ResolvedQueryStmt>());
+
+  EvaluatorOptions evaluator_options;
+  PreparedQuery query(
+      analyzer_output->resolved_statement()->GetAs<ResolvedQueryStmt>(),
+      evaluator_options);
+
+  ZETASQL_ASSERT_OK(query.Prepare(analyzer_options, &catalog));
+  ZETASQL_ASSERT_OK_AND_ASSIGN(std::vector<std::string> params,
+                       query.GetReferencedParameters());
+  EXPECT_THAT(params, testing::ElementsAre("param"));
+  EXPECT_THAT(query.Execute({{"param", Value::Int64(6)}}),
+      StatusIs(
+          absl::StatusCode::kInternal,
+          HasSubstr("Expected type not found for variable param")));
+}
+
+TEST(PreparedQuery, PrepareExecuteMissingPositionalQueryParameter) {
+  SimpleTable test_table(
+      "TestTable", {{"col", types::Int64Type()}});
+  test_table.SetContents({{Int64(5)}});
+
+  SimpleCatalog catalog("TestCatalog");
+  catalog.AddTable(test_table.Name(), &test_table);
+  catalog.AddZetaSQLFunctions();
+
+  EvaluatorOptions evaluator_options;
+  PreparedQuery query("SELECT ? + col FROM TestTable", evaluator_options);
+  AnalyzerOptions options;
+  options.set_parameter_mode(PARAMETER_POSITIONAL);
+  EXPECT_THAT(query.Prepare(options, &catalog),
+      StatusIs(
+          absl::StatusCode::kInvalidArgument,
+          HasSubstr("Query parameter number 1 is not defined")));
+}
+
+TEST(PreparedQuery, PrepareExecuteAllowUndeclaredPositionalQueryParameters) {
+  SimpleTable test_table(
+      "TestTable", {{"col", types::Int64Type()}});
+  test_table.SetContents({{Int64(5)}});
+
+  SimpleCatalog catalog("TestCatalog");
+  catalog.AddTable(test_table.Name(), &test_table);
+  catalog.AddZetaSQLFunctions();
+
+  EvaluatorOptions evaluator_options;
+  PreparedQuery query(
+      "SELECT CONCAT(CAST((? + col) AS STRING), ?) FROM TestTable",
+      evaluator_options);
+  AnalyzerOptions analyzer_options;
+  analyzer_options.set_allow_undeclared_parameters(true);
+  analyzer_options.set_parameter_mode(PARAMETER_POSITIONAL);
+  ZETASQL_ASSERT_OK(query.Prepare(analyzer_options, &catalog));
+  ZETASQL_ASSERT_OK_AND_ASSIGN(int count, query.GetPositionalParameterCount());
+  EXPECT_EQ(2, count);
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<EvaluatorTableIterator> iter,
+      query.ExecuteWithPositionalParams({Value::Int64(6),
+        Value::StringValue("foo")}));
+  EXPECT_EQ(1, iter->NumColumns());
+  ASSERT_TRUE(iter->NextRow());
+  EXPECT_EQ(Value::StringValue("11foo"), iter->GetValue(0));
+  EXPECT_FALSE(iter->NextRow());
+  ZETASQL_EXPECT_OK(iter->Status());
+}
+
+TEST(PreparedQuery,
+     PrepareExecuteAllowUndeclaredPositionalQueryParametersResolvedStmt) {
+  SimpleTable test_table(
+      "TestTable", {{"col", types::Int64Type()}});
+  test_table.SetContents({{Int64(5)}});
+
+  SimpleCatalog catalog("TestCatalog");
+  catalog.AddTable(test_table.Name(), &test_table);
+  catalog.AddZetaSQLFunctions();
+
+  AnalyzerOptions analyzer_options;
+  analyzer_options.set_allow_undeclared_parameters(true);
+  analyzer_options.set_parameter_mode(PARAMETER_POSITIONAL);
+
+  std::unique_ptr<const AnalyzerOutput> analyzer_output;
+  TypeFactory type_factory;
+  ZETASQL_ASSERT_OK(AnalyzeStatement(
+      "SELECT CONCAT(CAST((? + col) AS STRING), ?) FROM TestTable",
+      analyzer_options, &catalog, &type_factory,
+      &analyzer_output));
+  ASSERT_TRUE(analyzer_output->resolved_statement()->Is<ResolvedQueryStmt>());
+
+  EvaluatorOptions evaluator_options;
+  PreparedQuery query(
+      analyzer_output->resolved_statement()->GetAs<ResolvedQueryStmt>(),
+      evaluator_options);
+  ZETASQL_ASSERT_OK(query.Prepare(analyzer_options, &catalog));
+  ZETASQL_ASSERT_OK_AND_ASSIGN(int count, query.GetPositionalParameterCount());
+  EXPECT_EQ(2, count);
+  EXPECT_THAT(query.ExecuteWithPositionalParams({Value::Int64(6),
+    Value::StringValue("foo")}),
+      StatusIs(
+          absl::StatusCode::kInternal,
+          HasSubstr("Mismatch in number of analyzer parameters versus "
+                    "algebrizer parameters")));
+}
+
+TEST(PreparedQuery, ResolvedQueryValidatedWithCorrectLanguageOptions) {
+  // When a resolved tree is passed to the PreparedQuery constructor, it
+  // validates the tree. Make sure the correct language options are being
+  // plumbed through to the validator.
+  //
+  // We choose a WITH RECURSIVE query for this, since the validator will give an
+  // error if it sees a ResolvedRecursiveScan without the corresopnding language
+  // option enabled.
+  std::string query = R"(
+    WITH RECURSIVE t AS (
+      SELECT 1 AS x UNION ALL SELECT x + 1 FROM t WHERE x < 5)
+    SELECT * FROM t;)";
+
+  std::unique_ptr<const AnalyzerOutput> analyzer_output;
+  AnalyzerOptions analyzer_options;
+  analyzer_options.mutable_language()->EnableLanguageFeature(
+      FEATURE_V_1_3_WITH_RECURSIVE);
+
+  SimpleCatalog catalog("TestCatalog");
+  catalog.AddZetaSQLFunctions();
+
+  TypeFactory type_factory;
+
+  ZETASQL_ASSERT_OK(AnalyzeStatement(query, analyzer_options, &catalog, &type_factory,
+                             &analyzer_output));
+  const ResolvedQueryStmt* query_stmt =
+      analyzer_output->resolved_statement()->GetAs<ResolvedQueryStmt>();
+
+  EvaluatorOptions evaluator_options;
+
+  // Try to prepare the query with feature enabled in analyzer options
+  PreparedQuery prepared_query(query_stmt, evaluator_options);
+  ZETASQL_EXPECT_OK(prepared_query.Prepare(analyzer_options));
+
+  // Now, try to prepare the query again with the same resolved tree, but
+  // feature disabled.
+  PreparedQuery prepared_query2(query_stmt, evaluator_options);
+  EXPECT_THAT(prepared_query2.Prepare(AnalyzerOptions()),
+              StatusIs(absl::StatusCode::kInternal,
+                       HasSubstr("Found recursive scan, but WITH RECURSIVE is "
+                                 "disabled in language features")));
+}
+
 class PreparedModifyTest : public ::testing::Test {
  public:
   void SetUp() override {
@@ -2260,6 +2633,78 @@ TEST_F(PreparedModifyTest, Parameter) {
                        HasSubstr("Incomplete query parameters p1")));
 }
 
+TEST_F(PreparedModifyTest, NamedParameter) {
+  PreparedModify modify(
+      "insert test_table(int_val, str_val) values(@param1, @param2)",
+      EvaluatorOptions());
+
+  AnalyzerOptions analyzer_options = PreparedModifyTest::analyzer_options();
+  ZETASQL_EXPECT_OK(analyzer_options.AddQueryParameter("param1", types::Int64Type()));
+  ZETASQL_EXPECT_OK(analyzer_options.AddQueryParameter("param2", types::StringType()));
+
+  ZETASQL_ASSERT_OK(modify.Prepare(analyzer_options, catalog()));
+
+  EXPECT_THAT(modify.GetReferencedParameters(),
+              IsOkAndHolds(ElementsAre("param1", "param2")));
+
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<EvaluatorTableModifyIterator> iter,
+      modify.Execute({{"param1", Int64(3)}, {"param2", String("three")}}));
+  ASSERT_TRUE(iter->NextRow());
+  EXPECT_EQ(iter->GetColumnValue(0), Int64(3));
+  EXPECT_EQ(iter->GetColumnValue(1), String("three"));
+  EXPECT_FALSE(iter->NextRow());
+  ZETASQL_EXPECT_OK(iter->Status());
+}
+
+TEST_F(PreparedModifyTest, UndeclaredNamedParameter) {
+  PreparedModify modify(
+      "insert test_table(int_val, str_val) values(@param1, @param2)",
+      EvaluatorOptions());
+
+  AnalyzerOptions analyzer_options = PreparedModifyTest::analyzer_options();
+  analyzer_options.set_allow_undeclared_parameters(true);
+
+  ZETASQL_ASSERT_OK(modify.Prepare(analyzer_options, catalog()));
+
+  EXPECT_THAT(modify.GetReferencedParameters(),
+              IsOkAndHolds(ElementsAre("param1", "param2")));
+
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<EvaluatorTableModifyIterator> iter,
+      modify.Execute({{"param1", Int64(3)}, {"param2", String("three")}}));
+  ASSERT_TRUE(iter->NextRow());
+  EXPECT_EQ(iter->GetColumnValue(0), Int64(3));
+  EXPECT_EQ(iter->GetColumnValue(1), String("three"));
+  EXPECT_FALSE(iter->NextRow());
+  ZETASQL_EXPECT_OK(iter->Status());
+}
+
+TEST_F(PreparedModifyTest, UndeclaredNamedParameterResolvedStmt) {
+  AnalyzerOptions analyzer_options = PreparedModifyTest::analyzer_options();
+  analyzer_options.set_allow_undeclared_parameters(true);
+
+  std::unique_ptr<const AnalyzerOutput> analyzer_output;
+  TypeFactory type_factory;
+  ZETASQL_ASSERT_OK(AnalyzeStatement(
+      "insert test_table(int_val, str_val) values(@param1, @param2)",
+      analyzer_options, catalog(), &type_factory,
+      &analyzer_output));
+
+  PreparedModify modify(analyzer_output->resolved_statement(),
+                        EvaluatorOptions());
+  ZETASQL_ASSERT_OK(modify.Prepare(analyzer_options, catalog()));
+
+  EXPECT_THAT(modify.GetReferencedParameters(),
+              IsOkAndHolds(ElementsAre("param1", "param2")));
+
+  EXPECT_THAT(
+      modify.Execute({{"param1", Int64(3)}, {"param2", String("three")}}),
+      StatusIs(
+          absl::StatusCode::kInternal,
+          HasSubstr("Expected type not found for variable param1")));
+}
+
 TEST_F(PreparedModifyTest, PositionalParameter) {
   PreparedModify modify("insert test_table(int_val, str_val) values(?, ?)",
                         EvaluatorOptions());
@@ -2298,6 +2743,55 @@ TEST_F(PreparedModifyTest, PositionalParameter) {
   EXPECT_THAT(modify.ExecuteWithPositionalParams({Int64(100)}),
               StatusIs(absl::StatusCode::kInvalidArgument,
                        HasSubstr("Incorrect number of positional parameters")));
+}
+
+TEST_F(PreparedModifyTest, UndeclaredPositionalParameter) {
+  PreparedModify modify("insert test_table(int_val, str_val) values(?, ?)",
+                        EvaluatorOptions());
+
+  AnalyzerOptions analyzer_options = PreparedModifyTest::analyzer_options();
+  analyzer_options.set_allow_undeclared_parameters(true);
+  analyzer_options.set_parameter_mode(PARAMETER_POSITIONAL);
+
+  ZETASQL_ASSERT_OK(modify.Prepare(analyzer_options, catalog()));
+
+  EXPECT_THAT(modify.GetReferencedParameters(), IsOkAndHolds(IsEmpty()));
+  EXPECT_THAT(modify.GetPositionalParameterCount(), IsOkAndHolds(2));
+
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<EvaluatorTableModifyIterator> iter,
+      modify.ExecuteWithPositionalParams({Int64(3), String("three")}));
+  ASSERT_TRUE(iter->NextRow());
+  EXPECT_EQ(iter->GetColumnValue(0), Int64(3));
+  EXPECT_EQ(iter->GetColumnValue(1), String("three"));
+  EXPECT_FALSE(iter->NextRow());
+  ZETASQL_EXPECT_OK(iter->Status());
+}
+
+TEST_F(PreparedModifyTest, UndeclaredPositionalParameterResolvedStmt) {
+  AnalyzerOptions analyzer_options = PreparedModifyTest::analyzer_options();
+  analyzer_options.set_allow_undeclared_parameters(true);
+  analyzer_options.set_parameter_mode(PARAMETER_POSITIONAL);
+
+  std::unique_ptr<const AnalyzerOutput> analyzer_output;
+  TypeFactory type_factory;
+  ZETASQL_ASSERT_OK(AnalyzeStatement("insert test_table(int_val, str_val) values(?, ?)",
+                             analyzer_options, catalog(), &type_factory,
+                             &analyzer_output));
+
+  PreparedModify modify(analyzer_output->resolved_statement(),
+                        EvaluatorOptions());
+  ZETASQL_ASSERT_OK(modify.Prepare(analyzer_options, catalog()));
+
+  EXPECT_THAT(modify.GetReferencedParameters(), IsOkAndHolds(IsEmpty()));
+  EXPECT_THAT(modify.GetPositionalParameterCount(), IsOkAndHolds(2));
+
+  EXPECT_THAT(
+      modify.ExecuteWithPositionalParams({Int64(3), String("three")}),
+      StatusIs(
+          absl::StatusCode::kInternal,
+          HasSubstr("Mismatch in number of analyzer parameters versus "
+                    "algebrizer parameters")));
 }
 
 TEST_F(PreparedModifyTest, ExecuteAfterPrepareWithOrderedParamsWithParameter) {
@@ -2824,6 +3318,16 @@ TEST(PreparedQuery, ExecuteAfterPrepareOnlyNamedParams) {
   ZETASQL_EXPECT_OK(iter->Status());
 }
 
+TEST(PreparedQuery, ExecuteAfterPrepareBuiltinFunction) {
+  PreparedQuery query("select 1 + 2 as x", EvaluatorOptions());
+
+  AnalyzerOptions analyzer_options;
+  ZETASQL_EXPECT_OK(query.Prepare(analyzer_options));
+  SQLBuilder sql_builder;
+  ZETASQL_ASSERT_OK(query.resolved_query_stmt()->Accept(&sql_builder));
+  ASSERT_EQ(sql_builder.sql(), "SELECT 1 + 2 AS x");
+}
+
 }  // namespace
 
 class PreparedQueryTest : public ::testing::Test {
@@ -2831,7 +3335,7 @@ class PreparedQueryTest : public ::testing::Test {
   void SetupContextCallback(PreparedQuery* query) {
     query->SetCreateEvaluationCallbackTestOnly([this](EvaluationContext* cb) {
       // There should only be one EvaluationContext in each of these tests.
-      CHECK(context_ == nullptr);
+      ZETASQL_CHECK(context_ == nullptr);
       context_ = cb;
     });
   }

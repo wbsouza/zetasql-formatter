@@ -29,8 +29,8 @@ Unsets a variable.
 ```
 UNSET runtime_variable;
 UNSET @query_parameter;
-UNSET @@system_variable = constant_value;
+UNSET @@system_variable;
 ```
 
-[link-to-sql-identifiers]: https://github.com/google/zetasql/blob/master/docs/lexical#identifiers
+[link-to-sql-identifiers]: https://github.com/google/zetasql/blob/master/docs/lexical.md#identifiers
 

@@ -24,8 +24,11 @@
 #include "zetasql/public/options.pb.h"
 #include "zetasql/resolved_ast/resolved_node_kind.pb.h"
 #include "absl/base/attributes.h"
+#include "absl/base/macros.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/hash/hash.h"
 #include "zetasql/base/case.h"
+#include "absl/strings/match.h"
 #include "zetasql/base/map_util.h"
 
 namespace zetasql {
@@ -48,6 +51,11 @@ class LanguageOptions {
   void Serialize(LanguageOptionsProto* proto) const;
 
   // Returns true if 'kind' is supported.
+  //
+  // Note: The "supported statement kind" mechanism does not support script
+  // statements, as script statements do not exist in the resolved tree, so no
+  // ResolvedNodeKind enumeration for them exists. Script statements are gated
+  // through language features (see LanguageFeatureEnabled()).
   ABSL_MUST_USE_RESULT bool SupportsStatementKind(
       const ResolvedNodeKind kind) const {
     return supported_statement_kinds_.empty() ||
@@ -99,10 +107,6 @@ class LanguageOptions {
   void EnableLanguageFeature(LanguageFeature feature) {
     zetasql_base::InsertIfNotPresent(&enabled_language_features_, feature);
   }
-  // DEPRECATED.  This is the old name for EnableLanguageFeature.
-  void EnableOptionalFeature(LanguageFeature feature) {
-    EnableLanguageFeature(feature);
-  }
 
   void SetEnabledLanguageFeatures(const std::set<LanguageFeature>& features) {
     enabled_language_features_ = features;
@@ -131,8 +135,6 @@ class LanguageOptions {
   // use only.
   void EnableMaximumLanguageFeaturesForDevelopment() {
     EnableMaximumLanguageFeatures(/*for_development=*/true);
-    enabled_language_features_.erase(
-        FEATURE_NO_ADVANCED_NUMERIC_MATH_SIGNATURES);
   }
 
   // Helper that returns a LanguageOptions object that is equivalent to what
@@ -175,6 +177,28 @@ class LanguageOptions {
   bool GenericEntityTypeSupported(const std::string& type) const {
     return zetasql_base::ContainsKey(supported_generic_entity_types_, type);
   }
+
+  bool operator==(const LanguageOptions& rhs) const {
+    return enabled_language_features_ == rhs.enabled_language_features_ &&
+           supported_statement_kinds_ == rhs.supported_statement_kinds_ &&
+           name_resolution_mode_ == rhs.name_resolution_mode_ &&
+           product_mode_ == rhs.product_mode_ &&
+           error_on_deprecated_syntax_ == rhs.error_on_deprecated_syntax_ &&
+           supported_generic_entity_types_ ==
+               rhs.supported_generic_entity_types_;
+  }
+  template <typename H>
+  friend H AbslHashValue(H h, const LanguageOptions& value) {
+    return H::combine(std::move(h), value.enabled_language_features_,
+                      value.supported_statement_kinds_,
+                      value.name_resolution_mode_, value.product_mode_,
+                      value.error_on_deprecated_syntax_,
+                      /* we just hash on the size, because this uses
+                         a case insensitive comparator, which makes it awkward
+                         to get into the hash value */
+                      value.supported_generic_entity_types_.size());
+  }
+  bool operator!=(const LanguageOptions& rhs) const { return !(*this == rhs); }
 
  private:
   // Enable all optional features that are enabled in the idealized ZetaSQL.

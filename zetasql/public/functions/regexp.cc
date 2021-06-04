@@ -19,6 +19,7 @@
 #include <ctype.h>
 
 #include <algorithm>
+#include <cstdint>
 
 #include "zetasql/base/logging.h"
 #include "zetasql/common/utf_util.h"
@@ -40,12 +41,7 @@ bool RegExp::InitializePatternUtf8(absl::string_view pattern,
   RE2::Options options;
   options.set_log_errors(false);
   options.set_encoding(RE2::Options::EncodingUTF8);
-  re_ = absl::make_unique<RE2>(pattern, options);
-  if (!re_->ok()) {
-    return internal::UpdateError(
-        error, absl::StrCat("Cannot parse regular expression: ", re_->error()));
-  }
-  return true;
+  return InitializeWithOptions(pattern, options, error);
 }
 
 bool RegExp::InitializePatternBytes(absl::string_view pattern,
@@ -53,6 +49,12 @@ bool RegExp::InitializePatternBytes(absl::string_view pattern,
   RE2::Options options;
   options.set_log_errors(false);
   options.set_encoding(RE2::Options::EncodingLatin1);
+  return InitializeWithOptions(pattern, options, error);
+}
+
+bool RegExp::InitializeWithOptions(absl::string_view pattern,
+                                   const RE2::Options& options,
+                                   absl::Status* error) {
   re_ = absl::make_unique<RE2>(pattern, options);
   if (!re_->ok()) {
     return internal::UpdateError(
@@ -62,13 +64,13 @@ bool RegExp::InitializePatternBytes(absl::string_view pattern,
 }
 
 bool RegExp::Contains(absl::string_view str, bool* out, absl::Status* error) {
-  DCHECK(re_);
+  ZETASQL_DCHECK(re_);
   *out = re_->PartialMatch(str, *re_);
   return true;
 }
 
 bool RegExp::Match(absl::string_view str, bool* out, absl::Status* error) {
-  DCHECK(re_);
+  ZETASQL_DCHECK(re_);
   *out = re_->FullMatch(str, *re_);
   return true;
 }
@@ -77,7 +79,7 @@ bool RegExp::Extract(absl::string_view str, PositionUnit position_unit,
                      int64_t position, int64_t occurrence_index,
                      absl::string_view* out, bool* is_null,
                      absl::Status* error) {
-  DCHECK(re_);
+  ZETASQL_DCHECK(re_);
   *is_null = true;
   *error = internal::ValidatePositionAndOccurrence(position, occurrence_index);
   if (!error->ok()) {
@@ -128,7 +130,7 @@ void RegExp::ExtractAllReset(const absl::string_view str) {
 }
 
 bool RegExp::ExtractAllNext(absl::string_view* out, absl::Status* error) {
-  DCHECK(re_);
+  ZETASQL_DCHECK(re_);
   if (re_->NumberOfCapturingGroups() > 1) {
     return internal::UpdateError(error,
                                  "Regular expressions passed into extraction "
@@ -158,8 +160,8 @@ bool RegExp::ExtractAllNext(absl::string_view* out, absl::Status* error) {
     // If there's a single capturing group return substring matching that
     // group.
     *out = groups[1];
-    capture_group_position_ = static_cast<int>(
-        groups[1].end() - extract_all_input_.begin());
+    capture_group_position_ =
+        static_cast<int>(groups[1].end() - extract_all_input_.begin());
   }
   // RE2 library produces empty groups[0] when regular expression matches empty
   // string, so in this case we need to advance input by one character.
@@ -190,16 +192,17 @@ bool RegExp::ExtractAllNext(absl::string_view* out, absl::Status* error) {
     }
   }
   // No more input - next call to ExtractAllNext will return false.
-  if (extract_all_position_ >= static_cast<int64_t>(extract_all_input_.size())) {
+  if (extract_all_position_ >=
+      static_cast<int64_t>(extract_all_input_.size())) {
     last_match_ = true;
   }
   return true;
 }
 
 bool RegExp::Instr(const InstrParams& options, absl::Status* error) {
-  DCHECK(re_ != nullptr);
-  DCHECK(error != nullptr);
-  DCHECK(options.out != nullptr);
+  ZETASQL_DCHECK(re_ != nullptr);
+  ZETASQL_DCHECK(error != nullptr);
+  ZETASQL_DCHECK(options.out != nullptr);
   absl::string_view str = options.input_str;
   *options.out = 0;
   *error = internal::ValidatePositionAndOccurrence(options.position,
@@ -230,7 +233,7 @@ bool RegExp::Instr(const InstrParams& options, absl::Status* error) {
   ExtractAllReset(str);
   absl::string_view next_match;
   for (int64_t current_index = 0; current_index < options.occurrence_index;
-    ++current_index) {
+       ++current_index) {
     if (!ExtractAllNext(&next_match, error)) {
       return error->ok();
     }
@@ -276,7 +279,7 @@ bool RegExp::Replace(absl::string_view str, absl::string_view newsub,
   // (2) it returns proper error message instead of logging it, and
   // (3) limits the size of output string.
 
-  DCHECK(re_);
+  ZETASQL_DCHECK(re_);
 
   std::string error_string;
   if (!re_->CheckRewriteString(newsub, &error_string)) {
@@ -298,7 +301,7 @@ bool RegExp::Replace(absl::string_view str, absl::string_view newsub,
   // string_view(nullptr, 0) and the pattern of this RegExp is also empty, the
   // condition "match[0].begin() != lastend" below will still be true for once.
   absl::string_view::iterator lastend = str.begin() + std::string_view::npos;
-  for (absl::string_view::iterator p = str.begin(); p <= str.end(); ) {
+  for (absl::string_view::iterator p = str.begin(); p <= str.end();) {
     // Find the first matching substring starting at p and store the
     // match and captured groups in vector 'match'.
     if (!re_->Match(str, p - str.begin(), str.size(),
@@ -317,8 +320,7 @@ bool RegExp::Replace(absl::string_view str, absl::string_view newsub,
     } else {
       // The regexp matches empty substring. Ignore the match if it starts at
       // the end of the previous one.
-      if (match[0].begin() != lastend &&
-          !Rewrite(newsub, match, out, error)) {
+      if (match[0].begin() != lastend && !Rewrite(newsub, match, out, error)) {
         return false;
       }
       if (p < str.end()) {
@@ -344,14 +346,12 @@ bool RegExp::Replace(absl::string_view str, absl::string_view newsub,
   return true;
 }
 
-void RegExp::SetMaxOutSize(int32_t size) {
-  max_out_size_ = size;
-}
+void RegExp::SetMaxOutSize(int32_t size) { max_out_size_ = size; }
 
 bool RegExp::Rewrite(const absl::string_view rewrite,
                      const std::vector<absl::string_view>& groups,
                      std::string* out, absl::Status* error) {
-  for (const char *s = rewrite.data(); s < rewrite.end(); ++s) {
+  for (const char* s = rewrite.data(); s < rewrite.end(); ++s) {
     const char* start = s;
     while (s < rewrite.end() && *s != '\\') s++;
     out->append(start, s);

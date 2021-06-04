@@ -42,6 +42,7 @@
 #include "zetasql/resolved_ast/resolved_node_kind.h"
 #include "zetasql/resolved_ast/resolved_node_kind.pb.h"
 #include "zetasql/resolved_ast/validator.h"
+#include "absl/container/node_hash_map.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "zetasql/base/statusor.h"
@@ -185,7 +186,7 @@ class Evaluator {
   Evaluator& operator=(const Evaluator&) = delete;
 
   ~Evaluator() {
-    CHECK_EQ(num_live_iterators_, 0)
+    ZETASQL_CHECK_EQ(num_live_iterators_, 0)
         << "An iterator returned by PreparedQuery::Execute() cannot outlive "
         << "the PreparedQuery object.";
   }
@@ -251,7 +252,7 @@ class Evaluator {
   const ResolvedStatement* resolved_statement() const
       ABSL_LOCKS_EXCLUDED(mutex_) {
     absl::ReaderMutexLock l(&mutex_);
-    CHECK(statement_ != nullptr);
+    ZETASQL_CHECK(statement_ != nullptr);
     return statement_;
   }
 
@@ -261,7 +262,7 @@ class Evaluator {
   const std::vector<NameAndType>& query_output_columns() const
       ABSL_LOCKS_EXCLUDED(mutex_) {
     absl::ReaderMutexLock l(&mutex_);
-    CHECK(statement_ != nullptr);
+    ZETASQL_CHECK(statement_ != nullptr);
     return output_columns_;
   }
 
@@ -436,6 +437,10 @@ class Evaluator {
   // ResolvedQueryStmt.
   std::vector<VariableId> output_column_variables_ ABSL_GUARDED_BY(mutex_);
 
+  // If catalog is not provided via prepare, we will construct the default
+  // 'builtin' catalog automatically and store it here.
+  std::unique_ptr<SimpleCatalog> owned_catalog_ ABSL_GUARDED_BY(mutex_);
+
   mutable absl::Mutex num_live_iterators_mutex_;
   // The number of live iterators corresponding to `compiled_relational_op_` or
   // `complied_value_expr` with type `DMLValueExpr`. Only valid if !is_expr_.
@@ -470,13 +475,12 @@ absl::Status Evaluator::PrepareLocked(const AnalyzerOptions& options,
   // respect the input column indexes.
   // analyzer_options_.set_prune_unused_columns(true);
 
-  std::unique_ptr<SimpleCatalog> simple_catalog;
   if (catalog == nullptr && (statement_ == nullptr && expr_ == nullptr)) {
-    simple_catalog = absl::make_unique<SimpleCatalog>(
+    owned_catalog_ = absl::make_unique<SimpleCatalog>(
         "default_catalog", evaluator_options_.type_factory);
-    catalog = simple_catalog.get();
     // Add built-in functions to the catalog, using provided <options>.
-    simple_catalog->AddZetaSQLFunctions(options.language());
+    owned_catalog_->AddZetaSQLFunctions(options.language());
+    catalog = owned_catalog_.get();
   }
 
   AlgebrizerOptions algebrizer_options;
@@ -495,7 +499,8 @@ absl::Status Evaluator::PrepareLocked(const AnalyzerOptions& options,
     } else {
       // TODO: When we're confident that it's no longer possible to
       // crash the reference implementation, remove this validation step.
-      ZETASQL_RETURN_IF_ERROR(Validator().ValidateResolvedStatement(statement_));
+      ZETASQL_RETURN_IF_ERROR(
+          Validator(options.language()).ValidateResolvedStatement(statement_));
     }
 
     // Algebrize.
@@ -544,7 +549,8 @@ absl::Status Evaluator::PrepareLocked(const AnalyzerOptions& options,
     } else {
       // TODO: When we're confident that it's no longer possible to
       // crash the reference implementation, remove this validation step.
-      ZETASQL_RETURN_IF_ERROR(Validator().ValidateStandaloneResolvedExpr(expr_));
+      ZETASQL_RETURN_IF_ERROR(
+          Validator(options.language()).ValidateStandaloneResolvedExpr(expr_));
     }
 
     // Algebrize.
@@ -652,7 +658,7 @@ zetasql_base::StatusOr<int> Evaluator::GetPositionalParameterCount() const {
 absl::Status Evaluator::TranslateParameterValueMapToList(
     const ParameterValueMap& parameters_map, const ParameterMap& variable_map,
     ParameterKind kind, ParameterValueList* variable_values) const {
-  std::unordered_map<std::string, const Value*> normalized_parameters;
+  absl::node_hash_map<std::string, const Value*> normalized_parameters;
   for (const auto& value : parameters_map) {
     normalized_parameters[absl::AsciiStrToLower(value.first)] = &value.second;
   }
@@ -709,7 +715,7 @@ absl::Status Evaluator::Execute(
         }
       }
       for (const auto& p : options.columns.value()) {
-        // If we a column with an empty name, we'll treat it as an
+        // If we find a column with an empty name, we'll treat it as an
         // anonymous in-scope expression column.
         if (p.first.empty()) {
           ZETASQL_RETURN_IF_ERROR(analyzer_options_.SetInScopeExpressionColumn(
@@ -903,7 +909,7 @@ absl::Status Evaluator::ExecuteAfterPrepareWithOrderedParamsLocked(
   for (const auto& algebrizer_sysvar : algebrizer_system_variables_) {
     params.push_back(system_variables.at(algebrizer_sysvar.first));
   }
-  const TupleData params_data = CreateTupleDataFromValues(params);
+  const TupleData params_data = CreateTupleDataFromValues(std::move(params));
 
   if (compiled_relational_op_ != nullptr) {
     ZETASQL_ASSIGN_OR_RETURN(
@@ -953,9 +959,9 @@ zetasql_base::StatusOr<std::string> Evaluator::ExplainAfterPrepare() const {
 
 const Type* Evaluator::expression_output_type() const {
   absl::ReaderMutexLock l(&mutex_);
-  CHECK(is_expr_) << "Only expressions have output types";
-  CHECK(is_prepared()) << "Prepare or Execute must be called first";
-  CHECK(compiled_value_expr_ != nullptr) << "Invalid prepared expression";
+  ZETASQL_CHECK(is_expr_) << "Only expressions have output types";
+  ZETASQL_CHECK(is_prepared()) << "Prepare or Execute must be called first";
+  ZETASQL_CHECK(compiled_value_expr_ != nullptr) << "Invalid prepared expression";
   return compiled_value_expr_->output_type();
 }
 
@@ -1008,8 +1014,7 @@ absl::Status Evaluator::ValidateSystemVariables(
     const Type* expected_type = analyzer_options_sysvar.second;
     const Type* actual_type = it->second.type();
     if (!expected_type->Equals(actual_type)) {
-      ProductMode product_mode =
-          analyzer_options_.language_options().product_mode();
+      ProductMode product_mode = analyzer_options_.language().product_mode();
       return zetasql_base::InvalidArgumentErrorBuilder()
              << "Expected system variable '" << absl::StrJoin(sysvar_name, ".")
              << "' to be of type " << expected_type->TypeName(product_mode)
@@ -1059,20 +1064,27 @@ absl::Status Evaluator::ValidateParameters(
              << " but found " << parameters.size();
     }
 
+
+    const QueryParametersMap *query_parameters =
+        &analyzer_options_.query_parameters();
+    if (analyzer_options_.allow_undeclared_parameters() &&
+        analyzer_output_ != nullptr) {
+      query_parameters = &analyzer_output_->undeclared_parameters();
+    }
     int i = 0;
     for (const auto& elt : algebrizer_parameters_.named_parameters()) {
       const Value& value = parameters[i];
 
       const std::string& variable_name = elt.first;
       const Type* expected_type = zetasql_base::FindPtrOrNull(
-          analyzer_options_.query_parameters(), variable_name);
+          *query_parameters, variable_name);
       ZETASQL_RET_CHECK(expected_type != nullptr)
           << "Expected type not found for variable " << variable_name;
       if (!expected_type->Equals(value.type())) {
         return zetasql_base::InvalidArgumentErrorBuilder()
-               << "Expected query parameter '" << variable_name
-               << "' to be of type " << expected_type->DebugString()
-               << " but found " << value.type()->DebugString();
+            << "Expected query parameter '" << variable_name
+            << "' to be of type " << expected_type->DebugString()
+            << " but found " << value.type()->DebugString();
       }
 
       ++i;
@@ -1087,22 +1099,29 @@ absl::Status Evaluator::ValidateParameters(
              << " but found " << parameters.size();
     }
 
-    ZETASQL_RET_CHECK_GE(analyzer_options_.positional_query_parameters().size(),
+    const std::vector<const Type*>* positional_query_parameters =
+        &analyzer_options_.positional_query_parameters();
+    if (analyzer_options_.allow_undeclared_parameters() &&
+        analyzer_output_ != nullptr) {
+      positional_query_parameters =
+          &analyzer_output_->undeclared_positional_parameters();
+    }
+    ZETASQL_RET_CHECK_GE(positional_query_parameters->size(),
                  algebrizer_parameters_.positional_parameters().size())
         << "Mismatch in number of analyzer parameters versus algebrizer "
         << "parameters";
+
     for (int i = 0; i < algebrizer_parameters_.positional_parameters().size();
          ++i) {
-      const Type* expected_type =
-          analyzer_options_.positional_query_parameters()[i];
+      const Type* expected_type = (*positional_query_parameters)[i];
       const Type* actual_type = parameters[i].type();
       if (!expected_type->Equals(actual_type)) {
         // Parameter positions are 1-based, so use the correct position in the
         // error message.
         return ::zetasql_base::InvalidArgumentErrorBuilder()
-               << "Expected positional parameter " << (i + 1)
-               << " to be of type " << expected_type->DebugString()
-               << " but found " << actual_type->DebugString();
+            << "Expected positional parameter " << (i + 1)
+            << " to be of type " << expected_type->DebugString()
+            << " but found " << actual_type->DebugString();
       }
     }
   }
@@ -1388,12 +1407,12 @@ int PreparedQueryBase::num_columns() const {
 }
 
 std::string PreparedQueryBase::column_name(int i) const {
-  DCHECK_LT(i, evaluator_->query_output_columns().size());
+  ZETASQL_DCHECK_LT(i, evaluator_->query_output_columns().size());
   return evaluator_->query_output_columns()[i].first;
 }
 
 const Type* PreparedQueryBase::column_type(int i) const {
-  DCHECK_LT(i, evaluator_->query_output_columns().size());
+  ZETASQL_DCHECK_LT(i, evaluator_->query_output_columns().size());
   return evaluator_->query_output_columns()[i].second;
 }
 

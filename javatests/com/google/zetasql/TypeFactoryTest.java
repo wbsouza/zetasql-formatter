@@ -58,6 +58,10 @@ public class TypeFactoryTest {
     assertThat(TypeFactory.isSimpleType(TypeKind.TYPE_STRING)).isTrue();
     assertThat(TypeFactory.isSimpleType(TypeKind.TYPE_STRUCT)).isFalse();
     assertThat(TypeFactory.isSimpleType(TypeKind.TYPE_TIMESTAMP)).isTrue();
+    assertThat(TypeFactory.isSimpleType(TypeKind.TYPE_DATETIME)).isTrue();
+    assertThat(TypeFactory.isSimpleType(TypeKind.TYPE_TIME)).isTrue();
+    assertThat(TypeFactory.isSimpleType(TypeKind.TYPE_INTERVAL)).isTrue();
+    assertThat(TypeFactory.isSimpleType(TypeKind.TYPE_TOKENLIST)).isTrue();
     assertThat(TypeFactory.isSimpleType(TypeKind.TYPE_UINT32)).isTrue();
     assertThat(TypeFactory.isSimpleType(TypeKind.TYPE_UINT64)).isTrue();
     assertThat(TypeFactory.isSimpleType(TypeKind.TYPE_UNKNOWN)).isFalse();
@@ -82,6 +86,10 @@ public class TypeFactoryTest {
     assertThat(TypeFactory.isSimpleTypeName("STRING", ProductMode.PRODUCT_EXTERNAL)).isTrue();
     assertThat(TypeFactory.isSimpleTypeName("STRUCT", ProductMode.PRODUCT_EXTERNAL)).isFalse();
     assertThat(TypeFactory.isSimpleTypeName("TIMESTAMP", ProductMode.PRODUCT_EXTERNAL)).isTrue();
+    assertThat(TypeFactory.isSimpleTypeName("DATETIME", ProductMode.PRODUCT_EXTERNAL)).isTrue();
+    assertThat(TypeFactory.isSimpleTypeName("TIME", ProductMode.PRODUCT_EXTERNAL)).isTrue();
+    assertThat(TypeFactory.isSimpleTypeName("INTERVAL", ProductMode.PRODUCT_EXTERNAL)).isTrue();
+    assertThat(TypeFactory.isSimpleTypeName("TOKENLIST", ProductMode.PRODUCT_EXTERNAL)).isTrue();
     assertThat(TypeFactory.isSimpleTypeName("UINT32", ProductMode.PRODUCT_EXTERNAL)).isFalse();
     assertThat(TypeFactory.isSimpleTypeName("UINT64", ProductMode.PRODUCT_EXTERNAL)).isFalse();
     assertThat(TypeFactory.isSimpleTypeName("UNKNOWN", ProductMode.PRODUCT_EXTERNAL)).isFalse();
@@ -102,6 +110,10 @@ public class TypeFactoryTest {
     assertThat(TypeFactory.isSimpleTypeName("STRING", ProductMode.PRODUCT_INTERNAL)).isTrue();
     assertThat(TypeFactory.isSimpleTypeName("STRUCT", ProductMode.PRODUCT_INTERNAL)).isFalse();
     assertThat(TypeFactory.isSimpleTypeName("TIMESTAMP", ProductMode.PRODUCT_INTERNAL)).isTrue();
+    assertThat(TypeFactory.isSimpleTypeName("DATETIME", ProductMode.PRODUCT_INTERNAL)).isTrue();
+    assertThat(TypeFactory.isSimpleTypeName("TIME", ProductMode.PRODUCT_INTERNAL)).isTrue();
+    assertThat(TypeFactory.isSimpleTypeName("INTERVAL", ProductMode.PRODUCT_INTERNAL)).isTrue();
+    assertThat(TypeFactory.isSimpleTypeName("TOKENLIST", ProductMode.PRODUCT_INTERNAL)).isTrue();
     assertThat(TypeFactory.isSimpleTypeName("UINT32", ProductMode.PRODUCT_INTERNAL)).isTrue();
     assertThat(TypeFactory.isSimpleTypeName("UINT64", ProductMode.PRODUCT_INTERNAL)).isTrue();
     assertThat(TypeFactory.isSimpleTypeName("UNKNOWN", ProductMode.PRODUCT_INTERNAL)).isFalse();
@@ -305,6 +317,14 @@ public class TypeFactoryTest {
     } catch (IllegalArgumentException expected) {
     }
 
+    enumBuilder.setEnumFileName("zetasql/public/type.proto");
+    enumBuilder.addCatalogNamePath("catalog");
+    try {
+      factory.deserialize(builder.build(), Lists.newArrayList(pool));
+      fail("Should throw when deserializing enum with a catalog name.");
+    } catch (IllegalArgumentException expected) {
+    }
+
     builder.clearEnumType();
     builder.setTypeKind(TypeKind.TYPE_PROTO);
     Builder protoBuilder = builder.getProtoTypeBuilder();
@@ -361,6 +381,14 @@ public class TypeFactoryTest {
     try {
       factory.deserialize(builder.build(), Lists.newArrayList(pool));
       fail("Should throw when deserializing proto with wrong filename.");
+    } catch (IllegalArgumentException expected) {
+    }
+
+    protoBuilder.setProtoFileName("zetasql/public/type.proto");
+    protoBuilder.addCatalogNamePath("catalog");
+    try {
+      factory.deserialize(builder.build(), Lists.newArrayList(pool));
+      fail("Should throw when deserializing proto with a catalog name.");
     } catch (IllegalArgumentException expected) {
     }
   }

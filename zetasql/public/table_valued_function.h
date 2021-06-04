@@ -17,6 +17,8 @@
 #ifndef ZETASQL_PUBLIC_TABLE_VALUED_FUNCTION_H_
 #define ZETASQL_PUBLIC_TABLE_VALUED_FUNCTION_H_
 
+#include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -140,7 +142,7 @@ class TableValuedFunction {
   // TODO: Consider making this return a const reference instead.
   // This signature should be consistent with Function::GetSignature(), so
   // if we change it here we should also change it there.  Should it return
-  // Status, in case <idx> is out of range (rather than CHECK failing)?
+  // Status, in case <idx> is out of range (rather than ZETASQL_CHECK failing)?
   const FunctionSignature* GetSignature(int64_t idx) const;
 
   // Returns user facing text (to be used in error messages) listing function
@@ -286,6 +288,14 @@ struct TVFSchemaColumn {
       const std::vector<const google::protobuf::DescriptorPool*>& pools,
       TypeFactory* factory);
 
+  std::string DebugString(bool is_for_value_table) const {
+    // Prevent concatenating value column name.
+    if (!is_for_value_table || is_pseudo_column) {
+      return absl::StrCat(name, " ", type->DebugString());
+    }
+    return type->DebugString();
+  }
+
   std::string name;
   const Type* type = nullptr;
   bool is_pseudo_column;
@@ -296,6 +306,11 @@ struct TVFSchemaColumn {
   absl::optional<ParseLocationRange> name_parse_location_range;
   absl::optional<ParseLocationRange> type_parse_location_range;
 };
+
+// To support ZETASQL_RET_CHECK_EQ.
+bool operator==(const TVFSchemaColumn& a, const TVFSchemaColumn& b);
+inline std::ostream& operator<<(std::ostream& out,
+                                const TVFSchemaColumn& column);
 
 // This represents a relation passed as an input argument to a TVF, or returned
 // from a TVF. It either contains a list of columns, where each column contains
@@ -371,6 +386,14 @@ class TVFRelation {
   ColumnList columns_;
   bool is_value_table_;
 };
+
+bool operator == (const TVFRelation& a, const TVFRelation& b);
+
+inline std::ostream& operator<<(std::ostream& out,
+                                const TVFRelation& relation) {
+  out << relation.DebugString();
+  return out;
+}
 
 // This represents a model passed as an input argument to a TVF. It contains a
 // pointer to the model object in the catalog.
@@ -478,31 +501,31 @@ class TVFInputArgumentType {
   // optional, and is not owned or serialized. If present, this class assumes
   // that it is consistent with scalar_arg_type_ and scalar_arg_value_.
   const ResolvedExpr* scalar_expr() const {
-    DCHECK(is_scalar());
+    ZETASQL_DCHECK(is_scalar());
     return scalar_expr_;
   }
   void set_scalar_expr(const ResolvedExpr* expr) {
-    DCHECK(is_scalar());
+    ZETASQL_DCHECK(is_scalar());
     scalar_expr_ = expr;
   }
 
   // TODO: Rename to GetRelation and return StatusOr to keep
   // consistent with GetScalarArgType above.
   const TVFRelation& relation() const {
-    DCHECK(is_relation());
+    ZETASQL_DCHECK(is_relation());
     return relation_;
   }
   const TVFModelArgument& model() const {
-    DCHECK(is_model());
+    ZETASQL_DCHECK(is_model());
     return model_;
   }
   const TVFConnectionArgument& connection() const {
-    DCHECK(is_connection());
+    ZETASQL_DCHECK(is_connection());
     return connection_;
   }
 
   const TVFDescriptorArgument& descriptor_argument() const {
-    DCHECK(is_descriptor());
+    ZETASQL_DCHECK(is_descriptor());
     return descriptor_argument_;
   }
 
@@ -609,6 +632,27 @@ class TVFSignature {
     return ret;
   }
 
+  // Returns AnonymizationInfo related to a resolved call of this TVF.
+  // For further details, see:
+  //
+  // (broken link).
+  //
+  // This method only returns AnonymizationInfo for TVFs that produce private
+  // user data and that support anonymization queries.
+  std::optional<const AnonymizationInfo> GetAnonymizationInfo() const {
+    return anonymization_info_ == nullptr
+               ? std::nullopt
+               : std::optional<const zetasql::AnonymizationInfo>(
+                     *anonymization_info_);
+  }
+  void SetAnonymizationInfo(
+      std::unique_ptr<AnonymizationInfo> anonymization_info) {
+    anonymization_info_ = std::move(anonymization_info);
+  }
+  bool SupportsAnonymization() const {
+    return GetAnonymizationInfo().has_value();
+  }
+
   std::string DebugString() const { return DebugString(/*verbose=*/false); }
 
   // Returns whether or not this TVFCall is a specific table-valued function
@@ -638,6 +682,10 @@ class TVFSignature {
   const TVFRelation result_schema_;
 
   const TVFSignatureOptions options_;
+
+  // The AnonymizationInfo related to a resolved call of this TVF. See
+  // (broken link) for further details.
+  std::unique_ptr<AnonymizationInfo> anonymization_info_;
 };
 
 // This represents a TVF that always returns a relation with the same fixed

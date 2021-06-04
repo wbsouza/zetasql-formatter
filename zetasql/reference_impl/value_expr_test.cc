@@ -16,6 +16,7 @@
 
 // Tests for ValueExprs not covered by other tests.
 
+#include <cstdint>
 #include <memory>
 #include <set>
 #include <string>
@@ -938,8 +939,11 @@ class DMLValueExprEvalTest : public EvalTest {
 TEST_F(DMLValueExprEvalTest, DMLInsertValueExpr) {
   // Build a resolved AST for inserting a new row (3, "three") into the table.
   std::unique_ptr<ResolvedTableScan> table_scan = MakeResolvedTableScan(
-      {ResolvedColumn{1, "test_table", "int_val", Int64Type()},
-       ResolvedColumn{2, "test_table", "str_val", StringType()}},
+      {ResolvedColumn{1, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("int_val"), Int64Type()},
+       ResolvedColumn{2, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("str_val"),
+                      StringType()}},
       table(), /*for_system_time_expr=*/nullptr);
   std::vector<std::unique_ptr<const ResolvedDMLValue>> row_values;
   row_values.push_back(MakeResolvedDMLValue(
@@ -952,9 +956,12 @@ TEST_F(DMLValueExprEvalTest, DMLInsertValueExpr) {
   row_list.push_back(MakeResolvedInsertRow(std::move(row_values)));
   std::unique_ptr<ResolvedInsertStmt> stmt = MakeResolvedInsertStmt(
       std::move(table_scan), ResolvedInsertStmt::OR_ERROR,
-      /*assert_rows_modified=*/nullptr,
-      {ResolvedColumn{1, "test_table", "int_val", Int64Type()},
-       ResolvedColumn{2, "test_table", "str_val", StringType()}},
+      /*assert_rows_modified=*/nullptr, /*returning=*/nullptr,
+      {ResolvedColumn{1, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("int_val"), Int64Type()},
+       ResolvedColumn{2, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("str_val"),
+                      StringType()}},
       /*query_parameter_list=*/{}, /*query=*/nullptr,
       /*query_output_column_list=*/{}, std::move(row_list));
 
@@ -1007,8 +1014,10 @@ TEST_F(DMLValueExprEvalTest, DMLInsertValueExpr) {
   ZETASQL_ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<DMLInsertValueExpr> expr,
       DMLInsertValueExpr::Create(
-          stmt->table_scan()->table(), table_array_type, primary_key_type,
-          dml_output_type, stmt.get(), &stmt->table_scan()->column_list(),
+          stmt->table_scan()->table(), table_array_type,
+          /*returning_array_type=*/nullptr, primary_key_type, dml_output_type,
+          stmt.get(), &stmt->table_scan()->column_list(),
+          /*returning_column_values=*/nullptr,
           std::move(column_to_variable_mapping), std::move(resolved_scan_map),
           std::move(resolved_expr_map)));
 
@@ -1043,8 +1052,11 @@ TEST_F(DMLValueExprEvalTest,
        DMLInsertValueExprSetsPrimaryKeyValuesToNullWhenDisallowed) {
   // Build a resolved AST for inserting a new row (3, "three") into the table.
   std::unique_ptr<ResolvedTableScan> table_scan = MakeResolvedTableScan(
-      {ResolvedColumn{1, "test_table", "int_val", Int64Type()},
-       ResolvedColumn{2, "test_table", "str_val", StringType()}},
+      {ResolvedColumn{1, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("int_val"), Int64Type()},
+       ResolvedColumn{2, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("str_val"),
+                      StringType()}},
       table(), /*for_system_time_expr=*/nullptr);
   std::vector<std::unique_ptr<const ResolvedDMLValue>> row_values;
   row_values.push_back(MakeResolvedDMLValue(
@@ -1057,9 +1069,12 @@ TEST_F(DMLValueExprEvalTest,
   row_list.push_back(MakeResolvedInsertRow(std::move(row_values)));
   std::unique_ptr<ResolvedInsertStmt> stmt = MakeResolvedInsertStmt(
       std::move(table_scan), ResolvedInsertStmt::OR_ERROR,
-      /*assert_rows_modified=*/nullptr,
-      {ResolvedColumn{1, "test_table", "int_val", Int64Type()},
-       ResolvedColumn{2, "test_table", "str_val", StringType()}},
+      /*assert_rows_modified=*/nullptr, /*returning=*/nullptr,
+      {ResolvedColumn{1, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("int_val"), Int64Type()},
+       ResolvedColumn{2, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("str_val"),
+                      StringType()}},
       /*query_parameter_list=*/{}, /*query=*/nullptr,
       /*query_output_column_list=*/{}, std::move(row_list));
 
@@ -1112,8 +1127,10 @@ TEST_F(DMLValueExprEvalTest,
   ZETASQL_ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<DMLInsertValueExpr> expr,
       DMLInsertValueExpr::Create(
-          stmt->table_scan()->table(), table_array_type, primary_key_type,
-          dml_output_type, stmt.get(), &stmt->table_scan()->column_list(),
+          stmt->table_scan()->table(), table_array_type,
+          /*returning_array_type=*/nullptr, primary_key_type, dml_output_type,
+          stmt.get(), &stmt->table_scan()->column_list(),
+          /*returning_column_values=*/nullptr,
           std::move(column_to_variable_mapping), std::move(resolved_scan_map),
           std::move(resolved_expr_map)));
 
@@ -1150,8 +1167,11 @@ TEST_F(DMLValueExprEvalTest, DMLDeleteValueExpr) {
   // Build a resolved AST for deleting rows where str_val is null from the
   // table.
   std::unique_ptr<ResolvedTableScan> table_scan = MakeResolvedTableScan(
-      {ResolvedColumn{1, "test_table", "int_val", Int64Type()},
-       ResolvedColumn{2, "test_table", "str_val", StringType()}},
+      {ResolvedColumn{1, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("int_val"), Int64Type()},
+       ResolvedColumn{2, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("str_val"),
+                      StringType()}},
       table(), /*for_system_time_expr=*/nullptr);
   std::vector<std::unique_ptr<ResolvedColumnRef>> resolved_column_refs;
   resolved_column_refs.push_back(MakeResolvedColumnRef(
@@ -1159,6 +1179,7 @@ TEST_F(DMLValueExprEvalTest, DMLDeleteValueExpr) {
       /*is_correlated=*/false));
   std::unique_ptr<ResolvedDeleteStmt> stmt = MakeResolvedDeleteStmt(
       std::move(table_scan), /*assert_rows_modified=*/nullptr,
+      /*returning=*/nullptr,
       /*array_offset_column=*/nullptr, /*where_expr=*/
       MakeResolvedFunctionCall(BoolType(), function("$is_null"),
                                *function("$is_null")->GetSignature(0),
@@ -1238,8 +1259,10 @@ TEST_F(DMLValueExprEvalTest, DMLDeleteValueExpr) {
   ZETASQL_ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<DMLDeleteValueExpr> expr,
       DMLDeleteValueExpr::Create(
-          stmt->table_scan()->table(), table_array_type, primary_key_type,
-          dml_output_type, stmt.get(), &stmt->table_scan()->column_list(),
+          stmt->table_scan()->table(), table_array_type,
+          /*returning_array_type=*/nullptr, primary_key_type, dml_output_type,
+          stmt.get(), &stmt->table_scan()->column_list(),
+          /*returning_column_values=*/nullptr,
           std::move(column_to_variable_mapping), std::move(resolved_scan_map),
           std::move(resolved_expr_map)));
 
@@ -1276,8 +1299,11 @@ TEST_F(DMLValueExprEvalTest, DMLUpdateValueExpr) {
   // Build a resolved AST for updating str_val from null to 'unknown' in the
   // table.
   std::unique_ptr<ResolvedTableScan> table_scan = MakeResolvedTableScan(
-      {ResolvedColumn{1, "test_table", "int_val", Int64Type()},
-       ResolvedColumn{2, "test_table", "str_val", StringType()}},
+      {ResolvedColumn{1, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("int_val"), Int64Type()},
+       ResolvedColumn{2, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("str_val"),
+                      StringType()}},
       table(), /*for_system_time_expr=*/nullptr);
   std::vector<std::unique_ptr<ResolvedUpdateItem>> update_item_list;
   update_item_list.push_back(MakeResolvedUpdateItem(
@@ -1295,7 +1321,7 @@ TEST_F(DMLValueExprEvalTest, DMLUpdateValueExpr) {
       /*is_correlated=*/false));
   std::unique_ptr<ResolvedUpdateStmt> stmt = MakeResolvedUpdateStmt(
       std::move(table_scan), /*assert_rows_modified=*/nullptr,
-      /*array_offset_column=*/nullptr,
+      /*returning=*/nullptr, /*array_offset_column=*/nullptr,
       /*where_expr=*/
       MakeResolvedFunctionCall(BoolType(), function("$is_null"),
                                *function("$is_null")->GetSignature(0),
@@ -1401,8 +1427,10 @@ TEST_F(DMLValueExprEvalTest, DMLUpdateValueExpr) {
   ZETASQL_ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<DMLUpdateValueExpr> expr,
       DMLUpdateValueExpr::Create(
-          stmt->table_scan()->table(), table_array_type, primary_key_type,
-          dml_output_type, stmt.get(), &stmt->table_scan()->column_list(),
+          stmt->table_scan()->table(), table_array_type,
+          /*returning_array_type=*/nullptr, primary_key_type, dml_output_type,
+          stmt.get(), &stmt->table_scan()->column_list(),
+          /*returning_column_values=*/nullptr,
           std::move(column_to_variable_mapping), std::move(resolved_scan_map),
           std::move(resolved_expr_map)));
 
@@ -1440,8 +1468,11 @@ TEST_F(DMLValueExprEvalTest,
   // Build a resolved AST for updating str_val from null to 'unknown' in the
   // table.
   std::unique_ptr<ResolvedTableScan> table_scan = MakeResolvedTableScan(
-      {ResolvedColumn{1, "test_table", "int_val", Int64Type()},
-       ResolvedColumn{2, "test_table", "str_val", StringType()}},
+      {ResolvedColumn{1, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("int_val"), Int64Type()},
+       ResolvedColumn{2, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("str_val"),
+                      StringType()}},
       table(), /*for_system_time_expr=*/nullptr);
   std::vector<std::unique_ptr<ResolvedUpdateItem>> update_item_list;
   update_item_list.push_back(MakeResolvedUpdateItem(
@@ -1459,7 +1490,7 @@ TEST_F(DMLValueExprEvalTest,
       /*is_correlated=*/false));
   std::unique_ptr<ResolvedUpdateStmt> stmt = MakeResolvedUpdateStmt(
       std::move(table_scan), /*assert_rows_modified=*/nullptr,
-      /*array_offset_column=*/nullptr,
+      /*returning=*/nullptr, /*array_offset_column=*/nullptr,
       /*where_expr=*/
       MakeResolvedFunctionCall(BoolType(), function("$is_null"),
                                *function("$is_null")->GetSignature(0),
@@ -1565,8 +1596,10 @@ TEST_F(DMLValueExprEvalTest,
   ZETASQL_ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<DMLUpdateValueExpr> expr,
       DMLUpdateValueExpr::Create(
-          stmt->table_scan()->table(), table_array_type, primary_key_type,
-          dml_output_type, stmt.get(), &stmt->table_scan()->column_list(),
+          stmt->table_scan()->table(), table_array_type,
+          /*returning_array_type=*/nullptr, primary_key_type, dml_output_type,
+          stmt.get(), &stmt->table_scan()->column_list(),
+          /*returning_column_values=*/nullptr,
           std::move(column_to_variable_mapping), std::move(resolved_scan_map),
           std::move(resolved_expr_map)));
 
@@ -1602,8 +1635,11 @@ TEST_F(DMLValueExprEvalTest,
   // Build a resolved AST for updating str_val from null to 'unknown' in the
   // table.
   std::unique_ptr<ResolvedTableScan> table_scan = MakeResolvedTableScan(
-      {ResolvedColumn{1, "test_table", "int_val", Int64Type()},
-       ResolvedColumn{2, "test_table", "str_val", StringType()}},
+      {ResolvedColumn{1, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("int_val"), Int64Type()},
+       ResolvedColumn{2, zetasql::IdString::MakeGlobal("test_table"),
+                      zetasql::IdString::MakeGlobal("str_val"),
+                      StringType()}},
       table(), /*for_system_time_expr=*/nullptr);
   std::vector<std::unique_ptr<ResolvedUpdateItem>> update_item_list;
   update_item_list.push_back(MakeResolvedUpdateItem(
@@ -1621,7 +1657,7 @@ TEST_F(DMLValueExprEvalTest,
       /*is_correlated=*/false));
   std::unique_ptr<ResolvedUpdateStmt> stmt = MakeResolvedUpdateStmt(
       std::move(table_scan), /*assert_rows_modified=*/nullptr,
-      /*array_offset_column=*/nullptr,
+      /*returning=*/nullptr, /*array_offset_column=*/nullptr,
       /*where_expr=*/
       MakeResolvedFunctionCall(BoolType(), function("$is_null"),
                                *function("$is_null")->GetSignature(0),
@@ -1727,8 +1763,10 @@ TEST_F(DMLValueExprEvalTest,
   ZETASQL_ASSERT_OK_AND_ASSIGN(
       std::unique_ptr<DMLUpdateValueExpr> expr,
       DMLUpdateValueExpr::Create(
-          stmt->table_scan()->table(), table_array_type, primary_key_type,
-          dml_output_type, stmt.get(), &stmt->table_scan()->column_list(),
+          stmt->table_scan()->table(), table_array_type,
+          /*returning_array_type=*/nullptr, primary_key_type, dml_output_type,
+          stmt.get(), &stmt->table_scan()->column_list(),
+          /*returning_column_values=*/nullptr,
           std::move(column_to_variable_mapping), std::move(resolved_scan_map),
           std::move(resolved_expr_map)));
 
@@ -1980,7 +2018,7 @@ class ProtoEvalTest : public ::testing::Test {
       const std::string& field_name = p.first;
       const Value& value = p.second;
       const auto descr = out->GetDescriptor()->FindFieldByName(field_name);
-      CHECK(descr != nullptr)
+      ZETASQL_CHECK(descr != nullptr)
           << "No field '" << field_name << "' in proto of type "
           << out->GetDescriptor()->full_name();
       field_and_formats.emplace_back(descr,
@@ -1995,7 +2033,7 @@ class ProtoEvalTest : public ::testing::Test {
                              MakeProtoType(out), field_and_formats),
                          std::move(arguments)));
     ZETASQL_ASSIGN_OR_RETURN(Value result, EvalExpr(*fct_op, EmptyParams()));
-    CHECK(result.type()->IsProto());
+    ZETASQL_CHECK(result.type()->IsProto());
     out->Clear();
     if (!result.is_null()) {
       EXPECT_TRUE(ParsePartialFromCord(result.ToCord(), out))
@@ -2987,7 +3025,7 @@ TEST_F(ProtoEvalTest, GetProtoFieldExprsMultipleFieldsMultipleRows) {
   // node). Evaluate all three GetProtoFieldExpr nodes on three protos to
   // ensure the ProtoFieldValueMap is used in the appropriate ways.
   for (bool use_shared_states : {false, true}) {
-    LOG(INFO) << "use_shared_states: " << use_shared_states;
+    ZETASQL_LOG(INFO) << "use_shared_states: " << use_shared_states;
     zetasql_test::KitchenSinkPB p1;
     p1.set_int64_key_1(1);
     p1.set_int64_key_2(2);

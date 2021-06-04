@@ -16,6 +16,7 @@
 
 #include "zetasql/public/functions/bitwise.h"
 
+#include <cstdint>
 #include <functional>
 #include <vector>
 
@@ -71,7 +72,7 @@ void TestBitwiseNot(bool (*fn)(T, Result*, absl::Status*),
 typedef testing::TestWithParam<QueryParamsWithResult> BitwiseNotTemplateTest;
 TEST_P(BitwiseNotTemplateTest, Testlib) {
   const QueryParamsWithResult& param = GetParam();
-  CHECK_EQ(1, param.num_params());
+  ZETASQL_CHECK_EQ(1, param.num_params());
   const Value& input = param.param(0);
   const Value& expected = param.result();
   if (input.is_null()) {  // NULLs arguments are ignored by this test.
@@ -169,7 +170,8 @@ struct BitwiseLeftShiftTraits {
   static BinaryFunc<T, int64_t, T> GetIntFunction() {
     return &BitwiseLeftShift<T>;
   }
-  static BinaryFunc<absl::string_view, int64_t, std::string> GetBytesFunction() {
+  static BinaryFunc<absl::string_view, int64_t, std::string>
+  GetBytesFunction() {
     return &BitwiseLeftShiftBytes;
   }
   static std::vector<QueryParamsWithResult> GetTests() {
@@ -182,7 +184,8 @@ struct BitwiseRightShiftTraits {
   static BinaryFunc<T, int64_t, T> GetIntFunction() {
     return &BitwiseRightShift<T>;
   }
-  static BinaryFunc<absl::string_view, int64_t, std::string> GetBytesFunction() {
+  static BinaryFunc<absl::string_view, int64_t, std::string>
+  GetBytesFunction() {
     return &BitwiseRightShiftBytes;
   }
   static std::vector<QueryParamsWithResult> GetTests() {

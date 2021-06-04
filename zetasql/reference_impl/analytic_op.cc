@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -129,7 +130,7 @@ namespace {
 // Applies the Functor to the left and the right value.
 template <template <typename> class Functor>
 Value DoOperation(const Value& left, const Value& right) {
-  DCHECK_EQ(left.type_kind(), right.type_kind());
+  ZETASQL_DCHECK_EQ(left.type_kind(), right.type_kind());
   switch (left.type_kind()) {
     case TYPE_INT32:
       return Value::Int32(
@@ -156,7 +157,7 @@ Value DoOperation(const Value& left, const Value& right) {
       return Value::Double(
           Functor<double>()(left.double_value(), right.double_value()));
     default:
-      LOG(FATAL) << left.type()->DebugString() << " not supported";
+      ZETASQL_LOG(FATAL) << left.type()->DebugString() << " not supported";
   }
 }
 
@@ -181,7 +182,7 @@ Value GetMaxValue(TypeKind type_kind) {
     case TYPE_DOUBLE:
       return Value::Double(std::numeric_limits<double>::max());
     default:
-      LOG(FATAL) << Type::TypeKindToString(type_kind, PRODUCT_INTERNAL)
+      ZETASQL_LOG(FATAL) << Type::TypeKindToString(type_kind, PRODUCT_INTERNAL)
                  << " not supported";
   }
 }
@@ -207,7 +208,7 @@ Value GetMinValue(TypeKind type_kind) {
     case TYPE_DOUBLE:
       return Value::Double(std::numeric_limits<double>::lowest());
     default:
-      LOG(FATAL) << Type::TypeKindToString(type_kind, PRODUCT_INTERNAL)
+      ZETASQL_LOG(FATAL) << Type::TypeKindToString(type_kind, PRODUCT_INTERNAL)
                  << " not supported";
   }
 }

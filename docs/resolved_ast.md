@@ -1,4 +1,8 @@
-<!-- resolved_ast.md GENERATED FROM resolved_ast.md.template -->
+<!-- resolved_ast.md GENERATED FROM
+  -- https://github.com/google/zetasql/blob/master/zetasql/resolved_ast/resolved_ast.md.template
+  -- by
+  -- https://github.com/google/zetasql/blob/master/docs/staging/dictionaries/zetasql/generate_resolved_ast.sh
+  -->
 
 # ZetaSQL Resolved AST
 
@@ -36,7 +40,13 @@ See that file for comments on specific nodes and fields.
     <a href="#ResolvedAggregateHavingModifier">ResolvedAggregateHavingModifier</a>
     <a href="#ResolvedAlterAction">ResolvedAlterAction</a>
       <a href="#ResolvedAddColumnAction">ResolvedAddColumnAction</a>
+      <a href="#ResolvedAddConstraintAction">ResolvedAddConstraintAction</a>
+      <a href="#ResolvedAlterColumnDropNotNullAction">ResolvedAlterColumnDropNotNullAction</a>
+      <a href="#ResolvedAlterColumnOptionsAction">ResolvedAlterColumnOptionsAction</a>
+      <a href="#ResolvedAlterColumnSetDataTypeAction">ResolvedAlterColumnSetDataTypeAction</a>
       <a href="#ResolvedDropColumnAction">ResolvedDropColumnAction</a>
+      <a href="#ResolvedDropConstraintAction">ResolvedDropConstraintAction</a>
+      <a href="#ResolvedDropPrimaryKeyAction">ResolvedDropPrimaryKeyAction</a>
       <a href="#ResolvedFilterUsingAction">ResolvedFilterUsingAction</a>
       <a href="#ResolvedGrantToAction">ResolvedGrantToAction</a>
       <a href="#ResolvedRenameToAction">ResolvedRenameToAction</a>
@@ -47,23 +57,26 @@ See that file for comments on specific nodes and fields.
     <a href="#ResolvedArgumentDef">ResolvedArgumentDef</a>
     <a href="#ResolvedArgumentList">ResolvedArgumentList</a>
     <a href="#ResolvedAssertRowsModified">ResolvedAssertRowsModified</a>
-    <a href="#ResolvedCheckConstraint">ResolvedCheckConstraint</a>
     <a href="#ResolvedColumnAnnotations">ResolvedColumnAnnotations</a>
     <a href="#ResolvedColumnDefinition">ResolvedColumnDefinition</a>
     <a href="#ResolvedColumnHolder">ResolvedColumnHolder</a>
     <a href="#ResolvedComputedColumn">ResolvedComputedColumn</a>
     <a href="#ResolvedConnection">ResolvedConnection</a>
+    <a href="#ResolvedConstraint">ResolvedConstraint</a>
+      <a href="#ResolvedCheckConstraint">ResolvedCheckConstraint</a>
+      <a href="#ResolvedForeignKey">ResolvedForeignKey</a>
     <a href="#ResolvedDMLValue">ResolvedDMLValue</a>
     <a href="#ResolvedDescriptor">ResolvedDescriptor</a>
     <a href="#ResolvedExecuteImmediateArgument">ResolvedExecuteImmediateArgument</a>
     <a href="#ResolvedExtendedCast">ResolvedExtendedCast</a>
     <a href="#ResolvedExtendedCastElement">ResolvedExtendedCastElement</a>
-    <a href="#ResolvedForeignKey">ResolvedForeignKey</a>
+    <a href="#ResolvedFilterFieldArg">ResolvedFilterFieldArg</a>
     <a href="#ResolvedFunctionArgument">ResolvedFunctionArgument</a>
     <a href="#ResolvedFunctionSignatureHolder">ResolvedFunctionSignatureHolder</a>
     <a href="#ResolvedGeneratedColumnInfo">ResolvedGeneratedColumnInfo</a>
     <a href="#ResolvedGroupingSet">ResolvedGroupingSet</a>
     <a href="#ResolvedIndexItem">ResolvedIndexItem</a>
+    <a href="#ResolvedInlineLambda">ResolvedInlineLambda</a>
     <a href="#ResolvedInsertRow">ResolvedInsertRow</a>
     <a href="#ResolvedMakeProtoField">ResolvedMakeProtoField</a>
     <a href="#ResolvedMergeWhen">ResolvedMergeWhen</a>
@@ -71,11 +84,15 @@ See that file for comments on specific nodes and fields.
     <a href="#ResolvedOption">ResolvedOption</a>
     <a href="#ResolvedOrderByItem">ResolvedOrderByItem</a>
     <a href="#ResolvedOutputColumn">ResolvedOutputColumn</a>
+    <a href="#ResolvedPivotColumn">ResolvedPivotColumn</a>
     <a href="#ResolvedPrimaryKey">ResolvedPrimaryKey</a>
     <a href="#ResolvedPrivilege">ResolvedPrivilege</a>
     <a href="#ResolvedReplaceFieldItem">ResolvedReplaceFieldItem</a>
+    <a href="#ResolvedReturningClause">ResolvedReturningClause</a>
     <a href="#ResolvedSetOperationItem">ResolvedSetOperationItem</a>
+    <a href="#ResolvedTableAndColumnInfo">ResolvedTableAndColumnInfo</a>
     <a href="#ResolvedUnnestItem">ResolvedUnnestItem</a>
+    <a href="#ResolvedUnpivotArg">ResolvedUnpivotArg</a>
     <a href="#ResolvedUpdateArrayItem">ResolvedUpdateArrayItem</a>
     <a href="#ResolvedUpdateItem">ResolvedUpdateItem</a>
     <a href="#ResolvedWindowFrame">ResolvedWindowFrame</a>
@@ -91,6 +108,7 @@ See that file for comments on specific nodes and fields.
     <a href="#ResolvedConstant">ResolvedConstant</a>
     <a href="#ResolvedDMLDefault">ResolvedDMLDefault</a>
     <a href="#ResolvedExpressionColumn">ResolvedExpressionColumn</a>
+    <a href="#ResolvedFilterField">ResolvedFilterField</a>
     <a href="#ResolvedFlatten">ResolvedFlatten</a>
     <a href="#ResolvedFlattenedArg">ResolvedFlattenedArg</a>
     <a href="#ResolvedFunctionCallBase">ResolvedFunctionCallBase</a>
@@ -98,6 +116,7 @@ See that file for comments on specific nodes and fields.
       <a href="#ResolvedNonScalarFunctionCallBase">ResolvedNonScalarFunctionCallBase</a>
         <a href="#ResolvedAggregateFunctionCall">ResolvedAggregateFunctionCall</a>
         <a href="#ResolvedAnalyticFunctionCall">ResolvedAnalyticFunctionCall</a>
+    <a href="#ResolvedGetJsonField">ResolvedGetJsonField</a>
     <a href="#ResolvedGetProtoField">ResolvedGetProtoField</a>
     <a href="#ResolvedGetStructField">ResolvedGetStructField</a>
     <a href="#ResolvedLiteral">ResolvedLiteral</a>
@@ -110,12 +129,15 @@ See that file for comments on specific nodes and fields.
   <a href="#ResolvedScan">ResolvedScan</a>
     <a href="#ResolvedAggregateScanBase">ResolvedAggregateScanBase</a>
       <a href="#ResolvedAggregateScan">ResolvedAggregateScan</a>
+      <a href="#ResolvedAnonymizedAggregateScan">ResolvedAnonymizedAggregateScan</a>
     <a href="#ResolvedAnalyticScan">ResolvedAnalyticScan</a>
     <a href="#ResolvedArrayScan">ResolvedArrayScan</a>
     <a href="#ResolvedFilterScan">ResolvedFilterScan</a>
+    <a href="#ResolvedGroupRowsScan">ResolvedGroupRowsScan</a>
     <a href="#ResolvedJoinScan">ResolvedJoinScan</a>
     <a href="#ResolvedLimitOffsetScan">ResolvedLimitOffsetScan</a>
     <a href="#ResolvedOrderByScan">ResolvedOrderByScan</a>
+    <a href="#ResolvedPivotScan">ResolvedPivotScan</a>
     <a href="#ResolvedProjectScan">ResolvedProjectScan</a>
     <a href="#ResolvedRecursiveRefScan">ResolvedRecursiveRefScan</a>
     <a href="#ResolvedRecursiveScan">ResolvedRecursiveScan</a>
@@ -125,6 +147,7 @@ See that file for comments on specific nodes and fields.
     <a href="#ResolvedSingleRowScan">ResolvedSingleRowScan</a>
     <a href="#ResolvedTVFScan">ResolvedTVFScan</a>
     <a href="#ResolvedTableScan">ResolvedTableScan</a>
+    <a href="#ResolvedUnpivotScan">ResolvedUnpivotScan</a>
     <a href="#ResolvedWithRefScan">ResolvedWithRefScan</a>
     <a href="#ResolvedWithScan">ResolvedWithScan</a>
   <a href="#ResolvedStatement">ResolvedStatement</a>
@@ -135,13 +158,16 @@ See that file for comments on specific nodes and fields.
       <a href="#ResolvedAlterEntityStmt">ResolvedAlterEntityStmt</a>
       <a href="#ResolvedAlterMaterializedViewStmt">ResolvedAlterMaterializedViewStmt</a>
       <a href="#ResolvedAlterRowAccessPolicyStmt">ResolvedAlterRowAccessPolicyStmt</a>
+      <a href="#ResolvedAlterSchemaStmt">ResolvedAlterSchemaStmt</a>
       <a href="#ResolvedAlterTableStmt">ResolvedAlterTableStmt</a>
       <a href="#ResolvedAlterViewStmt">ResolvedAlterViewStmt</a>
     <a href="#ResolvedAlterTableSetOptionsStmt">ResolvedAlterTableSetOptionsStmt</a>
+    <a href="#ResolvedAnalyzeStmt">ResolvedAnalyzeStmt</a>
     <a href="#ResolvedAssertStmt">ResolvedAssertStmt</a>
     <a href="#ResolvedAssignmentStmt">ResolvedAssignmentStmt</a>
     <a href="#ResolvedBeginStmt">ResolvedBeginStmt</a>
     <a href="#ResolvedCallStmt">ResolvedCallStmt</a>
+    <a href="#ResolvedCloneDataStmt">ResolvedCloneDataStmt</a>
     <a href="#ResolvedCommitStmt">ResolvedCommitStmt</a>
     <a href="#ResolvedCreateDatabaseStmt">ResolvedCreateDatabaseStmt</a>
     <a href="#ResolvedCreateRowAccessPolicyStmt">ResolvedCreateRowAccessPolicyStmt</a>
@@ -153,6 +179,7 @@ See that file for comments on specific nodes and fields.
       <a href="#ResolvedCreateModelStmt">ResolvedCreateModelStmt</a>
       <a href="#ResolvedCreateProcedureStmt">ResolvedCreateProcedureStmt</a>
       <a href="#ResolvedCreateSchemaStmt">ResolvedCreateSchemaStmt</a>
+      <a href="#ResolvedCreateSnapshotTableStmt">ResolvedCreateSnapshotTableStmt</a>
       <a href="#ResolvedCreateTableFunctionStmt">ResolvedCreateTableFunctionStmt</a>
       <a href="#ResolvedCreateTableStmtBase">ResolvedCreateTableStmtBase</a>
         <a href="#ResolvedCreateExternalTableStmt">ResolvedCreateExternalTableStmt</a>
@@ -167,7 +194,10 @@ See that file for comments on specific nodes and fields.
     <a href="#ResolvedDropFunctionStmt">ResolvedDropFunctionStmt</a>
     <a href="#ResolvedDropMaterializedViewStmt">ResolvedDropMaterializedViewStmt</a>
     <a href="#ResolvedDropRowAccessPolicyStmt">ResolvedDropRowAccessPolicyStmt</a>
+    <a href="#ResolvedDropSearchIndexStmt">ResolvedDropSearchIndexStmt</a>
+    <a href="#ResolvedDropSnapshotTableStmt">ResolvedDropSnapshotTableStmt</a>
     <a href="#ResolvedDropStmt">ResolvedDropStmt</a>
+    <a href="#ResolvedDropTableFunctionStmt">ResolvedDropTableFunctionStmt</a>
     <a href="#ResolvedExecuteImmediateStmt">ResolvedExecuteImmediateStmt</a>
     <a href="#ResolvedExplainStmt">ResolvedExplainStmt</a>
     <a href="#ResolvedExportDataStmt">ResolvedExportDataStmt</a>
@@ -196,7 +226,8 @@ NOTE: This documentation includes only the public field accessors. It excludes
 constructors, setters, and boilerplate implementation of virtual methods from
 the base class.
 
-### ResolvedArgument{ #ResolvedArgument }
+### ResolvedArgument
+<a id="ResolvedArgument"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Argument nodes are not self-contained nodes in the tree.  They exist
@@ -207,17 +238,25 @@ class ResolvedArgument : public <a href="#ResolvedNode">ResolvedNode</a> {
 };
 </code></pre></p>
 
-### ResolvedExpr{ #ResolvedExpr }
+### ResolvedExpr
+<a id="ResolvedExpr"></a>
 
 <p><pre><code class="lang-c++">
 class ResolvedExpr : public <a href="#ResolvedNode">ResolvedNode</a> {
   bool IsExpression() const final { return true; }
 
+  AnnotatedType annotated_type() const {
+    return {type(), type_annotation_map()};
+  }
+
   const Type* type() const;
+
+  const AnnotationMap* type_annotation_map() const;
 };
 </code></pre></p>
 
-### ResolvedLiteral{ #ResolvedLiteral }
+### ResolvedLiteral
+<a id="ResolvedLiteral"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Any literal value, including NULL literals.
@@ -228,41 +267,47 @@ class ResolvedLiteral : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 
   const Value&amp; value() const;
 
- <font color="brown">  // If true, then the literal is explicitly typed and cannot be used
+<font color="brown">  // If true, then the literal is explicitly typed and cannot be used
   // for literal coercions.
   //
   // This exists mainly for resolver bookkeeping and should be ignored
   // by engines.</font>
   bool has_explicit_type() const;
 
- <font color="brown">  // Distinct ID of the literal, if it is a floating point value,
+<font color="brown">  // Distinct ID of the literal, if it is a floating point value,
   // within the resolved AST. When coercing from floating point
   // to NUMERIC, the resolver uses the float_literal_id to find the
   // original image of the literal to avoid precision loss. An ID of 0
   // represents a literal without a cached image.</font>
   int float_literal_id() const;
+
+<font color="brown">  // Indicates whether ReplaceLiteralsByParameters() should leave
+  // this literal value in place, rather than replace it with a query
+  // parameter.</font>
+  bool preserve_in_literal_remover() const;
 };
 </code></pre></p>
 
-### ResolvedParameter{ #ResolvedParameter }
+### ResolvedParameter
+<a id="ResolvedParameter"></a>
 
 <p><pre><code class="lang-c++">
 class ResolvedParameter : public <a href="#ResolvedExpr">ResolvedExpr</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_PARAMETER;
 
- <font color="brown">  // If non-empty, the name of the parameter.
+<font color="brown">  // If non-empty, the name of the parameter.
   //
   // A ResolvedParameter will have either a name or a position but not
   // both.</font>
   const std::string&amp; name() const;
 
- <font color="brown">  // If non-zero, the 1-based position of the positional parameter.
+<font color="brown">  // If non-zero, the 1-based position of the positional parameter.
   //
   // A ResolvedParameter will have either a name or a position but not
   // both.</font>
   int position() const;
 
- <font color="brown">  // If true, then the parameter has no specified type.
+<font color="brown">  // If true, then the parameter has no specified type.
   //
   // This exists mainly for resolver bookkeeping and should be ignored
   // by engines.</font>
@@ -270,7 +315,8 @@ class ResolvedParameter : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedExpressionColumn{ #ResolvedExpressionColumn }
+### ResolvedExpressionColumn
+<a id="ResolvedExpressionColumn"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents a column when analyzing a standalone expression.
@@ -285,7 +331,8 @@ class ResolvedExpressionColumn : public <a href="#ResolvedExpr">ResolvedExpr</a>
 };
 </code></pre></p>
 
-### ResolvedColumnRef{ #ResolvedColumnRef }
+### ResolvedColumnRef
+<a id="ResolvedColumnRef"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// An expression referencing the value of some column visible in the
@@ -308,45 +355,172 @@ class ResolvedColumnRef : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedConstant{ #ResolvedConstant }
+### ResolvedConstant
+<a id="ResolvedConstant"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A reference to a named constant.</font>
 class ResolvedConstant : public <a href="#ResolvedExpr">ResolvedExpr</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_CONSTANT;
 
- <font color="brown">  // The matching Constant from the Catalog.</font>
+<font color="brown">  // The matching Constant from the Catalog.</font>
   const Constant* constant() const;
 };
 </code></pre></p>
 
-### ResolvedSystemVariable{ #ResolvedSystemVariable }
+### ResolvedSystemVariable
+<a id="ResolvedSystemVariable"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A reference to a system variable.</font>
 class ResolvedSystemVariable : public <a href="#ResolvedExpr">ResolvedExpr</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_SYSTEM_VARIABLE;
 
- <font color="brown">  // Path to system variable.</font>
+<font color="brown">  // Path to system variable.</font>
   const std::vector&lt;std::string&gt;&amp; name_path() const;
   int name_path_size() const;
   std::string name_path(int i) const;
 };
 </code></pre></p>
 
-### ResolvedFunctionCallBase{ #ResolvedFunctionCallBase }
+### ResolvedInlineLambda
+<a id="ResolvedInlineLambda"></a>
 
 <p><pre><code class="lang-c++">
-<font color="brown">// Common base class for scalar and aggregate function calls.</font>
+<font color="brown">// A lambda expression, used inline as a function argument.
+// This represents both the definition of the lambda and the resolution of
+// its templated signature and body for this function call.
+// Currently can only be used as an argument of a function.
+//
+// &lt;argument_list&gt; defines the argument types and names for the lambda, and
+// creates new ResolvedColumns which can be used to reference the arguments
+// inside &lt;body&gt;.
+//
+// The return type of the lambda function is the type of &lt;body&gt;.
+//
+// In addition to the &lt;argument_list&gt;, the body of a lambda expression can
+// reference columns visible to the scope of the function call for which this
+// lambda is provided as an argument. Columns in this scope accessed by the
+// body are stored in &lt;parameter_list&gt;.
+//
+// For example, the following query
+//   SELECT ARRAY_FILTER([1,2,3], e -&gt; e = key) FROM KeyValue;
+// would have a lambda with &lt;parameter_list&gt; [&#39;key&#39;] and &lt;argument_list&gt;
+// [&#39;e&#39;].
+//
+// &lt;body&gt; is the body expression of the lambda. The expression can only
+// reference columns in &lt;parameter_list&gt; and &lt;argument_list&gt;.</font>
+class ResolvedInlineLambda : public <a href="#ResolvedArgument">ResolvedArgument</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_INLINE_LAMBDA;
+
+  const std::vector&lt;<a href="#ResolvedColumn">ResolvedColumn</a>&gt;&amp; argument_list() const;
+  int argument_list_size() const;
+  <a href="#ResolvedColumn">ResolvedColumn</a> argument_list(int i) const;
+
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedColumnRef">ResolvedColumnRef</a>&gt;&gt;&amp; parameter_list() const;
+  int parameter_list_size() const;
+  const <a href="#ResolvedColumnRef">ResolvedColumnRef</a>* parameter_list(int i) const;
+
+  const <a href="#ResolvedExpr">ResolvedExpr</a>* body() const;
+};
+</code></pre></p>
+
+### ResolvedFilterFieldArg
+<a id="ResolvedFilterFieldArg"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// An argument to the FILTER_FIELDS() function which specifies a sign to show
+// inclusion/exclusion status and a field path to include or exclude.</font>
+class ResolvedFilterFieldArg : public <a href="#ResolvedArgument">ResolvedArgument</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_FILTER_FIELD_ARG;
+
+<font color="brown">  // True if we want to include this proto path in the resulting proto
+  // (though we may still remove paths below it).
+  // If False, we will remove this path (but may still include paths
+  // below it).</font>
+  bool include() const;
+
+<font color="brown">  // A vector of FieldDescriptors that denotes the path to a proto
+  // field that will be include or exclude.</font>
+  const std::vector&lt;const google::protobuf::FieldDescriptor*&gt;&amp; field_descriptor_path() const;
+  int field_descriptor_path_size() const;
+  const google::protobuf::FieldDescriptor* field_descriptor_path(int i) const;
+};
+</code></pre></p>
+
+### ResolvedFilterField
+<a id="ResolvedFilterField"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// Represents a call to the FILTER_FIELDS() function. This function can be
+// used to modify a proto, prune fields and output the resulting proto. The
+// SQL syntax for this function is
+//   FILTER_FIELDS(&lt;expr&gt;, &lt;filter_field_arg_list&gt;).
+//
+// &lt;expr&gt; must have proto type. &lt;filter_field_arg&gt; contains a sign (&#39;+&#39; or
+// &#39;-&#39;) and a field path starting from the proto.
+//
+// For example:
+//   FILTER_FIELDS(proto, +field1, -field1.field2)
+// means the resulting proto only contains field1.* except field1.field2.*.
+//
+// Field paths are evaluated and processed in order,
+// ```
+//   IF filter_field_arg_list[0].include:
+//     CLEAR all fields
+//   FOR filter_field_arg IN filter_field_arg_list:
+//     IF filter_field_arg.include:
+//       UNCLEAR filter_field_arg.field_descriptor_path (and all children)
+//     ELSE:
+//       CLEAR filter_field_arg.field_descriptor_path (and all children)
+// ```
+//
+// The order of field_field args have following constraints:
+// 1. There must be at least one filter_field arg.
+// 2. Args for ancestor fields must precede descendants.
+// 3. Each arg must have opposite `include` compared to the last preceding
+//    ancestor field.
+//
+// See (broken link) for more detail.</font>
+class ResolvedFilterField : public <a href="#ResolvedExpr">ResolvedExpr</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_FILTER_FIELD;
+
+<font color="brown">  // The proto to modify.</font>
+  const <a href="#ResolvedExpr">ResolvedExpr</a>* expr() const;
+
+<font color="brown">  // The list of field paths to include or exclude. The path starts
+  // from the proto type of &lt;expr&gt;.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedFilterFieldArg">ResolvedFilterFieldArg</a>&gt;&gt;&amp; filter_field_arg_list() const;
+  int filter_field_arg_list_size() const;
+  const <a href="#ResolvedFilterFieldArg">ResolvedFilterFieldArg</a>* filter_field_arg_list(int i) const;
+};
+</code></pre></p>
+
+### ResolvedFunctionCallBase
+<a id="ResolvedFunctionCallBase"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// Common base class for scalar and aggregate function calls.
+//
+// &lt;argument_list&gt; contains a list of arguments of type ResolvedExpr.
+//
+// &lt;generic_argument_list&gt; contains an alternative list of generic arguments.
+// This is used for function calls that accept non-expression arguments (i.e.
+// arguments that aren&#39;t part of the type system, like lambdas).
+//
+// If all arguments of this function call are ResolvedExprs, &lt;argument_list&gt;
+// is used. If any of the argument is not a ResolvedExpr,
+// &lt;generic_argument_list&gt; will be used. Only one of &lt;argument_list&gt; or
+// &lt;generic_argument_list&gt; can be non-empty.</font>
 class ResolvedFunctionCallBase : public <a href="#ResolvedExpr">ResolvedExpr</a> {
   typedef ResolvedFunctionCallBaseEnums::ErrorMode ErrorMode;
   static const ErrorMode DEFAULT_ERROR_MODE = ResolvedFunctionCallBaseEnums::DEFAULT_ERROR_MODE;
   static const ErrorMode SAFE_ERROR_MODE = ResolvedFunctionCallBaseEnums::SAFE_ERROR_MODE;
 
- <font color="brown">  // The matching Function from the Catalog.</font>
+<font color="brown">  // The matching Function from the Catalog.</font>
   const Function* function() const;
 
- <font color="brown">  // The concrete FunctionSignature reflecting the matching Function
+<font color="brown">  // The concrete FunctionSignature reflecting the matching Function
   // signature and the function&#39;s resolved input &lt;argument_list&gt;.
   // The function has the mode AGGREGATE iff it is an aggregate
   // function, in which case this node must be either
@@ -357,15 +531,25 @@ class ResolvedFunctionCallBase : public <a href="#ResolvedExpr">ResolvedExpr</a>
   int argument_list_size() const;
   const <a href="#ResolvedExpr">ResolvedExpr</a>* argument_list(int i) const;
 
- <font color="brown">  // If error_mode=SAFE_ERROR_MODE, and if this function call returns a
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedFunctionArgument">ResolvedFunctionArgument</a>&gt;&gt;&amp; generic_argument_list() const;
+  int generic_argument_list_size() const;
+  const <a href="#ResolvedFunctionArgument">ResolvedFunctionArgument</a>* generic_argument_list(int i) const;
+
+<font color="brown">  // If error_mode=SAFE_ERROR_MODE, and if this function call returns a
   // semantic error (based on input data, not transient server
   // problems), return NULL instead of an error. This is used for
   // functions called using SAFE, as in SAFE.FUNCTION(...).</font>
   ErrorMode error_mode() const;
+
+<font color="brown">  // Function call hints.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; hint_list() const;
+  int hint_list_size() const;
+  const <a href="#ResolvedOption">ResolvedOption</a>* hint_list(int i) const;
 };
 </code></pre></p>
 
-### ResolvedFunctionCall{ #ResolvedFunctionCall }
+### ResolvedFunctionCall
+<a id="ResolvedFunctionCall"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A regular function call.  The signature will always have mode SCALAR.
@@ -373,7 +557,7 @@ class ResolvedFunctionCallBase : public <a href="#ResolvedExpr">ResolvedExpr</a>
 class ResolvedFunctionCall : public <a href="#ResolvedFunctionCallBase">ResolvedFunctionCallBase</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_FUNCTION_CALL;
 
- <font color="brown">  // This contains optional custom information about a particular
+<font color="brown">  // This contains optional custom information about a particular
   // function call.
   //
   // If some Function subclass requires computing additional
@@ -389,7 +573,8 @@ class ResolvedFunctionCall : public <a href="#ResolvedFunctionCallBase">Resolved
 };
 </code></pre></p>
 
-### ResolvedNonScalarFunctionCallBase{ #ResolvedNonScalarFunctionCallBase }
+### ResolvedNonScalarFunctionCallBase
+<a id="ResolvedNonScalarFunctionCallBase"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Common base class for scalar and aggregate function calls.</font>
@@ -399,17 +584,50 @@ class ResolvedNonScalarFunctionCallBase : public <a href="#ResolvedFunctionCallB
   static const NullHandlingModifier IGNORE_NULLS = ResolvedNonScalarFunctionCallBaseEnums::IGNORE_NULLS;
   static const NullHandlingModifier RESPECT_NULLS = ResolvedNonScalarFunctionCallBaseEnums::RESPECT_NULLS;
 
- <font color="brown">  // Apply DISTINCT to the stream of input values before calling
+<font color="brown">  // Apply DISTINCT to the stream of input values before calling
   // function.</font>
   bool distinct() const;
 
- <font color="brown">  // Apply IGNORE/RESPECT NULLS filtering to the stream of input
+<font color="brown">  // Apply IGNORE/RESPECT NULLS filtering to the stream of input
   // values.</font>
   NullHandlingModifier null_handling_modifier() const;
+
+<font color="brown">  // Holds a table subquery defined in WITH GROUP_ROWS(...) that is
+  // evaluated over the input rows of a ResolvedAggregateScan
+  // corresponding to the current group. The function itself is
+  // evaluated over the rows returned from the subquery.
+  //
+  // The subquery should refer to a special TVF GROUP_ROWS(), which
+  // resolves as ResolvedGroupRowsScan. The subquery will be run for
+  // each group produced by ResolvedAggregateScan.
+  //
+  // GROUP_ROWS() produces a row for each source row in the
+  // ResolvedAggregateScan&#39;s input that matches current group.
+  //
+  // The subquery cannot reference any ResolvedColumns from the outer
+  // query except what comes in via &lt;with_group_rows_parameter_list&gt;,
+  // and GROUP_ROWS().
+  //
+  // The subquery can return more than one column, and these columns
+  // can be referenced by the function.
+  //
+  // The subquery can be correlated. In this case the
+  // &lt;with_group_rows_parameter_list&gt; gives the set of ResolvedColumns
+  // from outside the subquery that are used inside. The subuery cannot
+  // refer to correlated columns that are used as aggregation input in
+  // the immediate outer query. The same rules apply to
+  // &lt;with_group_rows_parameter_list&gt; as in ResolvedSubqueryExpr.</font>
+  const <a href="#ResolvedScan">ResolvedScan</a>* with_group_rows_subquery() const;
+
+<font color="brown">  // Correlated parameters to &lt;with_group_rows_subquery&gt;</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedColumnRef">ResolvedColumnRef</a>&gt;&gt;&amp; with_group_rows_parameter_list() const;
+  int with_group_rows_parameter_list_size() const;
+  const <a href="#ResolvedColumnRef">ResolvedColumnRef</a>* with_group_rows_parameter_list(int i) const;
 };
 </code></pre></p>
 
-### ResolvedAggregateFunctionCall{ #ResolvedAggregateFunctionCall }
+### ResolvedAggregateFunctionCall
+<a id="ResolvedAggregateFunctionCall"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// An aggregate function call.  The signature always has mode AGGREGATE.
@@ -418,10 +636,10 @@ class ResolvedNonScalarFunctionCallBase : public <a href="#ResolvedFunctionCallB
 class ResolvedAggregateFunctionCall : public <a href="#ResolvedNonScalarFunctionCallBase">ResolvedNonScalarFunctionCallBase</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_AGGREGATE_FUNCTION_CALL;
 
- <font color="brown">  // Apply HAVING MAX/MIN filtering to the stream of input values.</font>
+<font color="brown">  // Apply HAVING MAX/MIN filtering to the stream of input values.</font>
   const <a href="#ResolvedAggregateHavingModifier">ResolvedAggregateHavingModifier</a>* having_modifier() const;
 
- <font color="brown">  // Apply ordering to the stream of input values before calling
+<font color="brown">  // Apply ordering to the stream of input values before calling
   // function.</font>
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOrderByItem">ResolvedOrderByItem</a>&gt;&gt;&amp; order_by_item_list() const;
   int order_by_item_list_size() const;
@@ -429,7 +647,7 @@ class ResolvedAggregateFunctionCall : public <a href="#ResolvedNonScalarFunction
 
   const <a href="#ResolvedExpr">ResolvedExpr</a>* limit() const;
 
- <font color="brown">  // This contains optional custom information about a particular
+<font color="brown">  // This contains optional custom information about a particular
   // function call. Functions may introduce subclasses of this class to
   // add custom information as needed on a per-function basis.
   //
@@ -445,7 +663,8 @@ class ResolvedAggregateFunctionCall : public <a href="#ResolvedNonScalarFunction
 };
 </code></pre></p>
 
-### ResolvedAnalyticFunctionCall{ #ResolvedAnalyticFunctionCall }
+### ResolvedAnalyticFunctionCall
+<a id="ResolvedAnalyticFunctionCall"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// An analytic function call. The mode of the function is either AGGREGATE
@@ -461,7 +680,8 @@ class ResolvedAnalyticFunctionCall : public <a href="#ResolvedNonScalarFunctionC
 };
 </code></pre></p>
 
-### ResolvedExtendedCastElement{ #ResolvedExtendedCastElement }
+### ResolvedExtendedCastElement
+<a id="ResolvedExtendedCastElement"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Describes a leaf extended cast of ResolvedExtendedCast. See the comment
@@ -477,7 +697,8 @@ class ResolvedExtendedCastElement : public <a href="#ResolvedArgument">ResolvedA
 };
 </code></pre></p>
 
-### ResolvedExtendedCast{ #ResolvedExtendedCast }
+### ResolvedExtendedCast
+<a id="ResolvedExtendedCast"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Describes overall cast operation between two values where at least one
@@ -485,7 +706,7 @@ class ResolvedExtendedCastElement : public <a href="#ResolvedArgument">ResolvedA
 class ResolvedExtendedCast : public <a href="#ResolvedArgument">ResolvedArgument</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_EXTENDED_CAST;
 
- <font color="brown">  // Stores the list of leaf extended casts required as elements of
+<font color="brown">  // Stores the list of leaf extended casts required as elements of
   // this cast.  Each element is a cast where at least one of the input
   // or output is an extended type. For structs or arrays, the elements
   // will be casts for the field or element types. For structs, there
@@ -497,7 +718,8 @@ class ResolvedExtendedCast : public <a href="#ResolvedArgument">ResolvedArgument
 };
 </code></pre></p>
 
-### ResolvedCast{ #ResolvedCast }
+### ResolvedCast
+<a id="ResolvedCast"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A cast expression, casting the result of an input expression to the
@@ -511,18 +733,44 @@ class ResolvedCast : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 
   const <a href="#ResolvedExpr">ResolvedExpr</a>* expr() const;
 
- <font color="brown">  // Whether to return NULL if the cast fails. This is set to true for
+<font color="brown">  // Whether to return NULL if the cast fails. This is set to true for
   // SAFE_CAST.</font>
   bool return_null_on_error() const;
 
- <font color="brown">  // If at least one of types involved in this cast is or contains an
+<font color="brown">  // If at least one of types involved in this cast is or contains an
   // extended (TYPE_EXTENDED) type, this field contains information
   // necessary to execute this cast.</font>
   const <a href="#ResolvedExtendedCast">ResolvedExtendedCast</a>* extended_cast() const;
+
+<font color="brown">  // The format string specified by the optional FORMAT clause. It is
+  // nullptr when the clause does not exist.</font>
+  const <a href="#ResolvedExpr">ResolvedExpr</a>* format() const;
+
+<font color="brown">  // The time zone expression by the optional AT TIME ZONE clause. It
+  // is nullptr when the clause does not exist.</font>
+  const <a href="#ResolvedExpr">ResolvedExpr</a>* time_zone() const;
+
+<font color="brown">  // Contains the TypeParametersProto, which stores the type parameters
+  // if specified in a cast. If there are no type parameters, this
+  // proto will be empty.
+  //
+  // If type parameters are specified, the result of the cast should
+  // conform to the type parameters. Engines are expected to enforce
+  // type parameter constraints by erroring out or truncating the cast
+  // result, depending on the output type.
+  //
+  // For example:
+  //   CAST(&#34;ABC&#34; as STRING(2)) should error out
+  //   CAST(1234 as NUMERIC(2)) should error out
+  //   CAST(1.234 as NUMERIC(2,1)) should return a NumericValue of 1.2
+  //
+  // See (broken link) for more details.</font>
+  const TypeParameters&amp; type_parameters() const;
 };
 </code></pre></p>
 
-### ResolvedMakeStruct{ #ResolvedMakeStruct }
+### ResolvedMakeStruct
+<a id="ResolvedMakeStruct"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Construct a struct value.  &lt;type&gt; is always a StructType.
@@ -537,7 +785,8 @@ class ResolvedMakeStruct : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedMakeProto{ #ResolvedMakeProto }
+### ResolvedMakeProto
+<a id="ResolvedMakeProto"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Construct a proto value.  &lt;type&gt; is always a ProtoType.
@@ -552,7 +801,8 @@ class ResolvedMakeProto : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedMakeProtoField{ #ResolvedMakeProtoField }
+### ResolvedMakeProtoField
+<a id="ResolvedMakeProtoField"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// One field assignment in a ResolvedMakeProto expression.
@@ -568,7 +818,7 @@ class ResolvedMakeProtoField : public <a href="#ResolvedArgument">ResolvedArgume
 
   const google::protobuf::FieldDescriptor* field_descriptor() const;
 
- <font color="brown">  // Provides the Format annotation that should be used when building
+<font color="brown">  // Provides the Format annotation that should be used when building
   // this field.  The annotation specifies both the ZetaSQL type and
   // the encoding format for this field.</font>
   FieldFormat::Format format() const;
@@ -577,7 +827,8 @@ class ResolvedMakeProtoField : public <a href="#ResolvedArgument">ResolvedArgume
 };
 </code></pre></p>
 
-### ResolvedGetStructField{ #ResolvedGetStructField }
+### ResolvedGetStructField
+<a id="ResolvedGetStructField"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Get the field in position &lt;field_idx&gt; (0-based) from &lt;expr&gt;, which has a
@@ -591,7 +842,8 @@ class ResolvedGetStructField : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedGetProtoField{ #ResolvedGetProtoField }
+### ResolvedGetProtoField
+<a id="ResolvedGetProtoField"></a>
 
 <p><pre><code class="lang-c++">
 class ResolvedGetProtoField : public <a href="#ResolvedExpr">ResolvedExpr</a> {
@@ -599,7 +851,7 @@ class ResolvedGetProtoField : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 
   const <a href="#ResolvedExpr">ResolvedExpr</a>* expr() const;
 
- <font color="brown">  // The proto2 FieldDescriptor to extract.  This provides the tag
+<font color="brown">  // The proto2 FieldDescriptor to extract.  This provides the tag
   // number and wire type.  Additional decoding may be necessary if any
   // of the other modifiers below are set.  Consumers should use those
   // ZetaSQL-computed modifiers rather than examining field
@@ -615,7 +867,7 @@ class ResolvedGetProtoField : public <a href="#ResolvedExpr">ResolvedExpr</a> {
   // field is required and not present, an error should result.</font>
   const google::protobuf::FieldDescriptor* field_descriptor() const;
 
- <font color="brown">  // Default value to use when the proto field is not set. The default
+<font color="brown">  // Default value to use when the proto field is not set. The default
   // may be NULL (e.g. for proto2 fields with a use_defaults=false
   // annotation).
   //
@@ -633,20 +885,20 @@ class ResolvedGetProtoField : public <a href="#ResolvedExpr">ResolvedExpr</a> {
   // using it.</font>
   const Value&amp; default_value() const;
 
- <font color="brown">  // Indicates whether to return a bool indicating if a value was
+<font color="brown">  // Indicates whether to return a bool indicating if a value was
   // present, rather than return the value (or NULL). Never set for
   // repeated fields. This field cannot be set if
   // &lt;return_default_value_when_unset&gt; is true, and vice versa.
   // Expression type will be BOOL.</font>
   bool get_has_bit() const;
 
- <font color="brown">  // Provides the Format annotation that should be used when reading
+<font color="brown">  // Provides the Format annotation that should be used when reading
   // this field.  The annotation specifies both the ZetaSQL type and
   // the encoding format for this field. This cannot be set when
   // get_has_bit is true.</font>
   FieldFormat::Format format() const;
 
- <font color="brown">  // Indicates that the default value should be returned if &lt;expr&gt;
+<font color="brown">  // Indicates that the default value should be returned if &lt;expr&gt;
   // (the parent message) is NULL.  Note that this does *not* affect
   // the return value when the extracted field itself is unset, in
   // which case the return value depends on the extracted field&#39;s
@@ -660,7 +912,22 @@ class ResolvedGetProtoField : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedFlatten{ #ResolvedFlatten }
+### ResolvedGetJsonField
+<a id="ResolvedGetJsonField"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// Get the field &lt;field_name&gt; from &lt;expr&gt;, which has a JSON type.</font>
+class ResolvedGetJsonField : public <a href="#ResolvedExpr">ResolvedExpr</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_GET_JSON_FIELD;
+
+  const <a href="#ResolvedExpr">ResolvedExpr</a>* expr() const;
+
+  const std::string&amp; field_name() const;
+};
+</code></pre></p>
+
+### ResolvedFlatten
+<a id="ResolvedFlatten"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Constructs an initial input ARRAY&lt;T&gt; from expr. For each get_field_list
@@ -677,18 +944,22 @@ class ResolvedFlatten : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 
   const <a href="#ResolvedExpr">ResolvedExpr</a>* expr() const;
 
- <font color="brown">  // List of &#39;get&#39; fields to evaluate in order (0 or more struct get
-  // fields followed by 0 or more proto get fields) starting from expr.
-  // Each get is evaluated N times where N is the number of array
-  // elements from the previous get (or expr for the first expression)
-  // generated.</font>
+<font color="brown">  // List of &#39;get&#39; fields to evaluate in order (0 or more struct get
+  // fields followed by 0 or more proto or json get fields) starting
+  // from expr. Each get is evaluated N times where N is the number of
+  // array elements from the previous get (or expr for the first
+  // expression) generated.
+  //
+  // The &#39;get&#39; fields may either be a ResolvedGet*Field or an array
+  // offset function around a ResolvedGet*Field.</font>
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedExpr">ResolvedExpr</a>&gt;&gt;&amp; get_field_list() const;
   int get_field_list_size() const;
   const <a href="#ResolvedExpr">ResolvedExpr</a>* get_field_list(int i) const;
 };
 </code></pre></p>
 
-### ResolvedFlattenedArg{ #ResolvedFlattenedArg }
+### ResolvedFlattenedArg
+<a id="ResolvedFlattenedArg"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Argument for a child of ResolvedFlatten. This is a placeholder to indicate
@@ -700,7 +971,8 @@ class ResolvedFlattenedArg : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedReplaceFieldItem{ #ResolvedReplaceFieldItem }
+### ResolvedReplaceFieldItem
+<a id="ResolvedReplaceFieldItem"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// An argument to the REPLACE_FIELDS() function which specifies a field path
@@ -724,7 +996,7 @@ class ResolvedFlattenedArg : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 class ResolvedReplaceFieldItem : public <a href="#ResolvedArgument">ResolvedArgument</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_REPLACE_FIELD_ITEM;
 
- <font color="brown">  // The value that the final field in &lt;proto_field_path&gt; will be set
+<font color="brown">  // The value that the final field in &lt;proto_field_path&gt; will be set
   // to.
   //
   // If &lt;expr&gt; is NULL, the field will be unset. If &lt;proto_field_path&gt;
@@ -732,7 +1004,7 @@ class ResolvedReplaceFieldItem : public <a href="#ResolvedArgument">ResolvedArgu
   // to NULL.</font>
   const <a href="#ResolvedExpr">ResolvedExpr</a>* expr() const;
 
- <font color="brown">  // A vector of integers that denotes the path to a struct field that
+<font color="brown">  // A vector of integers that denotes the path to a struct field that
   // will be modified. The integer values in this vector correspond to
   // field positions (0-based) in a STRUCT. If &lt;proto_field_path&gt;
   // is also non-empty, then the field corresponding to the last index
@@ -741,7 +1013,7 @@ class ResolvedReplaceFieldItem : public <a href="#ResolvedArgument">ResolvedArgu
   int struct_index_path_size() const;
   int struct_index_path(int i) const;
 
- <font color="brown">  // A vector of FieldDescriptors that denotes the path to a proto
+<font color="brown">  // A vector of FieldDescriptors that denotes the path to a proto
   // field that will be modified. If &lt;struct_index_path&gt; is also
   // non-empty, then the first element in this vector should be a
   // subfield of the proto corresponding to the last element in
@@ -752,7 +1024,8 @@ class ResolvedReplaceFieldItem : public <a href="#ResolvedArgument">ResolvedArgu
 };
 </code></pre></p>
 
-### ResolvedReplaceField{ #ResolvedReplaceField }
+### ResolvedReplaceField
+<a id="ResolvedReplaceField"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Represents a call to the REPLACE_FIELDS() function. This function
@@ -764,10 +1037,10 @@ class ResolvedReplaceFieldItem : public <a href="#ResolvedArgument">ResolvedArgu
 class ResolvedReplaceField : public <a href="#ResolvedExpr">ResolvedExpr</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_REPLACE_FIELD;
 
- <font color="brown">  // The proto/struct to modify.</font>
+<font color="brown">  // The proto/struct to modify.</font>
   const <a href="#ResolvedExpr">ResolvedExpr</a>* expr() const;
 
- <font color="brown">  // The list of field paths to be modified along with their new
+<font color="brown">  // The list of field paths to be modified along with their new
   // values.
   //
   // Engines must check at evaluation time that the modifications in
@@ -782,7 +1055,8 @@ class ResolvedReplaceField : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedSubqueryExpr{ #ResolvedSubqueryExpr }
+### ResolvedSubqueryExpr
+<a id="ResolvedSubqueryExpr"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A subquery in an expression (not a FROM clause).  The subquery runs
@@ -858,12 +1132,12 @@ class ResolvedSubqueryExpr : public <a href="#ResolvedExpr">ResolvedExpr</a> {
   int parameter_list_size() const;
   const <a href="#ResolvedColumnRef">ResolvedColumnRef</a>* parameter_list(int i) const;
 
- <font color="brown">  // Field is only populated for subquery of type IN.</font>
+<font color="brown">  // Field is only populated for subquery of type IN.</font>
   const <a href="#ResolvedExpr">ResolvedExpr</a>* in_expr() const;
 
   const <a href="#ResolvedScan">ResolvedScan</a>* subquery() const;
 
- <font color="brown">  // Note: Hints currently happen only for EXISTS or IN subquery but
+<font color="brown">  // Note: Hints currently happen only for EXISTS or IN subquery but
   // not for ARRAY or SCALAR subquery.</font>
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; hint_list() const;
   int hint_list_size() const;
@@ -871,7 +1145,8 @@ class ResolvedSubqueryExpr : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedScan{ #ResolvedScan }
+### ResolvedScan
+<a id="ResolvedScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Common superclass for all Scans, which are nodes that produce rows
@@ -904,7 +1179,8 @@ class ResolvedScan : public <a href="#ResolvedNode">ResolvedNode</a> {
 };
 </code></pre></p>
 
-### ResolvedModel{ #ResolvedModel }
+### ResolvedModel
+<a id="ResolvedModel"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Represents a machine learning model as a TVF argument.
@@ -917,7 +1193,8 @@ class ResolvedModel : public <a href="#ResolvedArgument">ResolvedArgument</a> {
 };
 </code></pre></p>
 
-### ResolvedConnection{ #ResolvedConnection }
+### ResolvedConnection
+<a id="ResolvedConnection"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Represents a connection object as a TVF argument.
@@ -930,15 +1207,20 @@ class ResolvedConnection : public <a href="#ResolvedArgument">ResolvedArgument</
 };
 </code></pre></p>
 
-### ResolvedDescriptor{ #ResolvedDescriptor }
+### ResolvedDescriptor
+<a id="ResolvedDescriptor"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Represents a descriptor object as a TVF argument.
-// &lt;descriptor_column_list&gt; contains resolved columns from the related input
-// table argument if FunctionArgumentTypeOptions.get_resolve_descriptor_names_table_offset()
-// returns a valid argument offset.
-// &lt;descriptor_column_name_list&gt; contains strings which represent columns
-// names.</font>
+// A descriptor is basically a list of unresolved column names, written
+//   DESCRIPTOR(column1, column2)
+//
+// &lt;descriptor_column_name_list&gt; contains the column names.
+//
+// If FunctionArgumentTypeOptions.get_resolve_descriptor_names_table_offset()
+// is true, then &lt;descriptor_column_list&gt; contains resolved columns from
+// the sibling ResolvedFunctionArgument of scan type, and will match
+// positionally with &lt;descriptor_column_name_list&gt;.</font>
 class ResolvedDescriptor : public <a href="#ResolvedArgument">ResolvedArgument</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_DESCRIPTOR;
 
@@ -952,7 +1234,8 @@ class ResolvedDescriptor : public <a href="#ResolvedArgument">ResolvedArgument</
 };
 </code></pre></p>
 
-### ResolvedSingleRowScan{ #ResolvedSingleRowScan }
+### ResolvedSingleRowScan
+<a id="ResolvedSingleRowScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Scan that produces a single row with no columns.  Used for queries without
@@ -963,7 +1246,8 @@ class ResolvedSingleRowScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedTableScan{ #ResolvedTableScan }
+### ResolvedTableScan
+<a id="ResolvedTableScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Scan a Table.
@@ -974,10 +1258,15 @@ class ResolvedSingleRowScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 // &lt;column_index_list&gt; will include only columns that were referenced
 // in the user query. (SELECT * counts as referencing all columns.)
 // This column_list can then be used for column-level ACL checking on tables.
+// Pruning has no effect on value tables (the value is never pruned).
 //
 // for_system_time_expr when non NULL resolves to TIMESTAMP used in
 // FOR SYSTEM_TIME AS OF clause. The expression is expected to be constant
 // and no columns are visible to it.
+//
+// &lt;column_index_list&gt; This list matches 1-1 with the &lt;column_list&gt;, and
+// identifies the ordinal of the corresponding column in the &lt;table&gt;&#39;s
+// column list.
 //
 // If provided, &lt;alias&gt; refers to an explicit alias which was used to
 // reference a Table in the user query. If the Table was given an implicitly
@@ -985,9 +1274,10 @@ class ResolvedSingleRowScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 //
 // TODO: Enforce &lt;column_index_list&gt; in the constructor arg list. For
 // historical reasons, some clients match &lt;column_list&gt; to Table columns by
-// name. All code building this should always set_column_index_list() to
-// provide the indexes of all columns in &lt;table&gt; right after the construction
-// of a ResolvedTableScan.</font>
+// ResolvedColumn name. This violates the ResolvedColumn contract, which
+// explicitly states that the ResolvedColumn name has no semantic meaning.
+// All code building a ResolvedTableScan should always
+// set_column_index_list() immediately after construction.</font>
 class ResolvedTableScan : public <a href="#ResolvedScan">ResolvedScan</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_TABLE_SCAN;
 
@@ -1003,7 +1293,8 @@ class ResolvedTableScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedJoinScan{ #ResolvedJoinScan }
+### ResolvedJoinScan
+<a id="ResolvedJoinScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A Scan that joins two input scans.
@@ -1030,7 +1321,8 @@ class ResolvedJoinScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedArrayScan{ #ResolvedArrayScan }
+### ResolvedArrayScan
+<a id="ResolvedArrayScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Scan an array value, produced from some expression.
@@ -1077,7 +1369,8 @@ class ResolvedArrayScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedColumnHolder{ #ResolvedColumnHolder }
+### ResolvedColumnHolder
+<a id="ResolvedColumnHolder"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This wrapper is used for an optional ResolvedColumn inside another node.</font>
@@ -1088,7 +1381,8 @@ class ResolvedColumnHolder : public <a href="#ResolvedArgument">ResolvedArgument
 };
 </code></pre></p>
 
-### ResolvedFilterScan{ #ResolvedFilterScan }
+### ResolvedFilterScan
+<a id="ResolvedFilterScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Scan rows from input_scan, and emit all rows where filter_expr
@@ -1103,7 +1397,8 @@ class ResolvedFilterScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedGroupingSet{ #ResolvedGroupingSet }
+### ResolvedGroupingSet
+<a id="ResolvedGroupingSet"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// List of group by columns that form a grouping set.
@@ -1121,7 +1416,8 @@ class ResolvedGroupingSet : public <a href="#ResolvedArgument">ResolvedArgument<
 };
 </code></pre></p>
 
-### ResolvedAggregateScanBase{ #ResolvedAggregateScanBase }
+### ResolvedAggregateScanBase
+<a id="ResolvedAggregateScanBase"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Base class for aggregation scans. Apply aggregation to rows produced from
@@ -1150,7 +1446,8 @@ class ResolvedAggregateScanBase : public <a href="#ResolvedScan">ResolvedScan</a
 };
 </code></pre></p>
 
-### ResolvedAggregateScan{ #ResolvedAggregateScan }
+### ResolvedAggregateScan
+<a id="ResolvedAggregateScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Apply aggregation to rows produced from input_scan, and output aggregated
@@ -1183,7 +1480,37 @@ class ResolvedAggregateScan : public <a href="#ResolvedAggregateScanBase">Resolv
 };
 </code></pre></p>
 
-### ResolvedSetOperationItem{ #ResolvedSetOperationItem }
+### ResolvedAnonymizedAggregateScan
+<a id="ResolvedAnonymizedAggregateScan"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// Apply differentially private aggregation (anonymization) to rows produced
+// from input_scan, and output anonymized rows.
+// Spec: (broken link)
+//
+// &lt;k_threshold_expr&gt; when non-null, points to a function call in
+// the &lt;aggregate_list&gt; and adds a filter that acts like:
+//   HAVING &lt;k_threshold_expr&gt; &gt;= &lt;implementation-defined k-threshold&gt;
+// omitting any rows that would not pass this condition.
+// TODO: Update this comment after splitting the rewriter out
+// into a separate stage.
+//
+// &lt;anonymization_option_list&gt; provides user-specified options, and
+// requires that option names are one of: delta, epsilon, kappa, or
+// k_threshold.</font>
+class ResolvedAnonymizedAggregateScan : public <a href="#ResolvedAggregateScanBase">ResolvedAggregateScanBase</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_ANONYMIZED_AGGREGATE_SCAN;
+
+  const <a href="#ResolvedColumnRef">ResolvedColumnRef</a>* k_threshold_expr() const;
+
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; anonymization_option_list() const;
+  int anonymization_option_list_size() const;
+  const <a href="#ResolvedOption">ResolvedOption</a>* anonymization_option_list(int i) const;
+};
+</code></pre></p>
+
+### ResolvedSetOperationItem
+<a id="ResolvedSetOperationItem"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This is one input item in a ResolvedSetOperation.
@@ -1201,7 +1528,8 @@ class ResolvedSetOperationItem : public <a href="#ResolvedArgument">ResolvedArgu
 };
 </code></pre></p>
 
-### ResolvedSetOperationScan{ #ResolvedSetOperationScan }
+### ResolvedSetOperationScan
+<a id="ResolvedSetOperationScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Apply a set operation (specified by &lt;op_type&gt;) on two or more input scans.
@@ -1246,7 +1574,8 @@ class ResolvedSetOperationScan : public <a href="#ResolvedScan">ResolvedScan</a>
 };
 </code></pre></p>
 
-### ResolvedOrderByScan{ #ResolvedOrderByScan }
+### ResolvedOrderByScan
+<a id="ResolvedOrderByScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Apply ordering to rows produced from input_scan, and output ordered
@@ -1279,7 +1608,8 @@ class ResolvedOrderByScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedLimitOffsetScan{ #ResolvedLimitOffsetScan }
+### ResolvedLimitOffsetScan
+<a id="ResolvedLimitOffsetScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Apply a LIMIT and optional OFFSET to the rows from input_scan. Emit all
@@ -1305,7 +1635,8 @@ class ResolvedLimitOffsetScan : public <a href="#ResolvedScan">ResolvedScan</a> 
 };
 </code></pre></p>
 
-### ResolvedWithRefScan{ #ResolvedWithRefScan }
+### ResolvedWithRefScan
+<a id="ResolvedWithRefScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Scan the subquery defined in a WITH statement.
@@ -1320,7 +1651,8 @@ class ResolvedWithRefScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedAnalyticScan{ #ResolvedAnalyticScan }
+### ResolvedAnalyticScan
+<a id="ResolvedAnalyticScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Apply analytic functions to rows produced from input_scan.
@@ -1343,7 +1675,8 @@ class ResolvedAnalyticScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedSampleScan{ #ResolvedSampleScan }
+### ResolvedSampleScan
+<a id="ResolvedSampleScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Samples rows from &lt;input_scan&gt;.
@@ -1395,7 +1728,8 @@ class ResolvedSampleScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedComputedColumn{ #ResolvedComputedColumn }
+### ResolvedComputedColumn
+<a id="ResolvedComputedColumn"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This is used when an expression is computed and given a name (a new
@@ -1412,15 +1746,27 @@ class ResolvedComputedColumn : public <a href="#ResolvedArgument">ResolvedArgume
 };
 </code></pre></p>
 
-### ResolvedOrderByItem{ #ResolvedOrderByItem }
+### ResolvedOrderByItem
+<a id="ResolvedOrderByItem"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents one column of an ORDER BY clause, with the requested
 // ordering direction.
 //
-// &lt;collation_name&gt; indicates the COLLATE specific rules of ordering.
-// If non-NULL, must be a string literal or a string parameter.
-// See (broken link).
+// &lt;collation_name&gt; is the ORDER BY COLLATE expression, and could be a string
+// literal or query parameter.  &lt;collation_name&gt; could only be set when the
+// FEATURE_V_1_1_ORDER_BY_COLLATE is enabled.
+// See (broken link) for COLLATE clause.
+// &lt;collation&gt; (only set when FEATURE_V_1_3_COLLATION_SUPPORT is enabled) is
+// the derived collation to use.  It comes from the &lt;column_ref&gt; and COLLATE
+// clause.  It is unset if COLLATE is present and set to a parameter.
+// See (broken link) for general Collation Support.
+// When both features are enabled, if &lt;collation_name&gt; is present and is
+// - a parameter, then &lt;collation&gt; is empty
+// - a non-parameter, then &lt;collation&gt; is set to the same collation
+// An engine which supports both features could read the fields as:
+//   If &lt;collation&gt; is set then use it, otherwise use &lt;collation_name&gt;, which
+//   must be a query parameter if set.
 //
 // &lt;null_order&gt; indicates the ordering of NULL values relative to non-NULL
 // values. NULLS_FIRST indicates that NULLS sort prior to non-NULL values,
@@ -1440,14 +1786,17 @@ class ResolvedOrderByItem : public <a href="#ResolvedArgument">ResolvedArgument<
   bool is_descending() const;
 
   NullOrderMode null_order() const;
+
+  const <a href="#ResolvedCollation">ResolvedCollation</a>&amp; collation() const;
 };
 </code></pre></p>
 
-### ResolvedColumnAnnotations{ #ResolvedColumnAnnotations }
+### ResolvedColumnAnnotations
+<a id="ResolvedColumnAnnotations"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This is used in CREATE TABLE statements to provide column annotations
-// such as NOT NULL and OPTIONS().
+// such as NOT NULL, type parameters, and OPTIONS().
 //
 // This class is recursive. It mirrors the structure of the column type
 // except that child_list might be truncated.
@@ -1466,6 +1815,11 @@ class ResolvedOrderByItem : public <a href="#ResolvedArgument">ResolvedArgument<
 class ResolvedColumnAnnotations : public <a href="#ResolvedArgument">ResolvedArgument</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_COLUMN_ANNOTATIONS;
 
+  // Get the full TypeParameters object for these annotations given a
+  // type, including parameters on nested fields.
+  zetasql_base::StatusOr<TypeParameters> GetFullTypeParameters(
+      const Type* type) const;
+
   bool not_null() const;
 
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; option_list() const;
@@ -1475,10 +1829,18 @@ class ResolvedColumnAnnotations : public <a href="#ResolvedArgument">ResolvedArg
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedColumnAnnotations">ResolvedColumnAnnotations</a>&gt;&gt;&amp; child_list() const;
   int child_list_size() const;
   const <a href="#ResolvedColumnAnnotations">ResolvedColumnAnnotations</a>* child_list(int i) const;
+
+<font color="brown">  // child_list in &lt;type_parameters&gt; is not used in here.
+  // Instead we use child_list of this node (ResolvedColumnAnnotations)
+  // to store type parameters of subfields of STRUCT or ARRAY. Users
+  // can access the full type parameters with child_list by calling
+  // ResolvedColumnDefinition.getFullTypeParameters() function.</font>
+  const TypeParameters&amp; type_parameters() const;
 };
 </code></pre></p>
 
-### ResolvedGeneratedColumnInfo{ #ResolvedGeneratedColumnInfo }
+### ResolvedGeneratedColumnInfo
+<a id="ResolvedGeneratedColumnInfo"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// &lt;expression&gt; indicates the expression that defines the column. The type of
@@ -1488,29 +1850,31 @@ class ResolvedColumnAnnotations : public <a href="#ResolvedArgument">ResolvedArg
 //   ResolvedColumnDefinitions in the enclosing statement.
 //   - The expression can never include a subquery.
 //
-// &lt;is_stored&gt; indicates whether the value of the expression should be
-// pre-emptively computed to save work at read time. When is_stored is true,
-// &lt;expression&gt; cannot contain a volatile function (e.g. RAND).
-//
-// &lt;is_on_write&gt; indicates that the value of this column should be calculated
-// at write time. As opposed to &lt;is_stored&gt; the &lt;expression&gt; can contain
-// volatile functions (e.g. RAND).
-//
-// Only one of &lt;is_stored&gt; or &lt;is_on_write&gt; can be true.
-//
-// See (broken link).</font>
+// &lt;stored_mode&gt; is the mode of a generated column: Values are:
+//   - &#39;NON_STORED&#39;: The &lt;expression&gt; must always be evaluated at read time.
+//   - &#39;STORED&#39;: The &lt;expression&gt; should be pre-emptively computed at write
+//        time (to save work at read time) and must not call any volatle
+//        function (e.g. RAND).
+//   - &#39;STORED_VOLATILE&#39;: The &lt;expression&gt; must be computed at write time and
+//        may call volatile functions (e.g. RAND).
+// See (broken link) and
+// (broken link).</font>
 class ResolvedGeneratedColumnInfo : public <a href="#ResolvedArgument">ResolvedArgument</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_GENERATED_COLUMN_INFO;
 
+  typedef ResolvedGeneratedColumnInfoEnums::StoredMode StoredMode;
+  static const StoredMode NON_STORED = ResolvedGeneratedColumnInfoEnums::NON_STORED;
+  static const StoredMode STORED = ResolvedGeneratedColumnInfoEnums::STORED;
+  static const StoredMode STORED_VOLATILE = ResolvedGeneratedColumnInfoEnums::STORED_VOLATILE;
+
   const <a href="#ResolvedExpr">ResolvedExpr</a>* expression() const;
 
-  bool is_stored() const;
-
-  bool is_on_write() const;
+  StoredMode stored_mode() const;
 };
 </code></pre></p>
 
-### ResolvedColumnDefinition{ #ResolvedColumnDefinition }
+### ResolvedColumnDefinition
+<a id="ResolvedColumnDefinition"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This is used in CREATE TABLE statements to provide an explicit column
@@ -1518,14 +1882,28 @@ class ResolvedGeneratedColumnInfo : public <a href="#ResolvedArgument">ResolvedA
 //
 // if &lt;is_hidden&gt; is TRUE, then the column won&#39;t show up in SELECT * queries.
 //
-// if &lt;generated_column_info&gt; is non-NULL, then this table column is a
-// generated column.
+// if &lt;generated_column_info&gt; is non-NULL, then this column is a generated
+// column.
+//
+// if &lt;default_expression&gt; is non-NULL, then this column contains a default
+// value expression. The expression type should always match the column type.
+//   - &lt;default_expression&gt; cannot contain any references to another column.
+//   - &lt;default_expression&gt; cannot include a subquery, aggregation, or window
+//     function.
+//
+// &lt;generated_column_info&gt; and &lt;default_expression&gt; cannot both be set at the
+// same time.
 //
 // &lt;column&gt; defines an ID for the column, which may appear in expressions in
 // the PARTITION BY, CLUSTER BY clause or &lt;generated_column_info&gt; if either
 // is present.</font>
 class ResolvedColumnDefinition : public <a href="#ResolvedArgument">ResolvedArgument</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_COLUMN_DEFINITION;
+
+  // Get the full TypeParameters object for this column, including
+  // parameters on nested fields. <annotations.type_parameters> includes
+  // only parameters on the outermost type.
+  zetasql_base::StatusOr<TypeParameters> GetFullTypeParameters() const;
 
   const std::string&amp; name() const;
 
@@ -1538,10 +1916,13 @@ class ResolvedColumnDefinition : public <a href="#ResolvedArgument">ResolvedArgu
   const <a href="#ResolvedColumn">ResolvedColumn</a>&amp; column() const;
 
   const <a href="#ResolvedGeneratedColumnInfo">ResolvedGeneratedColumnInfo</a>* generated_column_info() const;
+
+  const <a href="#ResolvedExpr">ResolvedExpr</a>* default_expression() const;
 };
 </code></pre></p>
 
-### ResolvedPrimaryKey{ #ResolvedPrimaryKey }
+### ResolvedPrimaryKey
+<a id="ResolvedPrimaryKey"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents the PRIMARY KEY constraint on a table.
@@ -1565,7 +1946,17 @@ class ResolvedPrimaryKey : public <a href="#ResolvedArgument">ResolvedArgument</
 };
 </code></pre></p>
 
-### ResolvedForeignKey{ #ResolvedForeignKey }
+### ResolvedConstraint
+<a id="ResolvedConstraint"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// Intermediate class for resolved constraints.</font>
+class ResolvedConstraint : public <a href="#ResolvedArgument">ResolvedArgument</a> {
+};
+</code></pre></p>
+
+### ResolvedForeignKey
+<a id="ResolvedForeignKey"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents the FOREIGN KEY constraint on a table. It is of the form:
@@ -1600,8 +1991,11 @@ class ResolvedPrimaryKey : public <a href="#ResolvedArgument">ResolvedArgument</
 // &lt;enforced&gt; specifies whether or not the constraint is enforced.
 //
 // &lt;option_list&gt; for foreign key table constraints. Empty for foreign key
-// column attributes (see instead ResolvedColumnAnnotations).</font>
-class ResolvedForeignKey : public <a href="#ResolvedArgument">ResolvedArgument</a> {
+// column attributes (see instead ResolvedColumnAnnotations).
+//
+// &lt;referencing_column_list&gt; provides the names for the foreign key&#39;s
+// referencing columns.</font>
+class ResolvedForeignKey : public <a href="#ResolvedConstraint">ResolvedConstraint</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_FOREIGN_KEY;
 
   typedef ResolvedForeignKeyEnums::MatchMode MatchMode;
@@ -1637,10 +2031,15 @@ class ResolvedForeignKey : public <a href="#ResolvedArgument">ResolvedArgument</
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; option_list() const;
   int option_list_size() const;
   const <a href="#ResolvedOption">ResolvedOption</a>* option_list(int i) const;
+
+  const std::vector&lt;std::string&gt;&amp; referencing_column_list() const;
+  int referencing_column_list_size() const;
+  std::string referencing_column_list(int i) const;
 };
 </code></pre></p>
 
-### ResolvedCheckConstraint{ #ResolvedCheckConstraint }
+### ResolvedCheckConstraint
+<a id="ResolvedCheckConstraint"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents the CHECK constraint on a table. It is of the form:
@@ -1660,7 +2059,7 @@ class ResolvedForeignKey : public <a href="#ResolvedArgument">ResolvedArgument</
 // &lt;option_list&gt; list of options for check constraint.
 //
 // See (broken link).</font>
-class ResolvedCheckConstraint : public <a href="#ResolvedArgument">ResolvedArgument</a> {
+class ResolvedCheckConstraint : public <a href="#ResolvedConstraint">ResolvedConstraint</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_CHECK_CONSTRAINT;
 
   const std::string&amp; constraint_name() const;
@@ -1675,7 +2074,8 @@ class ResolvedCheckConstraint : public <a href="#ResolvedArgument">ResolvedArgum
 };
 </code></pre></p>
 
-### ResolvedOutputColumn{ #ResolvedOutputColumn }
+### ResolvedOutputColumn
+<a id="ResolvedOutputColumn"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This is used in ResolvedQueryStmt to provide a user-visible name
@@ -1689,7 +2089,8 @@ class ResolvedOutputColumn : public <a href="#ResolvedArgument">ResolvedArgument
 };
 </code></pre></p>
 
-### ResolvedProjectScan{ #ResolvedProjectScan }
+### ResolvedProjectScan
+<a id="ResolvedProjectScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A Project node computes new expression values, and possibly drops
@@ -1713,7 +2114,8 @@ class ResolvedProjectScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedTVFScan{ #ResolvedTVFScan }
+### ResolvedTVFScan
+<a id="ResolvedTVFScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This scan represents a call to a table-valued function (TVF). Each TVF
@@ -1733,9 +2135,15 @@ class ResolvedProjectScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 // the required columns. Each provided column has the same name and type as
 // the corresponding required column.
 //
+// If AnalyzerOptions::prune_unused_columns is true, the &lt;column_list&gt; and
+// &lt;column_index_list&gt; will include only columns that were referenced
+// in the user query. (SELECT * counts as referencing all columns.)
+// Pruning has no effect on value tables (the value is never pruned).
+//
 // &lt;column_list&gt; is a set of new ResolvedColumns created by this scan.
-// These output columns match positionally with the columns in the output
-// schema of &lt;signature&gt;.
+// The &lt;column_list&gt;[i] should be matched to the related TVFScan&#39;s output
+// relation column by
+// &lt;signature&gt;.result_schema().column(&lt;column_index_list&gt;[i]).
 //
 // &lt;tvf&gt; The TableValuedFunction entry that the catalog returned for this TVF
 //       scan. Contains non-concrete function signatures which may include
@@ -1747,8 +2155,33 @@ class ResolvedProjectScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 //             provide extra custom information and return an instance
 //             of the subclass from the TableValuedFunction::Resolve
 //             method.
-// &lt;argument_list&gt; The vector of resolved arguments for this TVF call.
-// &lt;alias&gt; The AS alias for the scan, or empty if none.</font>
+// &lt;argument_list&gt; The vector of resolved concrete arguments for this TVF
+//                 call, including the default values or NULLs injected for
+//                 the omitted arguments (Note the NULL injection is a
+//                 temporary solution to handle omitted named arguments. This
+//                 is subject to change by upcoming CLs).
+//
+// &lt;column_index_list&gt; This list matches 1-1 with the &lt;column_list&gt;, and
+// identifies the index of the corresponding column in the &lt;signature&gt;&#39;s
+// result relation column list.
+//
+// &lt;alias&gt; The AS alias for the scan, or empty if none.
+// &lt;function_call_signature&gt; The FunctionSignature object from the
+//                           &lt;tvf-&gt;signatures()&gt; list that matched the
+//                           current call. The TVFScan&#39;s
+//                           &lt;FunctionSignature::ConcreteArgument&gt; list
+//                           matches 1:1 to &lt;argument_list&gt;, while its
+//                           &lt;FunctionSignature::arguments&gt; list still has
+//                           the full argument list.
+//                           The analyzer only sets this field when
+//                           it could be ambiguous for an engine to figure
+//                           out the actual arguments provided, e.g., when
+//                           there are arguments omitted from the call. When
+//                           it is provided, engines may use this object to
+//                           check for the argument names and omitted
+//                           arguments. SQLBuilder may also need this object
+//                           in cases when the named argument notation is
+//                           required for this call.</font>
 class ResolvedTVFScan : public <a href="#ResolvedScan">ResolvedScan</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_TVFSCAN;
 
@@ -1760,11 +2193,45 @@ class ResolvedTVFScan : public <a href="#ResolvedScan">ResolvedScan</a> {
   int argument_list_size() const;
   const <a href="#ResolvedFunctionArgument">ResolvedFunctionArgument</a>* argument_list(int i) const;
 
+  const std::vector&lt;int&gt;&amp; column_index_list() const;
+  int column_index_list_size() const;
+  int column_index_list(int i) const;
+
+  const std::string&amp; alias() const;
+
+  const std::shared_ptr&lt;FunctionSignature&gt;&amp; function_call_signature() const;
+};
+</code></pre></p>
+
+### ResolvedGroupRowsScan
+<a id="ResolvedGroupRowsScan"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// ResolvedGroupRowsScan represents a call to a special TVF GROUP_ROWS().
+// It can only show up inside WITH GROUP_ROWS clause, which is resolved as
+// the field with_group_rows_subquery in ResolvedNonScalarFunctionCallBase
+// ResolvedGroupRowsScan. This scan produces rows corresponding to the input
+// of ResolvedAggregateScan that belong to the current group.
+//
+// &lt;input_column_list&gt; is a list of new columns created to store values
+// coming from the input of the aggregate scan. ResolvedComputedColumn can
+// only hold ResolvedColumnRef&#39;s and can reference anything from the
+// pre-aggregation scan.
+//
+// &lt;alias&gt; is the alias of the scan or empty if none.</font>
+class ResolvedGroupRowsScan : public <a href="#ResolvedScan">ResolvedScan</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_GROUP_ROWS_SCAN;
+
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedComputedColumn">ResolvedComputedColumn</a>&gt;&gt;&amp; input_column_list() const;
+  int input_column_list_size() const;
+  const <a href="#ResolvedComputedColumn">ResolvedComputedColumn</a>* input_column_list(int i) const;
+
   const std::string&amp; alias() const;
 };
 </code></pre></p>
 
-### ResolvedFunctionArgument{ #ResolvedFunctionArgument }
+### ResolvedFunctionArgument
+<a id="ResolvedFunctionArgument"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents a generic argument to a function. The argument can be
@@ -1803,10 +2270,13 @@ class ResolvedFunctionArgument : public <a href="#ResolvedArgument">ResolvedArgu
   const std::vector&lt;<a href="#ResolvedColumn">ResolvedColumn</a>&gt;&amp; argument_column_list() const;
   int argument_column_list_size() const;
   <a href="#ResolvedColumn">ResolvedColumn</a> argument_column_list(int i) const;
+
+  const <a href="#ResolvedInlineLambda">ResolvedInlineLambda</a>* inline_lambda() const;
 };
 </code></pre></p>
 
-### ResolvedStatement{ #ResolvedStatement }
+### ResolvedStatement
+<a id="ResolvedStatement"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// The superclass of all ZetaSQL statements.</font>
@@ -1816,6 +2286,7 @@ class ResolvedStatement : public <a href="#ResolvedNode">ResolvedNode</a> {
   static const ObjectAccess READ = ResolvedStatementEnums::READ;
   static const ObjectAccess WRITE = ResolvedStatementEnums::WRITE;
   static const ObjectAccess READ_WRITE = ResolvedStatementEnums::READ_WRITE;
+
   bool IsStatement() const final { return true; }
 
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; hint_list() const;
@@ -1824,7 +2295,8 @@ class ResolvedStatement : public <a href="#ResolvedNode">ResolvedNode</a> {
 };
 </code></pre></p>
 
-### ResolvedExplainStmt{ #ResolvedExplainStmt }
+### ResolvedExplainStmt
+<a id="ResolvedExplainStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// An Explain statement. This is always the root of a statement hierarchy.
@@ -1839,7 +2311,8 @@ class ResolvedExplainStmt : public <a href="#ResolvedStatement">ResolvedStatemen
 };
 </code></pre></p>
 
-### ResolvedQueryStmt{ #ResolvedQueryStmt }
+### ResolvedQueryStmt
+<a id="ResolvedQueryStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A SQL query statement.  This is the outermost query statement that runs
@@ -1857,7 +2330,7 @@ class ResolvedQueryStmt : public <a href="#ResolvedStatement">ResolvedStatement<
   int output_column_list_size() const;
   const <a href="#ResolvedOutputColumn">ResolvedOutputColumn</a>* output_column_list(int i) const;
 
- <font color="brown">  // If true, the result of this query is a value table. Rather than
+<font color="brown">  // If true, the result of this query is a value table. Rather than
   // producing rows with named columns, it produces rows with a single
   // unnamed value type.  output_column_list will have exactly one
   // column, with an empty name. See (broken link).</font>
@@ -1867,7 +2340,8 @@ class ResolvedQueryStmt : public <a href="#ResolvedStatement">ResolvedStatement<
 };
 </code></pre></p>
 
-### ResolvedCreateDatabaseStmt{ #ResolvedCreateDatabaseStmt }
+### ResolvedCreateDatabaseStmt
+<a id="ResolvedCreateDatabaseStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -1887,7 +2361,8 @@ class ResolvedCreateDatabaseStmt : public <a href="#ResolvedStatement">ResolvedS
 };
 </code></pre></p>
 
-### ResolvedCreateStatement{ #ResolvedCreateStatement }
+### ResolvedCreateStatement
+<a id="ResolvedCreateStatement"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Common superclass for CREATE statements with standard modifiers like
@@ -1933,7 +2408,8 @@ class ResolvedCreateStatement : public <a href="#ResolvedStatement">ResolvedStat
 };
 </code></pre></p>
 
-### ResolvedIndexItem{ #ResolvedIndexItem }
+### ResolvedIndexItem
+<a id="ResolvedIndexItem"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Represents one of indexed items in CREATE INDEX statement, with the
@@ -1947,7 +2423,8 @@ class ResolvedIndexItem : public <a href="#ResolvedArgument">ResolvedArgument</a
 };
 </code></pre></p>
 
-### ResolvedUnnestItem{ #ResolvedUnnestItem }
+### ResolvedUnnestItem
+<a id="ResolvedUnnestItem"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This is used in CREATE INDEX STMT to represent the unnest operation
@@ -1972,12 +2449,13 @@ class ResolvedUnnestItem : public <a href="#ResolvedArgument">ResolvedArgument</
 };
 </code></pre></p>
 
-### ResolvedCreateIndexStmt{ #ResolvedCreateIndexStmt }
+### ResolvedCreateIndexStmt
+<a id="ResolvedCreateIndexStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
-// CREATE [OR REPLACE] [UNIQUE] INDEX [IF NOT EXISTS] &lt;index_name_path&gt;
-// ON &lt;table_name_path&gt;
+// CREATE [OR REPLACE] [UNIQUE] [SEARCH] INDEX [IF NOT EXISTS]
+//  &lt;index_name_path&gt; ON &lt;table_name_path&gt;
 // [STORING (Expression, ...)]
 // [UNNEST(path_expression) [[AS] alias] [WITH OFFSET [[AS] alias]], ...]
 // (path_expression [ASC|DESC], ...) [OPTIONS (name=value, ...)];
@@ -1985,6 +2463,7 @@ class ResolvedUnnestItem : public <a href="#ResolvedArgument">ResolvedArgument</
 // &lt;table_name_path&gt; is the name of table being indexed.
 // &lt;table_scan&gt; is a TableScan on the table being indexed.
 // &lt;is_unique&gt; specifies if the index has unique entries.
+// &lt;is_search&gt; specifies if the index is for search.
 // &lt;index_item_list&gt; has the columns being indexed, specified as references
 //                   to &#39;computed_columns_list&#39; entries or the columns of
 //                   &#39;table_scan&#39;.
@@ -2008,6 +2487,8 @@ class ResolvedCreateIndexStmt : public <a href="#ResolvedCreateStatement">Resolv
 
   bool is_unique() const;
 
+  bool is_search() const;
+
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedIndexItem">ResolvedIndexItem</a>&gt;&gt;&amp; index_item_list() const;
   int index_item_list_size() const;
   const <a href="#ResolvedIndexItem">ResolvedIndexItem</a>* index_item_list(int i) const;
@@ -2030,7 +2511,8 @@ class ResolvedCreateIndexStmt : public <a href="#ResolvedCreateStatement">Resolv
 };
 </code></pre></p>
 
-### ResolvedCreateSchemaStmt{ #ResolvedCreateSchemaStmt }
+### ResolvedCreateSchemaStmt
+<a id="ResolvedCreateSchemaStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -2047,11 +2529,12 @@ class ResolvedCreateSchemaStmt : public <a href="#ResolvedCreateStatement">Resol
 };
 </code></pre></p>
 
-### ResolvedCreateTableStmtBase{ #ResolvedCreateTableStmtBase }
+### ResolvedCreateTableStmtBase
+<a id="ResolvedCreateTableStmtBase"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
-//   CREATE [TEMP] TABLE &lt;name&gt; (column type, ...)
+//   CREATE [TEMP] TABLE &lt;name&gt; [(column type, ...) | LIKE &lt;name_path&gt;]
 //   [PARTITION BY expr, ...] [CLUSTER BY expr, ...]
 //   [OPTIONS (...)]
 //
@@ -2073,7 +2556,12 @@ class ResolvedCreateSchemaStmt : public <a href="#ResolvedCreateStatement">Resol
 // &lt;partition_by_list&gt; specifies the partitioning expressions for the table.
 // &lt;cluster_by_list&gt; specifies the clustering expressions for the table.
 // &lt;is_value_table&gt; specifies whether the table is a value table.
-//                  See (broken link).</font>
+//                  See (broken link).
+// &lt;like_table&gt; identifies the table in the LIKE &lt;name_path&gt;.
+//              By default, all fields (column names, types, constraints,
+//              keys, clustering etc.) will be inherited from the source
+//              table. But if explicitly set, the explicit settings will
+//              take precedence.</font>
 class ResolvedCreateTableStmtBase : public <a href="#ResolvedCreateStatement">ResolvedCreateStatement</a> {
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; option_list() const;
   int option_list_size() const;
@@ -2098,18 +2586,41 @@ class ResolvedCreateTableStmtBase : public <a href="#ResolvedCreateStatement">Re
   const <a href="#ResolvedCheckConstraint">ResolvedCheckConstraint</a>* check_constraint_list(int i) const;
 
   bool is_value_table() const;
+
+  const Table* like_table() const;
 };
 </code></pre></p>
 
-### ResolvedCreateTableStmt{ #ResolvedCreateTableStmt }
+### ResolvedCreateTableStmt
+<a id="ResolvedCreateTableStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
-// CREATE [TEMP] TABLE &lt;name&gt; (column schema, ...)
-// [PARTITION BY expr, ...] [CLUSTER BY expr, ...]
-// [OPTIONS (...)]</font>
+//   CREATE [TEMP] TABLE &lt;name&gt;
+//   [(column schema, ...) | LIKE &lt;name_path&gt; |
+//       CLONE &lt;name_path&gt;
+//           [FOR SYSTEM_TIME AS OF &lt;time_expr&gt;]
+//           [WHERE &lt;where_clause&gt;]]
+//   [PARTITION BY expr, ...] [CLUSTER BY expr, ...]
+//   [OPTIONS (...)]
+//
+// &lt;clone_from&gt; the source data to clone data from.
+//              ResolvedTableScan will represent the source table, with an
+//              optional for_system_time_expr.
+//              The ResolvedTableScan may be wrapped inside a
+//              ResolvedFilterScan if the source table has a where clause.
+//              No other Scan types are allowed here.
+//              By default, all fields (column names, types, constraints,
+//              partition, clustering, options etc.) will be inherited from
+//              the source table. If table options are explicitly set, the
+//              explicit options will take precedence.
+//              The &#39;clone_from.column_list&#39; field may be set, but should be
+//              ignored.
+//              Cannot be value table.</font>
 class ResolvedCreateTableStmt : public <a href="#ResolvedCreateTableStmtBase">ResolvedCreateTableStmtBase</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_CREATE_TABLE_STMT;
+
+  const <a href="#ResolvedScan">ResolvedScan</a>* clone_from() const;
 
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedExpr">ResolvedExpr</a>&gt;&gt;&amp; partition_by_list() const;
   int partition_by_list_size() const;
@@ -2121,11 +2632,12 @@ class ResolvedCreateTableStmt : public <a href="#ResolvedCreateTableStmtBase">Re
 };
 </code></pre></p>
 
-### ResolvedCreateTableAsSelectStmt{ #ResolvedCreateTableAsSelectStmt }
+### ResolvedCreateTableAsSelectStmt
+<a id="ResolvedCreateTableAsSelectStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
-//   CREATE [TEMP] TABLE &lt;name&gt; [(column schema, ...)]
+//   CREATE [TEMP] TABLE &lt;name&gt; [(column schema, ...) | LIKE &lt;name_path&gt;]
 //   [PARTITION BY expr, ...] [CLUSTER BY expr, ...] [OPTIONS (...)]
 //   AS SELECT ...
 //
@@ -2162,7 +2674,8 @@ class ResolvedCreateTableAsSelectStmt : public <a href="#ResolvedCreateTableStmt
 };
 </code></pre></p>
 
-### ResolvedCreateModelStmt{ #ResolvedCreateModelStmt }
+### ResolvedCreateModelStmt
+<a id="ResolvedCreateModelStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -2237,18 +2750,25 @@ class ResolvedCreateModelStmt : public <a href="#ResolvedCreateStatement">Resolv
 };
 </code></pre></p>
 
-### ResolvedCreateViewBase{ #ResolvedCreateViewBase }
+### ResolvedCreateViewBase
+<a id="ResolvedCreateViewBase"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Common superclass for CREATE view/materialized view:
-//   CREATE [TEMP|MATERIALIZED] [RECURSIVE] VIEW &lt;name&gt; [OPTIONS (...)]
+//   CREATE [TEMP|MATERIALIZED] [RECURSIVE] VIEW &lt;name&gt; [(...)]
+//     [OPTIONS (...)]
 //     AS SELECT ...
 //
 // &lt;option_list&gt; has engine-specific directives for options attached to
 //               this view.
 // &lt;output_column_list&gt; has the names and types of the columns in the
 //                      created view, and maps from &lt;query&gt;&#39;s column_list
-//                      to these output columns.
+//                      to these output columns. If &lt;has_explicit_columns&gt; is
+//                      true, names will be explicitly provided.
+// &lt;has_explicit_columns&gt; If this is set, the statement includes an explicit
+//   column name list. These column names should still be applied even if the
+//   query changes or is re-resolved in the future. The view becomes invalid
+//   if the query produces a different number of columns.
 // &lt;query&gt; is the query to run.
 // &lt;sql&gt; is the view query text.
 // &lt;sql_security&gt; is the declared security mode for the function. Values
@@ -2271,36 +2791,40 @@ class ResolvedCreateViewBase : public <a href="#ResolvedCreateStatement">Resolve
   int output_column_list_size() const;
   const <a href="#ResolvedOutputColumn">ResolvedOutputColumn</a>* output_column_list(int i) const;
 
+  bool has_explicit_columns() const;
+
   const <a href="#ResolvedScan">ResolvedScan</a>* query() const;
 
   const std::string&amp; sql() const;
 
   SqlSecurity sql_security() const;
 
- <font color="brown">  // If true, this view produces a value table. Rather than producing
+<font color="brown">  // If true, this view produces a value table. Rather than producing
   // rows with named columns, it produces rows with a single unnamed
   // value type.  output_column_list will have exactly one column, with
   // an empty name. See (broken link).</font>
   bool is_value_table() const;
 
- <font color="brown">  // True if the view uses the RECURSIVE keyword. &lt;query&gt;
+<font color="brown">  // True if the view uses the RECURSIVE keyword. &lt;query&gt;
   // can be a ResolvedRecursiveScan only if this is true.</font>
   bool recursive() const;
 };
 </code></pre></p>
 
-### ResolvedCreateViewStmt{ #ResolvedCreateViewStmt }
+### ResolvedCreateViewStmt
+<a id="ResolvedCreateViewStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
-// CREATE [TEMP] VIEW &lt;name&gt; [OPTIONS (...)] AS SELECT ...</font>
+// CREATE [TEMP] VIEW &lt;name&gt; [(...)] [OPTIONS (...)] AS SELECT ...</font>
 class ResolvedCreateViewStmt : public <a href="#ResolvedCreateViewBase">ResolvedCreateViewBase</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_CREATE_VIEW_STMT;
 
 };
 </code></pre></p>
 
-### ResolvedWithPartitionColumns{ #ResolvedWithPartitionColumns }
+### ResolvedWithPartitionColumns
+<a id="ResolvedWithPartitionColumns"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -2314,20 +2838,58 @@ class ResolvedWithPartitionColumns : public <a href="#ResolvedArgument">Resolved
 };
 </code></pre></p>
 
-### ResolvedCreateExternalTableStmt{ #ResolvedCreateExternalTableStmt }
+### ResolvedCreateSnapshotTableStmt
+<a id="ResolvedCreateSnapshotTableStmt"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// This statement:
+//   CREATE SNAPSHOT TABLE [IF NOT EXISTS] &lt;name&gt; [OPTIONS (...)]
+//   CLONE &lt;name&gt;
+//           [FOR SYSTEM_TIME AS OF &lt;time_expr&gt;]
+//
+// &lt;clone_from&gt; the source data to clone data from.
+//              ResolvedTableScan will represent the source table, with an
+//              optional for_system_time_expr.
+//              The ResolvedTableScan may be wrapped inside a
+//              ResolvedFilterScan if the source table has a where clause.
+//              No other Scan types are allowed here.
+//              By default, all fields (column names, types, constraints,
+//              partition, clustering, options etc.) will be inherited from
+//              the source table. If table options are explicitly set, the
+//              explicit options will take precedence.
+//              The &#39;clone_from.column_list&#39; field may be set, but should be
+//              ignored.</font>
+class ResolvedCreateSnapshotTableStmt : public <a href="#ResolvedCreateStatement">ResolvedCreateStatement</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_CREATE_SNAPSHOT_TABLE_STMT;
+
+  const <a href="#ResolvedScan">ResolvedScan</a>* clone_from() const;
+
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; option_list() const;
+  int option_list_size() const;
+  const <a href="#ResolvedOption">ResolvedOption</a>* option_list(int i) const;
+};
+</code></pre></p>
+
+### ResolvedCreateExternalTableStmt
+<a id="ResolvedCreateExternalTableStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
 // CREATE [TEMP] EXTERNAL TABLE &lt;name&gt; [(column type, ...)]
-// [WITH PARTITION COLUMN [(column type, ...)]] OPTIONS (...)</font>
+// [WITH PARTITION COLUMN [(column type, ...)]]
+// [WITH CONNECTION connection_name]
+// OPTIONS (...)</font>
 class ResolvedCreateExternalTableStmt : public <a href="#ResolvedCreateTableStmtBase">ResolvedCreateTableStmtBase</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_CREATE_EXTERNAL_TABLE_STMT;
 
   const <a href="#ResolvedWithPartitionColumns">ResolvedWithPartitionColumns</a>* with_partition_columns() const;
+
+  const <a href="#ResolvedConnection">ResolvedConnection</a>* connection() const;
 };
 </code></pre></p>
 
-### ResolvedExportModelStmt{ #ResolvedExportModelStmt }
+### ResolvedExportModelStmt
+<a id="ResolvedExportModelStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -2351,7 +2913,8 @@ class ResolvedExportModelStmt : public <a href="#ResolvedStatement">ResolvedStat
 };
 </code></pre></p>
 
-### ResolvedExportDataStmt{ #ResolvedExportDataStmt }
+### ResolvedExportDataStmt
+<a id="ResolvedExportDataStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -2381,7 +2944,7 @@ class ResolvedExportDataStmt : public <a href="#ResolvedStatement">ResolvedState
   int output_column_list_size() const;
   const <a href="#ResolvedOutputColumn">ResolvedOutputColumn</a>* output_column_list(int i) const;
 
- <font color="brown">  // If true, the result of this query is a value table. Rather than
+<font color="brown">  // If true, the result of this query is a value table. Rather than
   // producing rows with named columns, it produces rows with a single
   // unnamed value type.  output_column_list will have exactly one
   // column, with an empty name. See (broken link).</font>
@@ -2391,7 +2954,8 @@ class ResolvedExportDataStmt : public <a href="#ResolvedStatement">ResolvedState
 };
 </code></pre></p>
 
-### ResolvedDefineTableStmt{ #ResolvedDefineTableStmt }
+### ResolvedDefineTableStmt
+<a id="ResolvedDefineTableStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: DEFINE TABLE name (...);
@@ -2413,7 +2977,8 @@ class ResolvedDefineTableStmt : public <a href="#ResolvedStatement">ResolvedStat
 };
 </code></pre></p>
 
-### ResolvedDescribeStmt{ #ResolvedDescribeStmt }
+### ResolvedDescribeStmt
+<a id="ResolvedDescribeStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: DESCRIBE [&lt;object_type&gt;] &lt;name&gt; [FROM &lt;from_name_path&gt;];
@@ -2439,7 +3004,8 @@ class ResolvedDescribeStmt : public <a href="#ResolvedStatement">ResolvedStateme
 };
 </code></pre></p>
 
-### ResolvedShowStmt{ #ResolvedShowStmt }
+### ResolvedShowStmt
+<a id="ResolvedShowStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: SHOW &lt;identifier&gt; [FROM &lt;name_path&gt;] [LIKE &lt;like_expr&gt;];
@@ -2465,7 +3031,8 @@ class ResolvedShowStmt : public <a href="#ResolvedStatement">ResolvedStatement</
 };
 </code></pre></p>
 
-### ResolvedBeginStmt{ #ResolvedBeginStmt }
+### ResolvedBeginStmt
+<a id="ResolvedBeginStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: BEGIN [TRANSACTION] [ &lt;transaction_mode&gt; [, ...] ]
@@ -2502,7 +3069,8 @@ class ResolvedBeginStmt : public <a href="#ResolvedStatement">ResolvedStatement<
 };
 </code></pre></p>
 
-### ResolvedSetTransactionStmt{ #ResolvedSetTransactionStmt }
+### ResolvedSetTransactionStmt
+<a id="ResolvedSetTransactionStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: SET TRANSACTION &lt;transaction_mode&gt; [, ...]
@@ -2536,7 +3104,8 @@ class ResolvedSetTransactionStmt : public <a href="#ResolvedStatement">ResolvedS
 };
 </code></pre></p>
 
-### ResolvedCommitStmt{ #ResolvedCommitStmt }
+### ResolvedCommitStmt
+<a id="ResolvedCommitStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: COMMIT [TRANSACTION];</font>
@@ -2546,7 +3115,8 @@ class ResolvedCommitStmt : public <a href="#ResolvedStatement">ResolvedStatement
 };
 </code></pre></p>
 
-### ResolvedRollbackStmt{ #ResolvedRollbackStmt }
+### ResolvedRollbackStmt
+<a id="ResolvedRollbackStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: ROLLBACK [TRANSACTION];</font>
@@ -2556,7 +3126,8 @@ class ResolvedRollbackStmt : public <a href="#ResolvedStatement">ResolvedStateme
 };
 </code></pre></p>
 
-### ResolvedStartBatchStmt{ #ResolvedStartBatchStmt }
+### ResolvedStartBatchStmt
+<a id="ResolvedStartBatchStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: START BATCH [&lt;batch_type&gt;];
@@ -2570,7 +3141,8 @@ class ResolvedStartBatchStmt : public <a href="#ResolvedStatement">ResolvedState
 };
 </code></pre></p>
 
-### ResolvedRunBatchStmt{ #ResolvedRunBatchStmt }
+### ResolvedRunBatchStmt
+<a id="ResolvedRunBatchStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: RUN BATCH;</font>
@@ -2580,7 +3152,8 @@ class ResolvedRunBatchStmt : public <a href="#ResolvedStatement">ResolvedStateme
 };
 </code></pre></p>
 
-### ResolvedAbortBatchStmt{ #ResolvedAbortBatchStmt }
+### ResolvedAbortBatchStmt
+<a id="ResolvedAbortBatchStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: ABORT BATCH;</font>
@@ -2590,18 +3163,25 @@ class ResolvedAbortBatchStmt : public <a href="#ResolvedStatement">ResolvedState
 };
 </code></pre></p>
 
-### ResolvedDropStmt{ #ResolvedDropStmt }
+### ResolvedDropStmt
+<a id="ResolvedDropStmt"></a>
 
 <p><pre><code class="lang-c++">
-<font color="brown">// This statement: DROP &lt;object_type&gt; [IF EXISTS] &lt;name_path&gt;;
+<font color="brown">// This statement: DROP &lt;object_type&gt; [IF EXISTS] &lt;name_path&gt; [&lt;drop_mode&gt;];
 //
 // &lt;object_type&gt; is an string identifier,
 //               e.g., &#34;TABLE&#34;, &#34;VIEW&#34;, &#34;INDEX&#34;, &#34;FUNCTION&#34;, &#34;TYPE&#34;, etc.
 // &lt;name_path&gt; is a vector giving the identifier path for the object to be
 //             dropped.
-// &lt;is_if_exists&gt; silently ignore the &#34;name_path does not exist&#34; error.</font>
+// &lt;is_if_exists&gt; silently ignore the &#34;name_path does not exist&#34; error.
+// &lt;drop_mode&gt; specifies drop mode RESTRICT/CASCASE, if any.</font>
 class ResolvedDropStmt : public <a href="#ResolvedStatement">ResolvedStatement</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_DROP_STMT;
+
+  typedef ResolvedDropStmtEnums::DropMode DropMode;
+  static const DropMode DROP_MODE_UNSPECIFIED = ResolvedDropStmtEnums::DROP_MODE_UNSPECIFIED;
+  static const DropMode RESTRICT = ResolvedDropStmtEnums::RESTRICT;
+  static const DropMode CASCADE = ResolvedDropStmtEnums::CASCADE;
 
   const std::string&amp; object_type() const;
 
@@ -2610,10 +3190,13 @@ class ResolvedDropStmt : public <a href="#ResolvedStatement">ResolvedStatement</
   const std::vector&lt;std::string&gt;&amp; name_path() const;
   int name_path_size() const;
   std::string name_path(int i) const;
+
+  DropMode drop_mode() const;
 };
 </code></pre></p>
 
-### ResolvedDropMaterializedViewStmt{ #ResolvedDropMaterializedViewStmt }
+### ResolvedDropMaterializedViewStmt
+<a id="ResolvedDropMaterializedViewStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: DROP MATERIALIZED VIEW [IF EXISTS] &lt;name_path&gt;;
@@ -2632,7 +3215,28 @@ class ResolvedDropMaterializedViewStmt : public <a href="#ResolvedStatement">Res
 };
 </code></pre></p>
 
-### ResolvedRecursiveRefScan{ #ResolvedRecursiveRefScan }
+### ResolvedDropSnapshotTableStmt
+<a id="ResolvedDropSnapshotTableStmt"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// This statement: DROP SNAPSHOT TABLE [IF EXISTS] &lt;name_path&gt;;
+//
+// &lt;name_path&gt; is a vector giving the identifier path for the object to be
+//             dropped.
+// &lt;is_if_exists&gt; silently ignore the &#34;name_path does not exist&#34; error.</font>
+class ResolvedDropSnapshotTableStmt : public <a href="#ResolvedStatement">ResolvedStatement</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_DROP_SNAPSHOT_TABLE_STMT;
+
+  bool is_if_exists() const;
+
+  const std::vector&lt;std::string&gt;&amp; name_path() const;
+  int name_path_size() const;
+  std::string name_path(int i) const;
+};
+</code></pre></p>
+
+### ResolvedRecursiveRefScan
+<a id="ResolvedRecursiveRefScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Scan the previous iteration of the recursive alias currently being
@@ -2647,7 +3251,8 @@ class ResolvedRecursiveRefScan : public <a href="#ResolvedScan">ResolvedScan</a>
 };
 </code></pre></p>
 
-### ResolvedRecursiveScan{ #ResolvedRecursiveScan }
+### ResolvedRecursiveScan
+<a id="ResolvedRecursiveScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A recursive query inside a WITH RECURSIVE or RECURSIVE VIEW. A
@@ -2701,7 +3306,8 @@ class ResolvedRecursiveScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 };
 </code></pre></p>
 
-### ResolvedWithScan{ #ResolvedWithScan }
+### ResolvedWithScan
+<a id="ResolvedWithScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents a SQL WITH query (or subquery) like
@@ -2764,12 +3370,13 @@ class ResolvedWithScan : public <a href="#ResolvedScan">ResolvedScan</a> {
 
   const <a href="#ResolvedScan">ResolvedScan</a>* query() const;
 
- <font color="brown">  // True if the WITH clause uses the recursive keyword.</font>
+<font color="brown">  // True if the WITH clause uses the recursive keyword.</font>
   bool recursive() const;
 };
 </code></pre></p>
 
-### ResolvedWithEntry{ #ResolvedWithEntry }
+### ResolvedWithEntry
+<a id="ResolvedWithEntry"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents one aliased subquery introduced in a WITH clause.
@@ -2788,7 +3395,8 @@ class ResolvedWithEntry : public <a href="#ResolvedArgument">ResolvedArgument</a
 };
 </code></pre></p>
 
-### ResolvedOption{ #ResolvedOption }
+### ResolvedOption
+<a id="ResolvedOption"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents one SQL hint key/value pair.
@@ -2831,7 +3439,8 @@ class ResolvedOption : public <a href="#ResolvedArgument">ResolvedArgument</a> {
 };
 </code></pre></p>
 
-### ResolvedWindowPartitioning{ #ResolvedWindowPartitioning }
+### ResolvedWindowPartitioning
+<a id="ResolvedWindowPartitioning"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Window partitioning specification for an analytic function call.
@@ -2850,7 +3459,8 @@ class ResolvedWindowPartitioning : public <a href="#ResolvedArgument">ResolvedAr
 };
 </code></pre></p>
 
-### ResolvedWindowOrdering{ #ResolvedWindowOrdering }
+### ResolvedWindowOrdering
+<a id="ResolvedWindowOrdering"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Window ordering specification for an analytic function call.
@@ -2870,7 +3480,8 @@ class ResolvedWindowOrdering : public <a href="#ResolvedArgument">ResolvedArgume
 };
 </code></pre></p>
 
-### ResolvedWindowFrame{ #ResolvedWindowFrame }
+### ResolvedWindowFrame
+<a id="ResolvedWindowFrame"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Window framing specification for an analytic function call.
@@ -2902,7 +3513,8 @@ class ResolvedWindowFrame : public <a href="#ResolvedArgument">ResolvedArgument<
 };
 </code></pre></p>
 
-### ResolvedAnalyticFunctionGroup{ #ResolvedAnalyticFunctionGroup }
+### ResolvedAnalyticFunctionGroup
+<a id="ResolvedAnalyticFunctionGroup"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents a group of analytic function calls that shares PARTITION
@@ -2928,7 +3540,8 @@ class ResolvedAnalyticFunctionGroup : public <a href="#ResolvedArgument">Resolve
 };
 </code></pre></p>
 
-### ResolvedWindowFrameExpr{ #ResolvedWindowFrameExpr }
+### ResolvedWindowFrameExpr
+<a id="ResolvedWindowFrameExpr"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Window frame boundary expression that determines the first/last row of
@@ -2959,7 +3572,8 @@ class ResolvedWindowFrameExpr : public <a href="#ResolvedArgument">ResolvedArgum
 };
 </code></pre></p>
 
-### ResolvedDMLValue{ #ResolvedDMLValue }
+### ResolvedDMLValue
+<a id="ResolvedDMLValue"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents a value inside an INSERT or UPDATE statement.
@@ -2974,7 +3588,8 @@ class ResolvedDMLValue : public <a href="#ResolvedArgument">ResolvedArgument</a>
 };
 </code></pre></p>
 
-### ResolvedDMLDefault{ #ResolvedDMLDefault }
+### ResolvedDMLDefault
+<a id="ResolvedDMLDefault"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This is used to represent the value DEFAULT that shows up (in place of a
@@ -2989,7 +3604,8 @@ class ResolvedDMLDefault : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedAssertStmt{ #ResolvedAssertStmt }
+### ResolvedAssertStmt
+<a id="ResolvedAssertStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents the ASSERT statement:
@@ -3007,7 +3623,8 @@ class ResolvedAssertStmt : public <a href="#ResolvedStatement">ResolvedStatement
 };
 </code></pre></p>
 
-### ResolvedAssertRowsModified{ #ResolvedAssertRowsModified }
+### ResolvedAssertRowsModified
+<a id="ResolvedAssertRowsModified"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents the ASSERT ROWS MODIFIED clause on a DML statement.
@@ -3022,7 +3639,8 @@ class ResolvedAssertRowsModified : public <a href="#ResolvedArgument">ResolvedAr
 };
 </code></pre></p>
 
-### ResolvedInsertRow{ #ResolvedInsertRow }
+### ResolvedInsertRow
+<a id="ResolvedInsertRow"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents one row in the VALUES clause of an INSERT.</font>
@@ -3035,7 +3653,8 @@ class ResolvedInsertRow : public <a href="#ResolvedArgument">ResolvedArgument</a
 };
 </code></pre></p>
 
-### ResolvedInsertStmt{ #ResolvedInsertStmt }
+### ResolvedInsertStmt
+<a id="ResolvedInsertStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents an INSERT statement, or a nested INSERT inside an
@@ -3067,7 +3686,13 @@ class ResolvedInsertRow : public <a href="#ResolvedArgument">ResolvedArgument</a
 //
 // &lt;query_parameter_list&gt; is set for nested INSERTs where &lt;query&gt; is set and
 // references non-target values (columns or field values) from the table. It
-// is only set when FEATURE_V_1_2_CORRELATED_REFS_IN_NESTED_DML is enabled.</font>
+// is only set when FEATURE_V_1_2_CORRELATED_REFS_IN_NESTED_DML is enabled.
+//
+// If &lt;returning&gt; is present, the INSERT statement will return newly inserted
+// rows. &lt;returning&gt; can only occur on top-level statements.
+//
+// The returning clause has a &lt;output_column_list&gt; to represent the data
+// sent back to clients. It can only acccess columns from the &lt;table_scan&gt;.</font>
 class ResolvedInsertStmt : public <a href="#ResolvedStatement">ResolvedStatement</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_INSERT_STMT;
 
@@ -3082,11 +3707,13 @@ class ResolvedInsertStmt : public <a href="#ResolvedStatement">ResolvedStatement
 
   const <a href="#ResolvedTableScan">ResolvedTableScan</a>* table_scan() const;
 
- <font color="brown">  // Behavior on duplicate rows (normally defined to mean duplicate
+<font color="brown">  // Behavior on duplicate rows (normally defined to mean duplicate
   // primary keys).</font>
   InsertMode insert_mode() const;
 
   const <a href="#ResolvedAssertRowsModified">ResolvedAssertRowsModified</a>* assert_rows_modified() const;
+
+  const <a href="#ResolvedReturningClause">ResolvedReturningClause</a>* returning() const;
 
   const std::vector&lt;<a href="#ResolvedColumn">ResolvedColumn</a>&gt;&amp; insert_column_list() const;
   int insert_column_list_size() const;
@@ -3108,7 +3735,8 @@ class ResolvedInsertStmt : public <a href="#ResolvedStatement">ResolvedStatement
 };
 </code></pre></p>
 
-### ResolvedDeleteStmt{ #ResolvedDeleteStmt }
+### ResolvedDeleteStmt
+<a id="ResolvedDeleteStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents a DELETE statement or a nested DELETE inside an
@@ -3126,7 +3754,13 @@ class ResolvedInsertStmt : public <a href="#ResolvedStatement">ResolvedStatement
 //   (3) (optionally) &lt;array_offset_column&gt;, which represents the 0-based
 //       offset of the array element being modified.
 //
-// &lt;where_expr&gt; is required.</font>
+// &lt;where_expr&gt; is required.
+//
+// If &lt;returning&gt; is present, the DELETE statement will return deleted rows
+// back. It can only occur on top-level statements.
+//
+// This returning clause has a &lt;output_column_list&gt; to represent the data
+// sent back to clients. It can only acccess columns from the &lt;table_scan&gt;.</font>
 class ResolvedDeleteStmt : public <a href="#ResolvedStatement">ResolvedStatement</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_DELETE_STMT;
 
@@ -3134,13 +3768,16 @@ class ResolvedDeleteStmt : public <a href="#ResolvedStatement">ResolvedStatement
 
   const <a href="#ResolvedAssertRowsModified">ResolvedAssertRowsModified</a>* assert_rows_modified() const;
 
+  const <a href="#ResolvedReturningClause">ResolvedReturningClause</a>* returning() const;
+
   const <a href="#ResolvedColumnHolder">ResolvedColumnHolder</a>* array_offset_column() const;
 
   const <a href="#ResolvedExpr">ResolvedExpr</a>* where_expr() const;
 };
 </code></pre></p>
 
-### ResolvedUpdateItem{ #ResolvedUpdateItem }
+### ResolvedUpdateItem
+<a id="ResolvedUpdateItem"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents one item inside the SET clause of an UPDATE.
@@ -3212,7 +3849,7 @@ class ResolvedDeleteStmt : public <a href="#ResolvedStatement">ResolvedStatement
 class ResolvedUpdateItem : public <a href="#ResolvedArgument">ResolvedArgument</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_UPDATE_ITEM;
 
- <font color="brown">  // The target entity to be updated.
+<font color="brown">  // The target entity to be updated.
   //
   // This is an expression evaluated using the ResolvedColumns visible
   // inside this statement.  This expression can contain only
@@ -3246,7 +3883,7 @@ class ResolvedUpdateItem : public <a href="#ResolvedArgument">ResolvedArgument</
   // an object that is being mutated, so they have reference semantics.</font>
   const <a href="#ResolvedExpr">ResolvedExpr</a>* target() const;
 
- <font color="brown">  // Set the target entity to this value.  The types must match.
+<font color="brown">  // Set the target entity to this value.  The types must match.
   // This can contain the same columns that can appear in the
   // &lt;where_expr&gt; of the enclosing ResolvedUpdateStmt.
   //
@@ -3254,7 +3891,7 @@ class ResolvedUpdateItem : public <a href="#ResolvedArgument">ResolvedArgument</
   // for nested updates only.</font>
   const <a href="#ResolvedDMLValue">ResolvedDMLValue</a>* set_value() const;
 
- <font color="brown">  // The ResolvedColumn introduced to represent the elements of the
+<font color="brown">  // The ResolvedColumn introduced to represent the elements of the
   // array being updated.  This works similarly to
   // ArrayScan::element_column.
   //
@@ -3264,7 +3901,7 @@ class ResolvedUpdateItem : public <a href="#ResolvedArgument">ResolvedArgument</
   // This column can be referenced inside the nested statements below.</font>
   const <a href="#ResolvedColumnHolder">ResolvedColumnHolder</a>* element_column() const;
 
- <font color="brown">  // Array element modifications to apply. Each item runs on the value
+<font color="brown">  // Array element modifications to apply. Each item runs on the value
   // of &lt;element_column&gt; specified by ResolvedUpdateArrayItem.offset.
   // This field is always empty if the analyzer option
   // FEATURE_V_1_2_ARRAY_ELEMENTS_WITH_SET is disabled.
@@ -3277,7 +3914,7 @@ class ResolvedUpdateItem : public <a href="#ResolvedArgument">ResolvedArgument</
   int array_update_list_size() const;
   const <a href="#ResolvedUpdateArrayItem">ResolvedUpdateArrayItem</a>* array_update_list(int i) const;
 
- <font color="brown">  // Nested DELETE statements to apply.  Each delete runs on one value
+<font color="brown">  // Nested DELETE statements to apply.  Each delete runs on one value
   // of &lt;element_column&gt; and may choose to delete that array element.
   //
   // DELETEs are applied before INSERTs or UPDATEs.
@@ -3287,7 +3924,7 @@ class ResolvedUpdateItem : public <a href="#ResolvedArgument">ResolvedArgument</
   int delete_list_size() const;
   const <a href="#ResolvedDeleteStmt">ResolvedDeleteStmt</a>* delete_list(int i) const;
 
- <font color="brown">  // Nested UPDATE statements to apply.  Each update runs on one value
+<font color="brown">  // Nested UPDATE statements to apply.  Each update runs on one value
   // of &lt;element_column&gt; and may choose to update that array element.
   //
   // UPDATEs are applied after DELETEs and before INSERTs.
@@ -3297,7 +3934,7 @@ class ResolvedUpdateItem : public <a href="#ResolvedArgument">ResolvedArgument</
   int update_list_size() const;
   const <a href="#ResolvedUpdateStmt">ResolvedUpdateStmt</a>* update_list(int i) const;
 
- <font color="brown">  // Nested INSERT statements to apply.  Each insert will produce zero
+<font color="brown">  // Nested INSERT statements to apply.  Each insert will produce zero
   // or more values for &lt;element_column&gt;.
   //
   // INSERTs are applied after DELETEs and UPDATEs.
@@ -3310,7 +3947,8 @@ class ResolvedUpdateItem : public <a href="#ResolvedArgument">ResolvedArgument</
 };
 </code></pre></p>
 
-### ResolvedUpdateArrayItem{ #ResolvedUpdateArrayItem }
+### ResolvedUpdateArrayItem
+<a id="ResolvedUpdateArrayItem"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// For an array element modification, this node represents the offset
@@ -3320,15 +3958,16 @@ class ResolvedUpdateItem : public <a href="#ResolvedArgument">ResolvedArgument</
 class ResolvedUpdateArrayItem : public <a href="#ResolvedArgument">ResolvedArgument</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_UPDATE_ARRAY_ITEM;
 
- <font color="brown">  // The array offset to be modified.</font>
+<font color="brown">  // The array offset to be modified.</font>
   const <a href="#ResolvedExpr">ResolvedExpr</a>* offset() const;
 
- <font color="brown">  // The modification to perform to the array element.</font>
+<font color="brown">  // The modification to perform to the array element.</font>
   const <a href="#ResolvedUpdateItem">ResolvedUpdateItem</a>* update_item() const;
 };
 </code></pre></p>
 
-### ResolvedUpdateStmt{ #ResolvedUpdateStmt }
+### ResolvedUpdateStmt
+<a id="ResolvedUpdateStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents an UPDATE statement, or a nested UPDATE inside an
@@ -3365,7 +4004,15 @@ class ResolvedUpdateArrayItem : public <a href="#ResolvedArgument">ResolvedArgum
 // If there are multiple nested statements updating the same entity,
 // they will be combined into one ResolvedUpdateItem.
 //
-// See (broken link) for more detail on nested DML.</font>
+// See (broken link) for more detail on nested DML.
+//
+// If &lt;returning&gt; is present, the UPDATE statement will return updated rows.
+// &lt;returning&gt; can only occur on top-level statements.
+//
+// This returning clause has a &lt;output_column_list&gt; to represent the data
+// sent back to clients. It can only access columns from the &lt;table_scan&gt;.
+// The columns in &lt;from_scan&gt; are not allowed.
+// TODO: allow columns in &lt;from_scan&gt; to be referenced.</font>
 class ResolvedUpdateStmt : public <a href="#ResolvedStatement">ResolvedStatement</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_UPDATE_STMT;
 
@@ -3376,6 +4023,8 @@ class ResolvedUpdateStmt : public <a href="#ResolvedStatement">ResolvedStatement
   ObjectAccess column_access_list(int i) const;
 
   const <a href="#ResolvedAssertRowsModified">ResolvedAssertRowsModified</a>* assert_rows_modified() const;
+
+  const <a href="#ResolvedReturningClause">ResolvedReturningClause</a>* returning() const;
 
   const <a href="#ResolvedColumnHolder">ResolvedColumnHolder</a>* array_offset_column() const;
 
@@ -3389,7 +4038,8 @@ class ResolvedUpdateStmt : public <a href="#ResolvedStatement">ResolvedStatement
 };
 </code></pre></p>
 
-### ResolvedMergeWhen{ #ResolvedMergeWhen }
+### ResolvedMergeWhen
+<a id="ResolvedMergeWhen"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This is used by ResolvedMergeStmt to represent one WHEN ... THEN clause
@@ -3465,7 +4115,8 @@ class ResolvedMergeWhen : public <a href="#ResolvedArgument">ResolvedArgument</a
 };
 </code></pre></p>
 
-### ResolvedMergeStmt{ #ResolvedMergeStmt }
+### ResolvedMergeStmt
+<a id="ResolvedMergeStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents a MERGE statement.
@@ -3509,7 +4160,8 @@ class ResolvedMergeStmt : public <a href="#ResolvedStatement">ResolvedStatement<
 };
 </code></pre></p>
 
-### ResolvedTruncateStmt{ #ResolvedTruncateStmt }
+### ResolvedTruncateStmt
+<a id="ResolvedTruncateStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents a TRUNCATE TABLE statement.
@@ -3533,7 +4185,8 @@ class ResolvedTruncateStmt : public <a href="#ResolvedStatement">ResolvedStateme
 };
 </code></pre></p>
 
-### ResolvedPrivilege{ #ResolvedPrivilege }
+### ResolvedPrivilege
+<a id="ResolvedPrivilege"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A grantable privilege.
@@ -3554,7 +4207,8 @@ class ResolvedPrivilege : public <a href="#ResolvedArgument">ResolvedArgument</a
 };
 </code></pre></p>
 
-### ResolvedGrantOrRevokeStmt{ #ResolvedGrantOrRevokeStmt }
+### ResolvedGrantOrRevokeStmt
+<a id="ResolvedGrantOrRevokeStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Common superclass of GRANT/REVOKE statements.
@@ -3593,7 +4247,8 @@ class ResolvedGrantOrRevokeStmt : public <a href="#ResolvedStatement">ResolvedSt
 };
 </code></pre></p>
 
-### ResolvedGrantStmt{ #ResolvedGrantStmt }
+### ResolvedGrantStmt
+<a id="ResolvedGrantStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A GRANT statement. It represents the action to grant a list of privileges
@@ -3604,7 +4259,8 @@ class ResolvedGrantStmt : public <a href="#ResolvedGrantOrRevokeStmt">ResolvedGr
 };
 </code></pre></p>
 
-### ResolvedRevokeStmt{ #ResolvedRevokeStmt }
+### ResolvedRevokeStmt
+<a id="ResolvedRevokeStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A REVOKE statement. It represents the action to revoke a list of
@@ -3615,7 +4271,8 @@ class ResolvedRevokeStmt : public <a href="#ResolvedGrantOrRevokeStmt">ResolvedG
 };
 </code></pre></p>
 
-### ResolvedAlterObjectStmt{ #ResolvedAlterObjectStmt }
+### ResolvedAlterObjectStmt
+<a id="ResolvedAlterObjectStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// Common super class for statements:
@@ -3637,7 +4294,8 @@ class ResolvedAlterObjectStmt : public <a href="#ResolvedStatement">ResolvedStat
 };
 </code></pre></p>
 
-### ResolvedAlterDatabaseStmt{ #ResolvedAlterDatabaseStmt }
+### ResolvedAlterDatabaseStmt
+<a id="ResolvedAlterDatabaseStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -3650,7 +4308,8 @@ class ResolvedAlterDatabaseStmt : public <a href="#ResolvedAlterObjectStmt">Reso
 };
 </code></pre></p>
 
-### ResolvedAlterMaterializedViewStmt{ #ResolvedAlterMaterializedViewStmt }
+### ResolvedAlterMaterializedViewStmt
+<a id="ResolvedAlterMaterializedViewStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -3661,7 +4320,20 @@ class ResolvedAlterMaterializedViewStmt : public <a href="#ResolvedAlterObjectSt
 };
 </code></pre></p>
 
-### ResolvedAlterTableStmt{ #ResolvedAlterTableStmt }
+### ResolvedAlterSchemaStmt
+<a id="ResolvedAlterSchemaStmt"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// This statement:
+// ALTER SCHEMA [IF NOT EXISTS] &lt;name_path&gt; &lt;alter_action_list&gt;;</font>
+class ResolvedAlterSchemaStmt : public <a href="#ResolvedAlterObjectStmt">ResolvedAlterObjectStmt</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_ALTER_SCHEMA_STMT;
+
+};
+</code></pre></p>
+
+### ResolvedAlterTableStmt
+<a id="ResolvedAlterTableStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -3672,7 +4344,8 @@ class ResolvedAlterTableStmt : public <a href="#ResolvedAlterObjectStmt">Resolve
 };
 </code></pre></p>
 
-### ResolvedAlterViewStmt{ #ResolvedAlterViewStmt }
+### ResolvedAlterViewStmt
+<a id="ResolvedAlterViewStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -3683,7 +4356,8 @@ class ResolvedAlterViewStmt : public <a href="#ResolvedAlterObjectStmt">Resolved
 };
 </code></pre></p>
 
-### ResolvedAlterAction{ #ResolvedAlterAction }
+### ResolvedAlterAction
+<a id="ResolvedAlterAction"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// A common super class for all actions in statement ALTER &lt;object&gt;</font>
@@ -3691,7 +4365,8 @@ class ResolvedAlterAction : public <a href="#ResolvedArgument">ResolvedArgument<
 };
 </code></pre></p>
 
-### ResolvedSetOptionsAction{ #ResolvedSetOptionsAction }
+### ResolvedSetOptionsAction
+<a id="ResolvedSetOptionsAction"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// SET OPTIONS action for ALTER &lt;object&gt; statement
@@ -3707,7 +4382,8 @@ class ResolvedSetOptionsAction : public <a href="#ResolvedAlterAction">ResolvedA
 };
 </code></pre></p>
 
-### ResolvedAddColumnAction{ #ResolvedAddColumnAction }
+### ResolvedAddColumnAction
+<a id="ResolvedAddColumnAction"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// ADD COLUMN action for ALTER TABLE statement</font>
@@ -3720,39 +4396,153 @@ class ResolvedAddColumnAction : public <a href="#ResolvedAlterAction">ResolvedAl
 };
 </code></pre></p>
 
-### ResolvedDropColumnAction{ #ResolvedDropColumnAction }
+### ResolvedAddConstraintAction
+<a id="ResolvedAddConstraintAction"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// ADD CONSTRAINT for ALTER TABLE statement</font>
+class ResolvedAddConstraintAction : public <a href="#ResolvedAlterAction">ResolvedAlterAction</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_ADD_CONSTRAINT_ACTION;
+
+  bool is_if_not_exists() const;
+
+  const <a href="#ResolvedConstraint">ResolvedConstraint</a>* constraint() const;
+
+  const Table* table() const;
+};
+</code></pre></p>
+
+### ResolvedDropConstraintAction
+<a id="ResolvedDropConstraintAction"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// DROP CONSTRAINT for ALTER TABLE statement</font>
+class ResolvedDropConstraintAction : public <a href="#ResolvedAlterAction">ResolvedAlterAction</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_DROP_CONSTRAINT_ACTION;
+
+  bool is_if_exists() const;
+
+  const std::string&amp; name() const;
+};
+</code></pre></p>
+
+### ResolvedDropPrimaryKeyAction
+<a id="ResolvedDropPrimaryKeyAction"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// DROP PRIMARY KEY [IF EXISTS] for ALTER TABLE statement</font>
+class ResolvedDropPrimaryKeyAction : public <a href="#ResolvedAlterAction">ResolvedAlterAction</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_DROP_PRIMARY_KEY_ACTION;
+
+  bool is_if_exists() const;
+};
+</code></pre></p>
+
+### ResolvedAlterColumnOptionsAction
+<a id="ResolvedAlterColumnOptionsAction"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// This ALTER action:
+//   ALTER COLUMN [IF EXISTS] &lt;column&gt; SET OPTIONS &lt;options_list&gt;
+//
+// &lt;is_if_exists&gt; silently ignore the &#34;&lt;column&gt; not found&#34; error.
+// &lt;column&gt; the name of the column.
+// &lt;options_list&gt; has engine-specific directives that specify how to
+//                alter the metadata for a column.</font>
+class ResolvedAlterColumnOptionsAction : public <a href="#ResolvedAlterAction">ResolvedAlterAction</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_ALTER_COLUMN_OPTIONS_ACTION;
+
+  bool is_if_exists() const;
+
+  const std::string&amp; column() const;
+
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; option_list() const;
+  int option_list_size() const;
+  const <a href="#ResolvedOption">ResolvedOption</a>* option_list(int i) const;
+};
+</code></pre></p>
+
+### ResolvedAlterColumnDropNotNullAction
+<a id="ResolvedAlterColumnDropNotNullAction"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// This ALTER action:
+//   ALTER COLUMN [IF EXISTS] &lt;column&gt; DROP NOT NULL
+//
+// Removes the NOT NULL constraint from the given column.
+//
+// &lt;is_if_exists&gt; silently ignore the &#34;&lt;column&gt; not found&#34; error.
+// &lt;column&gt; is the name of the column.</font>
+class ResolvedAlterColumnDropNotNullAction : public <a href="#ResolvedAlterAction">ResolvedAlterAction</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_ALTER_COLUMN_DROP_NOT_NULL_ACTION;
+
+  bool is_if_exists() const;
+
+  const std::string&amp; column() const;
+};
+</code></pre></p>
+
+### ResolvedAlterColumnSetDataTypeAction
+<a id="ResolvedAlterColumnSetDataTypeAction"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// ALTER COLUMN SET DATA TYPE action for ALTER TABLE statement.</font>
+class ResolvedAlterColumnSetDataTypeAction : public <a href="#ResolvedAlterAction">ResolvedAlterAction</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_ALTER_COLUMN_SET_DATA_TYPE_ACTION;
+
+<font color="brown">  // Indicates whether the IF EXISTS clause was included in the
+  // ALTER COLUMN expression.</font>
+  bool is_if_exists() const;
+
+<font color="brown">  // The name of the column whose data type is changing.</font>
+  const std::string&amp; column() const;
+
+<font color="brown">  // The new type for the column.</font>
+  const Type* updated_type() const;
+
+<font color="brown">  // The new type parameters for the column, if the new type has
+  // parameters. Note that unlike with CREATE TABLE, the child_list is
+  // populated for ARRAY and STRUCT types.</font>
+  const TypeParameters&amp; updated_type_parameters() const;
+};
+</code></pre></p>
+
+### ResolvedDropColumnAction
+<a id="ResolvedDropColumnAction"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// DROP COLUMN action for ALTER TABLE statement
 //
-// &lt;name&gt; is the name of the column to drop.
-// &lt;column_reference&gt; references the column to be dropped, if it exists.
-//        It might be missing if DROP IF EXISTS column does not exist.</font>
+// &lt;name&gt; is the name of the column to drop.</font>
 class ResolvedDropColumnAction : public <a href="#ResolvedAlterAction">ResolvedAlterAction</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_DROP_COLUMN_ACTION;
 
   bool is_if_exists() const;
 
   const std::string&amp; name() const;
-
-  const <a href="#ResolvedColumnRef">ResolvedColumnRef</a>* column_reference() const;
 };
 </code></pre></p>
 
-### ResolvedSetAsAction{ #ResolvedSetAsAction }
+### ResolvedSetAsAction
+<a id="ResolvedSetAsAction"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// SET AS action for generic ALTER &lt;entity_type&gt; statement.
+// Exactly one of &lt;entity_body_json&gt;, &lt;entity_body_text&gt; should be non-empty.
 //
-// &lt;entity_body_json&gt; is a JSON literal to be interpreted by engine.</font>
+// &lt;entity_body_json&gt; is a JSON literal to be interpreted by engine.
+// &lt;entity_body_text&gt; is a text literal to be interpreted by engine.</font>
 class ResolvedSetAsAction : public <a href="#ResolvedAlterAction">ResolvedAlterAction</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_SET_AS_ACTION;
 
   const std::string&amp; entity_body_json() const;
+
+  const std::string&amp; entity_body_text() const;
 };
 </code></pre></p>
 
-### ResolvedAlterTableSetOptionsStmt{ #ResolvedAlterTableSetOptionsStmt }
+### ResolvedAlterTableSetOptionsStmt
+<a id="ResolvedAlterTableSetOptionsStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -3779,7 +4569,8 @@ class ResolvedAlterTableSetOptionsStmt : public <a href="#ResolvedStatement">Res
 };
 </code></pre></p>
 
-### ResolvedRenameStmt{ #ResolvedRenameStmt }
+### ResolvedRenameStmt
+<a id="ResolvedRenameStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: RENAME &lt;object_type&gt; &lt;old_name_path&gt; TO &lt;new_name_path&gt;;
@@ -3805,7 +4596,8 @@ class ResolvedRenameStmt : public <a href="#ResolvedStatement">ResolvedStatement
 };
 </code></pre></p>
 
-### ResolvedCreateRowAccessPolicyStmt{ #ResolvedCreateRowAccessPolicyStmt }
+### ResolvedCreateRowAccessPolicyStmt
+<a id="ResolvedCreateRowAccessPolicyStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: CREATE [OR REPLACE] ROW ACCESS POLICY [IF NOT EXISTS]
@@ -3865,7 +4657,8 @@ class ResolvedCreateRowAccessPolicyStmt : public <a href="#ResolvedStatement">Re
 };
 </code></pre></p>
 
-### ResolvedDropRowAccessPolicyStmt{ #ResolvedDropRowAccessPolicyStmt }
+### ResolvedDropRowAccessPolicyStmt
+<a id="ResolvedDropRowAccessPolicyStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -3893,7 +4686,30 @@ class ResolvedDropRowAccessPolicyStmt : public <a href="#ResolvedStatement">Reso
 };
 </code></pre></p>
 
-### ResolvedGrantToAction{ #ResolvedGrantToAction }
+### ResolvedDropSearchIndexStmt
+<a id="ResolvedDropSearchIndexStmt"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// DROP SEARCH INDEX [IF EXISTS] &lt;name&gt; [ON &lt;table_name_path&gt;];
+//
+// &lt;name&gt; is the name of the search index to be dropped.
+// &lt;table_name_path&gt; is a vector giving the identifier path of the target
+//                   table.</font>
+class ResolvedDropSearchIndexStmt : public <a href="#ResolvedStatement">ResolvedStatement</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_DROP_SEARCH_INDEX_STMT;
+
+  bool is_if_exists() const;
+
+  const std::string&amp; name() const;
+
+  const std::vector&lt;std::string&gt;&amp; table_name_path() const;
+  int table_name_path_size() const;
+  std::string table_name_path(int i) const;
+};
+</code></pre></p>
+
+### ResolvedGrantToAction
+<a id="ResolvedGrantToAction"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// GRANT TO action for ALTER ROW ACCESS POLICY statement
@@ -3908,7 +4724,8 @@ class ResolvedGrantToAction : public <a href="#ResolvedAlterAction">ResolvedAlte
 };
 </code></pre></p>
 
-### ResolvedFilterUsingAction{ #ResolvedFilterUsingAction }
+### ResolvedFilterUsingAction
+<a id="ResolvedFilterUsingAction"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// FILTER USING action for ALTER ROW ACCESS POLICY statement
@@ -3925,7 +4742,8 @@ class ResolvedFilterUsingAction : public <a href="#ResolvedAlterAction">Resolved
 };
 </code></pre></p>
 
-### ResolvedRevokeFromAction{ #ResolvedRevokeFromAction }
+### ResolvedRevokeFromAction
+<a id="ResolvedRevokeFromAction"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// REVOKE FROM action for ALTER ROW ACCESS POLICY statement
@@ -3944,7 +4762,8 @@ class ResolvedRevokeFromAction : public <a href="#ResolvedAlterAction">ResolvedA
 };
 </code></pre></p>
 
-### ResolvedRenameToAction{ #ResolvedRenameToAction }
+### ResolvedRenameToAction
+<a id="ResolvedRenameToAction"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// RENAME TO action for ALTER ROW ACCESS POLICY statement
@@ -3961,7 +4780,8 @@ class ResolvedRenameToAction : public <a href="#ResolvedAlterAction">ResolvedAlt
 };
 </code></pre></p>
 
-### ResolvedAlterRowAccessPolicyStmt{ #ResolvedAlterRowAccessPolicyStmt }
+### ResolvedAlterRowAccessPolicyStmt
+<a id="ResolvedAlterRowAccessPolicyStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -3983,7 +4803,8 @@ class ResolvedAlterRowAccessPolicyStmt : public <a href="#ResolvedAlterObjectStm
 };
 </code></pre></p>
 
-### ResolvedAlterAllRowAccessPoliciesStmt{ #ResolvedAlterAllRowAccessPoliciesStmt }
+### ResolvedAlterAllRowAccessPoliciesStmt
+<a id="ResolvedAlterAllRowAccessPoliciesStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
@@ -4003,7 +4824,8 @@ class ResolvedAlterAllRowAccessPoliciesStmt : public <a href="#ResolvedAlterObje
 };
 </code></pre></p>
 
-### ResolvedCreateConstantStmt{ #ResolvedCreateConstantStmt }
+### ResolvedCreateConstantStmt
+<a id="ResolvedCreateConstantStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement creates a user-defined named constant:
@@ -4023,7 +4845,8 @@ class ResolvedCreateConstantStmt : public <a href="#ResolvedCreateStatement">Res
 };
 </code></pre></p>
 
-### ResolvedCreateFunctionStmt{ #ResolvedCreateFunctionStmt }
+### ResolvedCreateFunctionStmt
+<a id="ResolvedCreateFunctionStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement creates a user-defined function:
@@ -4118,17 +4941,12 @@ class ResolvedCreateConstantStmt : public <a href="#ResolvedCreateStatement">Res
 class ResolvedCreateFunctionStmt : public <a href="#ResolvedCreateStatement">ResolvedCreateStatement</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_CREATE_FUNCTION_STMT;
 
-        static FunctionEnums::Volatility DeterminismLevelToVolatility(
-          ResolvedCreateStatementEnums::DeterminismLevel);
-
-        // Converts the function's determinism level into a volatility.
-        // Functions with unspecified/non deterministic/volatile
-        // specifiers are considered volatile, functions with deterministic
-        // and immutable specifiers are considered immutable and functions
-        // with the stable specifier are considered stable.
-        FunctionEnums::Volatility volatility() const {
-          return DeterminismLevelToVolatility(determinism_level());
-        }
+  // Converts the function's determinism level into a volatility.
+  // Functions with unspecified/non deterministic/volatile
+  // specifiers are considered volatile, functions with deterministic
+  // and immutable specifiers are considered immutable and functions
+  // with the stable specifier are considered stable.
+  FunctionEnums::Volatility volatility() const;
 
   bool has_explicit_return_type() const;
 
@@ -4162,7 +4980,8 @@ class ResolvedCreateFunctionStmt : public <a href="#ResolvedCreateStatement">Res
 };
 </code></pre></p>
 
-### ResolvedArgumentDef{ #ResolvedArgumentDef }
+### ResolvedArgumentDef
+<a id="ResolvedArgumentDef"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents an argument definition, e.g. in a function&#39;s argument
@@ -4196,7 +5015,8 @@ class ResolvedArgumentDef : public <a href="#ResolvedArgument">ResolvedArgument<
 };
 </code></pre></p>
 
-### ResolvedArgumentRef{ #ResolvedArgumentRef }
+### ResolvedArgumentRef
+<a id="ResolvedArgumentRef"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents an argument reference, e.g. in a function&#39;s body.
@@ -4222,7 +5042,8 @@ class ResolvedArgumentRef : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 };
 </code></pre></p>
 
-### ResolvedCreateTableFunctionStmt{ #ResolvedCreateTableFunctionStmt }
+### ResolvedCreateTableFunctionStmt
+<a id="ResolvedCreateTableFunctionStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement creates a user-defined table-valued function:
@@ -4258,6 +5079,7 @@ class ResolvedArgumentRef : public <a href="#ResolvedExpr">ResolvedExpr</a> {
 //          See (broken link).
 //   &lt;sql_security&gt; is the declared security mode for the function. Values
 //          include &#39;INVOKER&#39;, &#39;DEFINER&#39;.
+//   &lt;has_explicit_return_schema&gt; is true iff RETURNS clause is present.
 //
 // ----------------------
 // Table-Valued Functions
@@ -4324,6 +5146,8 @@ class ResolvedCreateTableFunctionStmt : public <a href="#ResolvedCreateStatement
 
   const FunctionSignature&amp; signature() const;
 
+  bool has_explicit_return_schema() const;
+
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; option_list() const;
   int option_list_size() const;
   const <a href="#ResolvedOption">ResolvedOption</a>* option_list(int i) const;
@@ -4344,7 +5168,8 @@ class ResolvedCreateTableFunctionStmt : public <a href="#ResolvedCreateStatement
 };
 </code></pre></p>
 
-### ResolvedRelationArgumentScan{ #ResolvedRelationArgumentScan }
+### ResolvedRelationArgumentScan
+<a id="ResolvedRelationArgumentScan"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents a relation argument reference in a table-valued function&#39;s
@@ -4353,20 +5178,21 @@ class ResolvedCreateTableFunctionStmt : public <a href="#ResolvedCreateStatement
 class ResolvedRelationArgumentScan : public <a href="#ResolvedScan">ResolvedScan</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_RELATION_ARGUMENT_SCAN;
 
- <font color="brown">  // This is the name of the relation argument for the table-valued
+<font color="brown">  // This is the name of the relation argument for the table-valued
   // function.  It is used to match this relation argument reference in
   // a TVF SQL function body with one of possibly several relation
   // arguments in the TVF call.</font>
   const std::string&amp; name() const;
 
- <font color="brown">  // If true, the result of this query is a value table. Rather than
+<font color="brown">  // If true, the result of this query is a value table. Rather than
   // producing rows with named columns, it produces rows with a single
   // unnamed value type. See (broken link).</font>
   bool is_value_table() const;
 };
 </code></pre></p>
 
-### ResolvedArgumentList{ #ResolvedArgumentList }
+### ResolvedArgumentList
+<a id="ResolvedArgumentList"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: [ (&lt;arg_list&gt;) ];
@@ -4388,7 +5214,8 @@ class ResolvedArgumentList : public <a href="#ResolvedArgument">ResolvedArgument
 };
 </code></pre></p>
 
-### ResolvedFunctionSignatureHolder{ #ResolvedFunctionSignatureHolder }
+### ResolvedFunctionSignatureHolder
+<a id="ResolvedFunctionSignatureHolder"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This wrapper is used for an optional FunctionSignature.</font>
@@ -4399,7 +5226,8 @@ class ResolvedFunctionSignatureHolder : public <a href="#ResolvedArgument">Resol
 };
 </code></pre></p>
 
-### ResolvedDropFunctionStmt{ #ResolvedDropFunctionStmt }
+### ResolvedDropFunctionStmt
+<a id="ResolvedDropFunctionStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: DROP FUNCTION [IF EXISTS] &lt;name_path&gt;
@@ -4426,13 +5254,13 @@ class ResolvedDropFunctionStmt : public <a href="#ResolvedStatement">ResolvedSta
   int name_path_size() const;
   std::string name_path(int i) const;
 
- <font color="brown">  // NOTE: arguments for DROP FUNCTION statements are matched only on
+<font color="brown">  // NOTE: arguments for DROP FUNCTION statements are matched only on
   // type; names for any arguments in ResolvedArgumentList will be set
   // to the empty string irrespective of whether or not argument names
   // were given in the DROP FUNCTION statement.</font>
   const <a href="#ResolvedArgumentList">ResolvedArgumentList</a>* arguments() const;
 
- <font color="brown">  // NOTE: arguments for DROP FUNCTION statements are matched only on
+<font color="brown">  // NOTE: arguments for DROP FUNCTION statements are matched only on
   // type; names are irrelevant, so no argument names are saved to use
   // with this signature.  Additionally, the return type will always be
   // &lt;void&gt;, since return types are ignored for DROP FUNCTION.</font>
@@ -4440,7 +5268,27 @@ class ResolvedDropFunctionStmt : public <a href="#ResolvedStatement">ResolvedSta
 };
 </code></pre></p>
 
-### ResolvedCallStmt{ #ResolvedCallStmt }
+### ResolvedDropTableFunctionStmt
+<a id="ResolvedDropTableFunctionStmt"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// This statement: DROP TABLE FUNCTION [IF EXISTS] &lt;name_path&gt;;
+//
+// &lt;is_if_exists&gt; silently ignore the &#34;name_path does not exist&#34; error.
+// &lt;name_path&gt; is the identifier path of the function to be dropped.</font>
+class ResolvedDropTableFunctionStmt : public <a href="#ResolvedStatement">ResolvedStatement</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_DROP_TABLE_FUNCTION_STMT;
+
+  bool is_if_exists() const;
+
+  const std::vector&lt;std::string&gt;&amp; name_path() const;
+  int name_path_size() const;
+  std::string name_path(int i) const;
+};
+</code></pre></p>
+
+### ResolvedCallStmt
+<a id="ResolvedCallStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: CALL &lt;procedure&gt;;
@@ -4461,7 +5309,8 @@ class ResolvedCallStmt : public <a href="#ResolvedStatement">ResolvedStatement</
 };
 </code></pre></p>
 
-### ResolvedImportStmt{ #ResolvedImportStmt }
+### ResolvedImportStmt
+<a id="ResolvedImportStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: IMPORT &lt;import_kind&gt;
@@ -4523,7 +5372,8 @@ class ResolvedImportStmt : public <a href="#ResolvedStatement">ResolvedStatement
 };
 </code></pre></p>
 
-### ResolvedModuleStmt{ #ResolvedModuleStmt }
+### ResolvedModuleStmt
+<a id="ResolvedModuleStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement: MODULE &lt;name_path&gt; [&lt;option_list&gt;];
@@ -4545,7 +5395,8 @@ class ResolvedModuleStmt : public <a href="#ResolvedStatement">ResolvedStatement
 };
 </code></pre></p>
 
-### ResolvedAggregateHavingModifier{ #ResolvedAggregateHavingModifier }
+### ResolvedAggregateHavingModifier
+<a id="ResolvedAggregateHavingModifier"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This represents a HAVING MAX or HAVING MIN modifier in an aggregate
@@ -4572,11 +5423,12 @@ class ResolvedAggregateHavingModifier : public <a href="#ResolvedArgument">Resol
 };
 </code></pre></p>
 
-### ResolvedCreateMaterializedViewStmt{ #ResolvedCreateMaterializedViewStmt }
+### ResolvedCreateMaterializedViewStmt
+<a id="ResolvedCreateMaterializedViewStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement:
-//   CREATE MATERIALIZED VIEW &lt;name&gt; [PARTITION BY expr, ...]
+//   CREATE MATERIALIZED VIEW &lt;name&gt; [(...)] [PARTITION BY expr, ...]
 //   [CLUSTER BY expr, ...] [OPTIONS (...)] AS SELECT ...
 //
 // &lt;column_definition_list&gt; matches 1:1 with the &lt;output_column_list&gt; in
@@ -4614,7 +5466,8 @@ class ResolvedCreateMaterializedViewStmt : public <a href="#ResolvedCreateViewBa
 };
 </code></pre></p>
 
-### ResolvedCreateProcedureStmt{ #ResolvedCreateProcedureStmt }
+### ResolvedCreateProcedureStmt
+<a id="ResolvedCreateProcedureStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// This statement creates a user-defined procedure:
@@ -4660,7 +5513,8 @@ class ResolvedCreateProcedureStmt : public <a href="#ResolvedCreateStatement">Re
 };
 </code></pre></p>
 
-### ResolvedExecuteImmediateArgument{ #ResolvedExecuteImmediateArgument }
+### ResolvedExecuteImmediateArgument
+<a id="ResolvedExecuteImmediateArgument"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// An argument for an EXECUTE IMMEDIATE&#39;s USING clause.
@@ -4676,7 +5530,8 @@ class ResolvedExecuteImmediateArgument : public <a href="#ResolvedArgument">Reso
 };
 </code></pre></p>
 
-### ResolvedExecuteImmediateStmt{ #ResolvedExecuteImmediateStmt }
+### ResolvedExecuteImmediateStmt
+<a id="ResolvedExecuteImmediateStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// An EXECUTE IMMEDIATE statement
@@ -4704,22 +5559,24 @@ class ResolvedExecuteImmediateStmt : public <a href="#ResolvedStatement">Resolve
 };
 </code></pre></p>
 
-### ResolvedAssignmentStmt{ #ResolvedAssignmentStmt }
+### ResolvedAssignmentStmt
+<a id="ResolvedAssignmentStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// An assignment of a value to another value.</font>
 class ResolvedAssignmentStmt : public <a href="#ResolvedStatement">ResolvedStatement</a> {
   static const ResolvedNodeKind TYPE = RESOLVED_ASSIGNMENT_STMT;
 
- <font color="brown">  // Target of the assignment.  Currently, this will be either ResolvedSystemVariable, or a chain of ResolveGetField operations around it.</font>
+<font color="brown">  // Target of the assignment.  Currently, this will be either ResolvedSystemVariable, or a chain of ResolveGetField operations around it.</font>
   const <a href="#ResolvedExpr">ResolvedExpr</a>* target() const;
 
- <font color="brown">  // Value to assign into the target.  This will always be the same type as the target.</font>
+<font color="brown">  // Value to assign into the target.  This will always be the same type as the target.</font>
   const <a href="#ResolvedExpr">ResolvedExpr</a>* expr() const;
 };
 </code></pre></p>
 
-### ResolvedCreateEntityStmt{ #ResolvedCreateEntityStmt }
+### ResolvedCreateEntityStmt
+<a id="ResolvedCreateEntityStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// (broken link)
@@ -4728,8 +5585,11 @@ class ResolvedAssignmentStmt : public <a href="#ResolvedStatement">ResolvedState
 // [OPTIONS &lt;option_list&gt;]
 // [AS &lt;entity_body_json&gt;];
 //
+// At most one of &lt;entity_body_json&gt;, &lt;entity_body_text&gt; can be non-empty.
+//
 // &lt;entity_type&gt; engine-specific entity type to be created.
 // &lt;entity_body_json&gt; is a JSON literal to be interpreted by engine.
+// &lt;entity_body_text&gt; is a text literal to be interpreted by engine.
 // &lt;option_list&gt; has engine-specific directives for how to
 //               create this entity.</font>
 class ResolvedCreateEntityStmt : public <a href="#ResolvedCreateStatement">ResolvedCreateStatement</a> {
@@ -4739,13 +5599,16 @@ class ResolvedCreateEntityStmt : public <a href="#ResolvedCreateStatement">Resol
 
   const std::string&amp; entity_body_json() const;
 
+  const std::string&amp; entity_body_text() const;
+
   const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; option_list() const;
   int option_list_size() const;
   const <a href="#ResolvedOption">ResolvedOption</a>* option_list(int i) const;
 };
 </code></pre></p>
 
-### ResolvedAlterEntityStmt{ #ResolvedAlterEntityStmt }
+### ResolvedAlterEntityStmt
+<a id="ResolvedAlterEntityStmt"></a>
 
 <p><pre><code class="lang-c++">
 <font color="brown">// (broken link)
@@ -4758,6 +5621,317 @@ class ResolvedAlterEntityStmt : public <a href="#ResolvedAlterObjectStmt">Resolv
   static const ResolvedNodeKind TYPE = RESOLVED_ALTER_ENTITY_STMT;
 
   const std::string&amp; entity_type() const;
+};
+</code></pre></p>
+
+### ResolvedPivotColumn
+<a id="ResolvedPivotColumn"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// Represents a column produced by aggregating a particular pivot
+// expression over a subset of the input for which the FOR expression
+// matches a particular pivot value. This aggregation is further
+// broken up by the enclosing ResolvedPivotScan&#39;s groupby columns,
+// with each distinct value of the groupby columns producing a
+// separate row in the output.
+//
+// In any pivot column, &#39;c&#39;,
+// &#39;c&#39; is produced by aggregating pivot expression
+//   &lt;pivot_expr_list[c.pivot_expr_index]&gt;
+// over input rows such that
+//   &lt;for_expr&gt; IS NOT DISTINCT FROM
+//   &lt;pivot_value_list[c.pivot_value_index]&gt;</font>
+class ResolvedPivotColumn : public <a href="#ResolvedArgument">ResolvedArgument</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_PIVOT_COLUMN;
+
+<font color="brown">  // The output column used to represent the result of the pivot.</font>
+  const <a href="#ResolvedColumn">ResolvedColumn</a>&amp; column() const;
+
+<font color="brown">  // Specifies the index of the pivot expression
+  // within the enclosing ResolvedPivotScan&#39;s &lt;pivot_expr_list&gt; used to
+  // determine the result of the column.</font>
+  int pivot_expr_index() const;
+
+<font color="brown">  // Specifies the index of the pivot value within
+  // the enclosing ResolvedPivotScan&#39;s &lt;pivot_value_list&gt; used to
+  // determine the subset of input rows the pivot expression should be
+  // evaluated over.</font>
+  int pivot_value_index() const;
+};
+</code></pre></p>
+
+### ResolvedPivotScan
+<a id="ResolvedPivotScan"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// A scan produced by the following SQL fragment:
+//   &lt;input_scan&gt; PIVOT(... FOR ... IN (...))
+//
+// The column list of this scan consists of a subset of columns from
+// &lt;group_by_column_list&gt; and &lt;pivot_column_list&gt;.
+//
+// Details: (broken link)</font>
+class ResolvedPivotScan : public <a href="#ResolvedScan">ResolvedScan</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_PIVOT_SCAN;
+
+<font color="brown">  // Input to the PIVOT clause</font>
+  const <a href="#ResolvedScan">ResolvedScan</a>* input_scan() const;
+
+<font color="brown">  // The columns from &lt;input_scan&gt; to group by.
+  // The output will have one row for each distinct combination of
+  // values for all grouping columns. (There will be one output row if
+  // this list is empty.)
+  //
+  // Each element is a ResolvedComputedColumn. The expression is always
+  // a ResolvedColumnRef that references a column from &lt;input_scan&gt;.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedComputedColumn">ResolvedComputedColumn</a>&gt;&gt;&amp; group_by_list() const;
+  int group_by_list_size() const;
+  const <a href="#ResolvedComputedColumn">ResolvedComputedColumn</a>* group_by_list(int i) const;
+
+<font color="brown">  // Pivot expressions which aggregate over the subset of &lt;input_scan&gt;
+  // where &lt;for_expr&gt; matches each value in &lt;pivot_value_list&gt;, plus
+  // all columns in &lt;group_by_list&gt;.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedExpr">ResolvedExpr</a>&gt;&gt;&amp; pivot_expr_list() const;
+  int pivot_expr_list_size() const;
+  const <a href="#ResolvedExpr">ResolvedExpr</a>* pivot_expr_list(int i) const;
+
+<font color="brown">  // Expression following the FOR keyword, to be evaluated over each row
+  // in &lt;input_scan&gt;. This value is compared with each value in
+  // &lt;pivot_value_list&gt; to determine which columns the aggregation
+  // results of &lt;pivot_expr_list&gt; should go to.</font>
+  const <a href="#ResolvedExpr">ResolvedExpr</a>* for_expr() const;
+
+<font color="brown">  // A list of pivot values within the IN list, to be compared against
+  // the result of &lt;for_expr&gt; for each row in the input table. Each
+  // pivot value generates a distinct column in the output for each
+  // pivot expression, representing the result of the corresponding
+  // pivot expression over the subset of input where &lt;for_expr&gt; matches
+  // this pivot value.
+  //
+  // All pivot values in this list must have the same type as
+  // &lt;for_expr&gt; and must be constant.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedExpr">ResolvedExpr</a>&gt;&gt;&amp; pivot_value_list() const;
+  int pivot_value_list_size() const;
+  const <a href="#ResolvedExpr">ResolvedExpr</a>* pivot_value_list(int i) const;
+
+<font color="brown">  // List of columns created to store the output pivot columns.
+  // Each is computed using one of pivot_expr_list and one of
+  // pivot_value_list.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedPivotColumn">ResolvedPivotColumn</a>&gt;&gt;&amp; pivot_column_list() const;
+  int pivot_column_list_size() const;
+  const <a href="#ResolvedPivotColumn">ResolvedPivotColumn</a>* pivot_column_list(int i) const;
+};
+</code></pre></p>
+
+### ResolvedReturningClause
+<a id="ResolvedReturningClause"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// Represents the returning clause on a DML statement.</font>
+class ResolvedReturningClause : public <a href="#ResolvedArgument">ResolvedArgument</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_RETURNING_CLAUSE;
+
+<font color="brown">  // Specifies the columns in the returned output row with column
+  // names. It can reference columns from the target table scan
+  // &lt;table_scan&gt; from INSERT/DELETE/UPDATE statements. Also this list
+  // can have columns computed in the &lt;expr_list&gt; or an &lt;action_column&gt;
+  // as the last column.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOutputColumn">ResolvedOutputColumn</a>&gt;&gt;&amp; output_column_list() const;
+  int output_column_list_size() const;
+  const <a href="#ResolvedOutputColumn">ResolvedOutputColumn</a>* output_column_list(int i) const;
+
+<font color="brown">  // Represents the WITH ACTION column in &lt;output_column_list&gt; as a
+  // string type column. There are four valid values for this action
+  // column: &#34;INSERT&#34;, &#34;REPLACE&#34;, &#34;UPDATE&#34;, and &#34;DELETE&#34;.</font>
+  const <a href="#ResolvedColumnHolder">ResolvedColumnHolder</a>* action_column() const;
+
+<font color="brown">  // Represents the computed expressions so they can be referenced in
+  // &lt;output_column_list&gt;. Worth noting, it can&#39;t see &lt;action_column&gt;
+  // and can only access columns from the DML statement target table.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedComputedColumn">ResolvedComputedColumn</a>&gt;&gt;&amp; expr_list() const;
+  int expr_list_size() const;
+  const <a href="#ResolvedComputedColumn">ResolvedComputedColumn</a>* expr_list(int i) const;
+};
+</code></pre></p>
+
+### ResolvedUnpivotArg
+<a id="ResolvedUnpivotArg"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// A column group in the UNPIVOT IN clause.
+//
+// Example:
+//   &#39;a&#39; in &#39;UNPIVOT(x FOR z IN (a , b , c))&#39;
+//   or &#39;(a , b)&#39; in &#39;UNPIVOT((x , y) FOR z IN ((a , b), (c , d))&#39;</font>
+class ResolvedUnpivotArg : public <a href="#ResolvedArgument">ResolvedArgument</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_UNPIVOT_ARG;
+
+<font color="brown">  // A list of columns referencing an output column of the &lt;input_scan&gt;
+  // of ResolvedUnpivotScan. The size of this vector is
+  // the same as &lt;value_column_list&gt;.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedColumnRef">ResolvedColumnRef</a>&gt;&gt;&amp; column_list() const;
+  int column_list_size() const;
+  const <a href="#ResolvedColumnRef">ResolvedColumnRef</a>* column_list(int i) const;
+};
+</code></pre></p>
+
+### ResolvedUnpivotScan
+<a id="ResolvedUnpivotScan"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// A scan produced by the following SQL fragment:
+// &lt;input_scan&gt; UNPIVOT(&lt;value_column_list&gt;
+//   FOR &lt;label_column&gt;
+//   IN (&lt;unpivot_arg_list&gt;))
+//
+// size of (&lt;unpivot_arg_list&gt;[i], i.e. column groups inside
+// &lt;unpivot_arg_list&gt;)
+//   = size of (&lt;value_column_list&gt;)
+//   = Let&#39;s say num_value_columns
+//
+// size of (&lt;unpivot_arg_list&gt;)
+//   = size of (&lt;label_list&gt;)
+//   = Let&#39;s say num_args
+//
+// Here is how output rows are generated --
+// for each input row :
+//   for arg_index = 0 .. (num_args - 1) :
+//     output a row with the original columns from &lt;input_scan&gt;
+//
+//       plus
+//     arg = &lt;unpivot_arg_list&gt;[arg_index]
+//     for value_column_index = 0 .. (num_value_columns - 1) :
+//       output_value_column = &lt;value_column_list&gt;[value_column_index]
+//       input_arg_column = arg [value_column_index]
+//       output_value_column = input_arg_column
+//
+//       plus
+//     &lt;label_column&gt; = &lt;label_list&gt;[arg_index]
+//
+//
+// Hence the total number of rows generated in the output =
+//   input rows * size of &lt;unpivot_arg_list&gt;
+//
+// For all column groups inside &lt;unpivot_arg_list&gt;, datatype of
+// columns at the same position in the vector must be equivalent, and
+// also equivalent to the datatype of the column at the same position in
+// &lt;value_column_list&gt;.
+// I.e. in the above pseudocode, datatypes must be equivalent for
+// output_value_column and input_arg_column.
+// Datatype of &lt;label_column&gt; must be the same as datatype of
+// &lt;label_list&gt; and can be string or int64.
+//
+// Details: (broken link)</font>
+class ResolvedUnpivotScan : public <a href="#ResolvedScan">ResolvedScan</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_UNPIVOT_SCAN;
+
+  const <a href="#ResolvedScan">ResolvedScan</a>* input_scan() const;
+
+<font color="brown">  // This is a list of one or more new columns added by UNPIVOT.
+  // These new column(s) store the value of input columns that are in
+  // the UNPIVOT IN clause.</font>
+  const std::vector&lt;<a href="#ResolvedColumn">ResolvedColumn</a>&gt;&amp; value_column_list() const;
+  int value_column_list_size() const;
+  <a href="#ResolvedColumn">ResolvedColumn</a> value_column_list(int i) const;
+
+<font color="brown">  // This is a new column added in the output for storing labels for
+  // input columns groups that are present in the IN clause. Its
+  // values are taken from &lt;label_list&gt;.</font>
+  const <a href="#ResolvedColumn">ResolvedColumn</a>&amp; label_column() const;
+
+<font color="brown">  // String or integer literal for each column group in
+  // &lt;unpivot_arg_list&gt;.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedLiteral">ResolvedLiteral</a>&gt;&gt;&amp; label_list() const;
+  int label_list_size() const;
+  const <a href="#ResolvedLiteral">ResolvedLiteral</a>* label_list(int i) const;
+
+<font color="brown">  // The list of groups of columns in the UNPIVOT IN list. Each group
+  // contains references to the output columns of &lt;input_scan&gt; of the
+  // ResolvedUnpivotScan. The values of these columns are stored in the
+  // new &lt;value_column_list&gt; and the column group labels/names
+  // in the &lt;label_column&gt;.</font>
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedUnpivotArg">ResolvedUnpivotArg</a>&gt;&gt;&amp; unpivot_arg_list() const;
+  int unpivot_arg_list_size() const;
+  const <a href="#ResolvedUnpivotArg">ResolvedUnpivotArg</a>* unpivot_arg_list(int i) const;
+
+<font color="brown">  // Whether we need to include the rows from output where ALL columns
+  // from &lt;value_column_list&gt; are null.</font>
+  bool include_nulls() const;
+};
+</code></pre></p>
+
+### ResolvedCloneDataStmt
+<a id="ResolvedCloneDataStmt"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// CLONE DATA INTO &lt;table_name&gt; FROM ...
+//
+// &lt;target_table&gt; the table to clone data into. Cannot be value table.
+// &lt;clone_from&gt; The source table(s) to clone data from.
+//              For a single table, the scan is TableScan, with an optional
+//                  for_system_time_expr;
+//              If WHERE clause is present, the Scan is wrapped inside
+//                  ResolvedFilterScan;
+//              When multiple sources are present, they are UNION&#39;ed together
+//                  in a ResolvedSetOperationScan.
+//
+//              Constraints:
+//                The target_table must not be the same as any source table,
+//                and two sources cannot refer to the same table.
+//                All source tables and target table must have equal number
+//                of columns, with positionally identical column names and
+//                types.
+//                Cannot be value table.</font>
+class ResolvedCloneDataStmt : public <a href="#ResolvedStatement">ResolvedStatement</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_CLONE_DATA_STMT;
+
+  const <a href="#ResolvedTableScan">ResolvedTableScan</a>* target_table() const;
+
+  const <a href="#ResolvedScan">ResolvedScan</a>* clone_from() const;
+};
+</code></pre></p>
+
+### ResolvedTableAndColumnInfo
+<a id="ResolvedTableAndColumnInfo"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// Identifies the &lt;table&gt; and &lt;column_index_list&gt; (which can be empty) that
+// are targets of the ANALYZE statement.
+//
+// &lt;column_index_list&gt; This list identifies the ordinals of columns to be
+// analyzed in the &lt;table&gt;&#39;s column list.</font>
+class ResolvedTableAndColumnInfo : public <a href="#ResolvedArgument">ResolvedArgument</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_TABLE_AND_COLUMN_INFO;
+
+  const Table* table() const;
+
+  const std::vector&lt;int&gt;&amp; column_index_list() const;
+  int column_index_list_size() const;
+  int column_index_list(int i) const;
+};
+</code></pre></p>
+
+### ResolvedAnalyzeStmt
+<a id="ResolvedAnalyzeStmt"></a>
+
+<p><pre><code class="lang-c++">
+<font color="brown">// This represents the ANALYZE statement:
+// ANALYZE [OPTIONS (&lt;option_list&gt;)] [&lt;table_and_column_index_list&gt; [, ...]];
+//
+// &lt;option_list&gt; is a list of options for ANALYZE.
+//
+// &lt;table_and_column_info_list&gt; identifies a list of tables along with their
+// related columns that are the target of ANALYZE.</font>
+class ResolvedAnalyzeStmt : public <a href="#ResolvedStatement">ResolvedStatement</a> {
+  static const ResolvedNodeKind TYPE = RESOLVED_ANALYZE_STMT;
+
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedOption">ResolvedOption</a>&gt;&gt;&amp; option_list() const;
+  int option_list_size() const;
+  const <a href="#ResolvedOption">ResolvedOption</a>* option_list(int i) const;
+
+  const std::vector&lt;std::unique_ptr&lt;const <a href="#ResolvedTableAndColumnInfo">ResolvedTableAndColumnInfo</a>&gt;&gt;&amp; table_and_column_index_list() const;
+  int table_and_column_index_list_size() const;
+  const <a href="#ResolvedTableAndColumnInfo">ResolvedTableAndColumnInfo</a>* table_and_column_index_list(int i) const;
 };
 </code></pre></p>
 

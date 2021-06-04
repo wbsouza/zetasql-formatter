@@ -16,6 +16,7 @@
 
 #include "zetasql/resolved_ast/resolved_ast.h"
 
+#include <cstdint>
 #include <memory>
 #include <set>
 #include <utility>
@@ -34,6 +35,7 @@
 #include "zetasql/resolved_ast/make_node_vector.h"
 #include "zetasql/resolved_ast/resolved_node_kind.h"
 #include "zetasql/resolved_ast/serialization.pb.h"
+#include "zetasql/resolved_ast/test_utils.h"
 #include "zetasql/resolved_ast/validator.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -41,13 +43,14 @@
 
 namespace zetasql {
 
-using testing::ContainerEq;
-using testing::ElementsAre;
-using testing::HasSubstr;
-using testing::NotNull;
-using testing::UnorderedElementsAre;
-using testing::UnorderedElementsAreArray;
-using zetasql_base::testing::StatusIs;
+using ::zetasql::testing::MakeSelect1Stmt;
+using ::testing::ContainerEq;
+using ::testing::ElementsAre;
+using ::testing::HasSubstr;
+using ::testing::NotNull;
+using ::testing::UnorderedElementsAre;
+using ::testing::UnorderedElementsAreArray;
+using ::zetasql_base::testing::StatusIs;
 
 static const SimpleTable* t1 = new SimpleTable("T1");
 static const SimpleTable* t2 = new SimpleTable("T2");
@@ -55,7 +58,9 @@ static const SimpleTable* t2 = new SimpleTable("T2");
 // Make a new ResolvedColumn with int32_t type.
 static ResolvedColumn MakeColumn() {
   static int column_id = 1000;
-  return ResolvedColumn(++column_id, "MakeColumn", "C", types::Int32Type());
+  return ResolvedColumn(
+      ++column_id, zetasql::IdString::MakeGlobal("MakeColumn"),
+      zetasql::IdString::MakeGlobal("C"), types::Int32Type());
 }
 
 static std::unique_ptr<const ResolvedJoinScan> MakeJoin(
@@ -65,7 +70,7 @@ static std::unique_ptr<const ResolvedJoinScan> MakeJoin(
       MakeResolvedTableScan({} /* column_list */, t1, nullptr /* systime */),
       MakeResolvedTableScan({} /* column_list */, t2, nullptr /* systime */),
       nullptr /* join_condition */);
-  LOG(INFO) << "Made " << node->DebugString();
+  ZETASQL_LOG(INFO) << "Made " << node->DebugString();
   return node;
 }
 
@@ -88,13 +93,15 @@ TEST(ResolvedAST, Misc) {
   std::unique_ptr<const Function> function(
       new Function("fn_name", "group", Function::SCALAR, {signature}));
 
-  const ResolvedColumn select_column(10, "T", "C", type_factory.get_int32());
+  const ResolvedColumn select_column(10, zetasql::IdString::MakeGlobal("T"),
+                                     zetasql::IdString::MakeGlobal("C"),
+                                     type_factory.get_int32());
   auto project = MakeResolvedProjectScan(
       {select_column},
       MakeNodeVector(MakeResolvedComputedColumn(
           select_column, MakeIntLiteral(4))) /* expr_list */,
       MakeJoin() /* input_scan */);
-  LOG(INFO) << project->DebugString();
+  ZETASQL_LOG(INFO) << project->DebugString();
   EXPECT_EQ(RESOLVED_PROJECT_SCAN, project->node_kind());
   EXPECT_EQ(1, project->expr_list_size());
   EXPECT_EQ(select_column, project->expr_list(0)->column());
@@ -111,7 +118,7 @@ TEST(ResolvedAST, Misc) {
   project->set_input_scan(std::move(new_scan));
   project->add_expr_list(
       MakeResolvedComputedColumn(MakeColumn(), MakeIntLiteral(-1234)));
-  LOG(INFO) << project->DebugString();
+  ZETASQL_LOG(INFO) << project->DebugString();
 
   EXPECT_EQ("ProjectScan", project->node_kind_string());
   EXPECT_EQ("ProjectScan", ResolvedNodeKindToString(RESOLVED_PROJECT_SCAN));
@@ -124,6 +131,98 @@ TEST(ResolvedAST, Misc) {
   EXPECT_EQ(select_column, project->column_list(1));
 }
 
+TEST(ResolvedAST, DebugStringWithNullInTree) {
+  // Even though trees with nullptr AST nodes in them are not valid, we still
+  // want to be able to get a debug string without crashing that indicates the
+  // location of the null ast node within the tree.
+  TypeFactory type_factory;
+  const Type* int64_type = type_factory.get_int64();
+  Function function("test", "test_group", Function::SCALAR);
+  FunctionArgumentTypeList function_arg_types = {
+      FunctionArgumentType(int64_type), FunctionArgumentType(int64_type)};
+  FunctionSignature sig(FunctionArgumentType(int64_type), function_arg_types,
+                        static_cast<int64_t>(1234));
+
+  std::vector<std::unique_ptr<ResolvedExpr>> args;
+  args.push_back(MakeResolvedLiteral(Value::Int64(1)));
+  args.push_back(nullptr);
+
+  std::unique_ptr<ResolvedFunctionCall> call = MakeResolvedFunctionCall(
+      type_factory.get_int64(), &function, sig, std::move(args),
+      ResolvedFunctionCall::DEFAULT_ERROR_MODE);
+  EXPECT_EQ(R"(
+FunctionCall(test_group:test(INT64, INT64) -> INT64)
++-Literal(type=INT64, value=1)
++-<nullptr AST node>
+)",
+            absl::StrCat("\n", call->DebugString()));
+}
+
+TEST(ResolvedAST, DebugStringWithNullInTree2) {
+  IdStringPool pool;
+  std::unique_ptr<ResolvedQueryStmt> query_stmt = MakeSelect1Stmt(pool);
+  const_cast<ResolvedComputedColumn*>(
+      query_stmt->query()->GetAs<ResolvedProjectScan>()->expr_list(0))
+      ->release_expr();
+
+  EXPECT_EQ(R"(
+QueryStmt
++-output_column_list=
+| +-tbl.x#1 AS x [INT64]
++-query=
+  +-ProjectScan
+    +-column_list=[tbl.x#1]
+    +-expr_list=
+    | +-x#1 := <nullptr AST node>
+    +-input_scan=
+      +-SingleRowScan
+)",
+            absl::StrCat("\n", query_stmt->DebugString()));
+}
+
+TEST(ResolvedNodeDebugStringAnnotations, FunctionCall) {
+  TypeFactory type_factory;
+
+  std::unique_ptr<ResolvedFunctionCall> call =
+      zetasql::testing::WrapInFunctionCall(
+          &type_factory, MakeResolvedLiteral(Value::Int64(1)),
+          MakeResolvedLiteral(Value::Int64(2)),
+          MakeResolvedLiteral(Value::Int64(3)));
+  EXPECT_EQ(
+      R"(
+FunctionCall(test_group:test(INT64, INT64, INT64) -> INT64) (test - call root)
++-Literal(type=INT64, value=1) (test - arg 0)
++-Literal(type=INT64, value=2) (test - arg 1)
++-Literal(type=INT64, value=3)
+)",
+      absl::StrCat(absl::StrCat(
+          "\n", call->DebugString({{call->argument_list(0), "(test - arg 0)"},
+                                   {call->argument_list(1), "(test - arg 1)"},
+                                   {call.get(), "(test - call root)"}}))));
+}
+
+TEST(ResolvedASTDebugString, QueryStmt) {
+  IdStringPool pool;
+
+  std::unique_ptr<ResolvedQueryStmt> stmt = testing::MakeSelect1Stmt(pool);
+  EXPECT_EQ(
+      R"(
+QueryStmt (test - query)
++-output_column_list=
+| +-tbl.x#1 AS x [INT64] (test - output col)
++-query=
+  +-ProjectScan
+    +-column_list=[tbl.x#1]
+    +-expr_list=
+    | +-x#1 := Literal(type=INT64, value=1)
+    +-input_scan=
+      +-SingleRowScan
+)",
+      absl::StrCat("\n", stmt->DebugString({{stmt.get(), "(test - query)"},
+                                            {stmt->output_column_list(0),
+                                             "(test - output col)"}})));
+}
+
 TEST(ResolvedAST, ReleaseAndSet) {
   TypeFactory type_factory;
   const FunctionSignature signature(
@@ -131,7 +230,9 @@ TEST(ResolvedAST, ReleaseAndSet) {
   std::unique_ptr<const Function> function(
       new Function("fn_name", "group", Function::SCALAR, {signature}));
 
-  const ResolvedColumn select_column(10, "T", "C", type_factory.get_int32());
+  const ResolvedColumn select_column(10, zetasql::IdString::MakeGlobal("T"),
+                                     zetasql::IdString::MakeGlobal("C"),
+                                     type_factory.get_int32());
   std::vector<std::unique_ptr<const ResolvedComputedColumn>> expr_list;
   expr_list.push_back(
       MakeResolvedComputedColumn(select_column, MakeIntLiteral(4)));
@@ -191,9 +292,9 @@ TEST(ResolvedAST, CheckFieldsAccessed) {
   // Note that calling node()->DebugString() marks node as accesssed but
   // node's children are still unaccessed.
   std::unique_ptr<const ResolvedJoinScan> node = MakeJoin();
-  LOG(INFO) << AsTableScan(node->left_scan())->table()->FullName();
-  LOG(INFO) << AsTableScan(node->right_scan())->table()->FullName();
-  LOG(INFO) << node->join_type();
+  ZETASQL_LOG(INFO) << AsTableScan(node->left_scan())->table()->FullName();
+  ZETASQL_LOG(INFO) << AsTableScan(node->right_scan())->table()->FullName();
+  ZETASQL_LOG(INFO) << node->join_type();
   ZETASQL_EXPECT_OK(node->CheckFieldsAccessed());
 
   EXPECT_EQ(RESOLVED_JOIN_SCAN, node->node_kind());
@@ -201,27 +302,27 @@ TEST(ResolvedAST, CheckFieldsAccessed) {
   EXPECT_EQ(RESOLVED_TABLE_SCAN, node->right_scan()->node_kind());
 
   node = MakeJoin();
-  LOG(INFO) << AsTableScan(node->left_scan())->table()->FullName();
-  LOG(INFO) << node->join_type();
+  ZETASQL_LOG(INFO) << AsTableScan(node->left_scan())->table()->FullName();
+  ZETASQL_LOG(INFO) << node->join_type();
   EXPECT_EQ("Unimplemented feature (ResolvedJoinScan::right_scan not accessed)",
             node->CheckFieldsAccessed().message());
   // DebugString does not count as accessing the members inside.
-  LOG(INFO) << node->right_scan()->DebugString();
+  ZETASQL_LOG(INFO) << node->right_scan()->DebugString();
   EXPECT_EQ("Unimplemented feature (ResolvedTableScan::table not accessed)",
             node->CheckFieldsAccessed().message());
-  LOG(INFO) << AsTableScan(node->right_scan())->table()->FullName();
+  ZETASQL_LOG(INFO) << AsTableScan(node->right_scan())->table()->FullName();
   ZETASQL_EXPECT_OK(node->CheckFieldsAccessed());
 
   // Unaccessed type, but it has the default value.
   node = MakeJoin();
-  LOG(INFO) << AsTableScan(node->left_scan())->table()->FullName();
-  LOG(INFO) << AsTableScan(node->right_scan())->table()->FullName();
+  ZETASQL_LOG(INFO) << AsTableScan(node->left_scan())->table()->FullName();
+  ZETASQL_LOG(INFO) << AsTableScan(node->right_scan())->table()->FullName();
   ZETASQL_EXPECT_OK(node->CheckFieldsAccessed());
 
   // Unaccessed type, with a non-default value.
   node = MakeJoin(ResolvedJoinScan::LEFT);
-  LOG(INFO) << AsTableScan(node->left_scan())->table()->FullName();
-  LOG(INFO) << AsTableScan(node->right_scan())->table()->FullName();
+  ZETASQL_LOG(INFO) << AsTableScan(node->left_scan())->table()->FullName();
+  ZETASQL_LOG(INFO) << AsTableScan(node->right_scan())->table()->FullName();
   EXPECT_EQ(
       "Unimplemented feature (ResolvedJoinScan::join_type not accessed "
       "and has non-default value)",
@@ -229,7 +330,7 @@ TEST(ResolvedAST, CheckFieldsAccessed) {
 
   // Make sure MarkFieldsAccessed() works.
   node = MakeJoin();
-  LOG(INFO) << AsTableScan(node->left_scan())->table()->FullName();
+  ZETASQL_LOG(INFO) << AsTableScan(node->left_scan())->table()->FullName();
   node->right_scan();
   EXPECT_EQ("Unimplemented feature (ResolvedTableScan::table not accessed)",
             node->CheckFieldsAccessed().message());
@@ -247,7 +348,7 @@ TEST(ResolvedAST, CheckVectorFieldsAccessed) {
   // 1: Test expr_list(i).
   // 2: Test expr_list().
   for (int i = 0; i < 3; ++i) {
-    LOG(INFO) << "CheckVectorFieldsAccessed pass " << i;
+    ZETASQL_LOG(INFO) << "CheckVectorFieldsAccessed pass " << i;
 
     // Reset, and then mark scalar fields as accessed.
     node->ClearFieldsAccessed();
@@ -426,12 +527,14 @@ TEST(ResolvedAST, Validator) {
 
   limit_offset->set_limit(
       MakeResolvedLiteral(type_factory.get_int64(), Value::Int64(1)));
-  const ResolvedColumn resolved_column1(1, "Table", "col1",
-                                        type_factory.get_int32());
+  const ResolvedColumn resolved_column1(
+      1, zetasql::IdString::MakeGlobal("Table"),
+      zetasql::IdString::MakeGlobal("col1"), type_factory.get_int32());
   stmt->add_output_column_list(
       MakeResolvedOutputColumn("col1", resolved_column1));
-  const ResolvedColumn resolved_column2(2, "Table", "col2",
-                                        type_factory.get_int32());
+  const ResolvedColumn resolved_column2(
+      2, zetasql::IdString::MakeGlobal("Table"),
+      zetasql::IdString::MakeGlobal("col2"), type_factory.get_int32());
   EXPECT_THAT(validator.ValidateResolvedStatement(stmt),
               StatusIs(absl::StatusCode::kInternal,
                        HasSubstr("Incorrect reference to column "
@@ -464,8 +567,11 @@ TEST(ResolvedAST, Validator) {
   table_scan->add_column_index_list(0);
   ZETASQL_EXPECT_OK(validator.ValidateResolvedStatement(stmt));
 
+  const ResolvedColumn resolved_column3(
+      3, zetasql::IdString::MakeGlobal("$query"),
+      zetasql::IdString::MakeGlobal("col3"), type_factory.get_int32());
   project->add_expr_list(
-      MakeResolvedComputedColumn(resolved_column1, std::move(good_literal)));
+      MakeResolvedComputedColumn(resolved_column3, std::move(good_literal)));
   ZETASQL_EXPECT_OK(validator.ValidateResolvedStatement(stmt));
 
   filter_scan->set_filter_expr(std::move(bad_where));
@@ -659,7 +765,7 @@ TEST(ResolvedAST, GetDescendantsWithKinds) {
       MakeNodeVector(MakeResolvedSetOperationItem(std::move(join1)),
                      MakeResolvedSetOperationItem(std::move(s4_uptr))));
 
-  LOG(INFO) << "Built tree:\n" << u1->DebugString();
+  ZETASQL_LOG(INFO) << "Built tree:\n" << u1->DebugString();
 
   std::vector<const ResolvedNode*> found_nodes;
 
@@ -734,7 +840,7 @@ TEST(ResolvedAST, GetDescendantsSatisfying) {
                             false /* is_value_table */, std::move(p1_uptr));
   const ResolvedQueryStmt* q1 = q1_uptr.get();
 
-  LOG(INFO) << "Built tree:\n" << q1->DebugString();
+  ZETASQL_LOG(INFO) << "Built tree:\n" << q1->DebugString();
 
   std::vector<const ResolvedNode*> found_nodes;
 

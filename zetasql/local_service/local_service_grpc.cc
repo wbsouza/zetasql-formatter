@@ -100,6 +100,34 @@ grpc::Status ZetaSqlLocalServiceGrpcImpl::Evaluate(
   return ToGrpcStatus(service_.Evaluate(*req, resp));
 }
 
+grpc::Status ZetaSqlLocalServiceGrpcImpl::EvaluateStream(
+    grpc::ServerContext* context,
+    grpc::ServerReaderWriter<EvaluateResponseBatch, EvaluateRequestBatch>*
+        stream) {
+  EvaluateRequestBatch reqb;
+  while (stream->Read(&reqb)) {
+    EvaluateResponseBatch respb;
+    for (const auto& req : reqb.request()) {
+      EvaluateResponse* resp = respb.add_response();
+      auto status = service_.Evaluate(req, resp);
+      if (!status.ok()) {
+        return ToGrpcStatus(status);
+      }
+      if (respb.response_size() > 1 &&
+          respb.ByteSizeLong() > GRPC_DEFAULT_MAX_RECV_MESSAGE_LENGTH) {
+        // The response pushed us over the max message size. Remove it from the
+        // batch, send prior responses, then add it back.
+        auto* last = respb.mutable_response()->ReleaseLast();
+        stream->Write(respb, grpc::WriteOptions().set_corked());
+        respb.Clear();
+        respb.mutable_response()->AddAllocated(last);
+      }
+    }
+    stream->Write(respb);
+  }
+  return grpc::Status();
+}
+
 grpc::Status ZetaSqlLocalServiceGrpcImpl::GetTableFromProto(
     grpc::ServerContext* context, const TableFromProtoRequest* req,
     SimpleTableProto* resp) {
@@ -150,21 +178,6 @@ grpc::Status ZetaSqlLocalServiceGrpcImpl::UnregisterCatalog(
   return ToGrpcStatus(service_.UnregisterCatalog(req->registered_id()));
 }
 
-grpc::Status ZetaSqlLocalServiceGrpcImpl::RegisterParseResumeLocation(
-    grpc::ServerContext* context,
-    const ParseResumeLocationProto* parse_resume_location,
-    RegisterResponse* resp) {
-  return ToGrpcStatus(
-      service_.RegisterParseResumeLocation(*parse_resume_location, resp));
-}
-
-grpc::Status ZetaSqlLocalServiceGrpcImpl::UnregisterParseResumeLocation(
-    grpc::ServerContext* context, const UnregisterRequest* req,
-    google::protobuf::Empty* unused) {
-  return ToGrpcStatus(
-      service_.UnregisterParseResumeLocation(req->registered_id()));
-}
-
 grpc::Status ZetaSqlLocalServiceGrpcImpl::GetBuiltinFunctions(
     grpc::ServerContext* context,
     const ZetaSQLBuiltinFunctionOptionsProto* options,
@@ -172,16 +185,16 @@ grpc::Status ZetaSqlLocalServiceGrpcImpl::GetBuiltinFunctions(
   return ToGrpcStatus(service_.GetBuiltinFunctions(*options, resp));
 }
 
-grpc::Status ZetaSqlLocalServiceGrpcImpl::AddSimpleTable(
-    grpc::ServerContext* context, const AddSimpleTableRequest* req,
-    google::protobuf::Empty* unused) {
-  return ToGrpcStatus(service_.AddSimpleTable(*req));
-}
-
 grpc::Status ZetaSqlLocalServiceGrpcImpl::GetLanguageOptions(
     grpc::ServerContext* context, const LanguageOptionsRequest* req,
     LanguageOptionsProto* resp) {
   return ToGrpcStatus(service_.GetLanguageOptions(*req, resp));
+}
+
+grpc::Status ZetaSqlLocalServiceGrpcImpl::GetAnalyzerOptions(
+    grpc::ServerContext* context, const AnalyzerOptionsRequest* req,
+    AnalyzerOptionsProto* resp) {
+  return ToGrpcStatus(service_.GetAnalyzerOptions(*req, resp));
 }
 
 }  // namespace local_service

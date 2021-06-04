@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -28,6 +29,7 @@
 #include "google/protobuf/message.h"
 #include "zetasql/common/float_margin.h"
 #include "zetasql/public/civil_time.h"
+#include "zetasql/public/interval_value.h"
 #include "zetasql/public/json_value.h"
 #include "zetasql/public/numeric_value.h"
 #include "zetasql/public/options.pb.h"
@@ -94,6 +96,10 @@ class Value {
  public:
   // Constructs an invalid value. Needed for using values with STL. All methods
   // other than is_valid() will crash if called on invalid values.
+  #ifndef SWIG
+  // SWIG has trouble with constexpr.
+  constexpr
+  #endif
   Value();
   Value(const Value& that);
   const Value& operator=(const Value& that);
@@ -129,17 +135,17 @@ class Value {
 
   // Accessors for accessing the data within atomic typed Values.
   // REQUIRES: !is_null().
-  int32_t int32_value() const;           // REQUIRES: int32_t type
-  int64_t int64_value() const;           // REQUIRES: int64_t type
-  uint32_t uint32_value() const;         // REQUIRES: uint32_t type
-  uint64_t uint64_value() const;         // REQUIRES: uint64_t type
+  int32_t int32_value() const;         // REQUIRES: int32_t type
+  int64_t int64_value() const;         // REQUIRES: int64_t type
+  uint32_t uint32_value() const;       // REQUIRES: uint32_t type
+  uint64_t uint64_value() const;       // REQUIRES: uint64_t type
   bool bool_value() const;             // REQUIRES: bool type
   float float_value() const;           // REQUIRES: float type
   double double_value() const;         // REQUIRES: double type
   const std::string& string_value() const;  // REQUIRES: string type
   const std::string& bytes_value() const;   // REQUIRES: bytes type
-  int32_t date_value() const;            // REQUIRES: date type
-  int32_t enum_value() const;            // REQUIRES: enum type
+  int32_t date_value() const;               // REQUIRES: date type
+  int32_t enum_value() const;               // REQUIRES: enum type
   const std::string& enum_name() const;  // REQUIRES: enum type
 
   // Returns timestamp value as absl::Time at nanoseconds precision.
@@ -156,8 +162,9 @@ class Value {
   int64_t ToPacked64TimeMicros() const;      // REQUIRES: time type
   int64_t ToPacked64DatetimeMicros() const;  // REQUIRES: datetime type
 
-  TimeValue time_value() const;          // REQUIRES: time type
-  DatetimeValue datetime_value() const;  // REQUIRES: datetime type
+  TimeValue time_value() const;                 // REQUIRES: time type
+  DatetimeValue datetime_value() const;         // REQUIRES: datetime type
+  const IntervalValue& interval_value() const;  // REQUIRES: interval type
 
   // REQUIRES: numeric type
   const NumericValue& numeric_value() const;
@@ -371,6 +378,8 @@ class Value {
   static Value TimeFromPacked64Micros(int64_t v);
   static Value DatetimeFromPacked64Micros(int64_t v);
 
+  static Value Interval(IntervalValue interval);
+
   static Value Numeric(NumericValue v);
 
   static Value BigNumeric(BigNumericValue v);
@@ -387,13 +396,16 @@ class Value {
   static Value Extended(const ExtendedType* type, const ValueContent& value);
 
   // Generic factory for numeric PODs.
-  // REQUIRES: T is one of int32_t, int64_t, uint32_t, uint64_t, bool, float, double.
+  // REQUIRES: T is one of int32_t, int64_t, uint32_t, uint64_t, bool, float, double,
+  // NumericValue, BigNumericValue, IntervalValue
   template <typename T>
   inline static Value Make(T value) {
     if constexpr (std::is_same_v<T, NumericValue>) {
       return Value::Numeric(value);
     } else if constexpr (std::is_same_v<T, BigNumericValue>) {
       return Value::BigNumeric(value);
+    } else if constexpr (std::is_same_v<T, IntervalValue>) {
+      return Value::Interval(value);
     } else if constexpr (std::is_same_v<T, bool>) {
       return Value::Bool(value);
     } else if constexpr (std::is_same_v<T, float>) {
@@ -468,6 +480,7 @@ class Value {
   static Value NullTimestamp();
   static Value NullTime();
   static Value NullDatetime();
+  static Value NullInterval();
   static Value NullGeography();
   static Value NullNumeric();
   static Value NullBigNumeric();
@@ -496,7 +509,7 @@ class Value {
 // Creates a struct of the specified 'type' by moving 'values'. The size of
 // the 'values' vector must agree with the number of fields in 'type', and the
 // types of those values must match the corresponding struct fields. However,
-// this is only CHECK'd in debug mode.
+// this is only ZETASQL_CHECK'd in debug mode.
 #ifndef SWIG
   static Value UnsafeStruct(const StructType* type,
                             std::vector<Value>&& values);
@@ -507,10 +520,14 @@ class Value {
   // The type of each value must be the same as array_type->element_type().
   static Value Array(const ArrayType* array_type,
                      absl::Span<const Value> values);
-// Creates an array of the given 'array_type' initialized by moving 'values'.
-// The type of each value must be the same as array_type->element_type(), but
-// this is only CHECK'd in debug mode.
 #ifndef SWIG
+  // Creates an array of the given 'array_type' with the given 'values'.
+  // The type of each value must be the same as array_type->element_type().
+  static Value ArraySafe(const ArrayType* array_type,
+                         std::vector<Value>&& values);
+  // Creates an array of the given 'array_type' initialized by moving 'values'.
+  // The type of each value must be the same as array_type->element_type(), but
+  // this is only ZETASQL_CHECK'd in debug mode.
   static Value UnsafeArray(const ArrayType* array_type,
                            std::vector<Value>&& values);
 #endif
@@ -568,6 +585,14 @@ class Value {
   // Constructs a typed NULL of the given 'type'.
   explicit Value(const Type* type)
       : Value(type, /*is_null=*/true, kPreservesOrder) {}
+#ifndef SWIG
+  // SWIG has trouble with constexpr.
+  constexpr
+#endif
+  explicit Value(TypeKind kind)
+      : metadata_(kind, /*is_null=*/true, kPreservesOrder,
+                  /*value_extended_content=*/0) {
+  }
 
   // Constructors for non-null atomic values.
   explicit Value(int32_t value);
@@ -590,6 +615,9 @@ class Value {
 
   // Constructs a DATETIME value.
   explicit Value(DatetimeValue datetime);
+
+  // Constructs an INTERVAL value.
+  explicit Value(const IntervalValue& interval);
 
   explicit Value(const NumericValue& numeric);
 
@@ -653,7 +681,7 @@ class Value {
 // Creates an array of the given 'array_type' initialized by moving from
 // 'values'.  The type of each value must be the same as
 // array_type->element_type(). If 'safe' is true or we are in debug mode, this
-// is CHECK'd.
+// is ZETASQL_CHECK'd.
 #ifndef SWIG
   static Value ArrayInternal(bool safe, const ArrayType* array_type,
                              OrderPreservationKind order_kind,
@@ -662,7 +690,7 @@ class Value {
 
 // Creates a struct of the given 'struct_type' initialized by moving from
 // 'values'. Each value must have the proper type. If 'safe' is true or we are
-// in debug mode, this is CHECK'd.
+// in debug mode, this is ZETASQL_CHECK'd.
 #ifndef SWIG
   static Value StructInternal(bool safe, const StructType* struct_type,
                               std::vector<Value>&& values);
@@ -708,8 +736,8 @@ class Value {
 
   // Nanoseconds for TYPE_TIMESTAMP, TYPE_TIME and TYPE_DATETIME types
   int32_t subsecond_nanos() const {
-    DCHECK(metadata_.can_store_value_extended_content());
-    DCHECK(metadata_.type_kind() == TypeKind::TYPE_TIMESTAMP ||
+    ZETASQL_DCHECK(metadata_.can_store_value_extended_content());
+    ZETASQL_DCHECK(metadata_.type_kind() == TypeKind::TYPE_TIMESTAMP ||
            metadata_.type_kind() == TypeKind::TYPE_TIME ||
            metadata_.type_kind() == TypeKind::TYPE_DATETIME);
     return metadata_.value_extended_content();
@@ -734,14 +762,10 @@ class Value {
   //     nanoseconds for TYPE_TIMESTAMP, TYPE_TIME, TYPE_DATETIME types and
   //     value for ENUM type (pointer to enum is stored in 64-bit part).
   //
-  // As can be seen, Metadata can store either TypeKind or pointer to a Type
+  // As can be seen, Metadata can store either TypeKind or a pointer to a Type
   // directly. In the first case, it also can store 32-bit Value's part called
-  // value_extended_content. We expect that in the future we will store TypeKind
-  // in metadata only for simple built-in types and will store a pointer for all
-  // parameterized types (like proto, struct, etc.). Currently though, we are
-  // using pointer only for engine-defined types, because there are still some
-  // customer scenarios where a Value is used after referenced Type gets
-  // released.
+  // value_extended_content. Currently we store TypeKind for all simple built-in
+  // types and store a pointer for all other types.
   class Metadata {
    public:
     // Returns true if instance is valid: was initialized and references a valid
@@ -777,30 +801,33 @@ class Value {
 
     Metadata(const Type* type, bool is_null, bool preserves_order);
 
-    Metadata(TypeKind kind, bool is_null, bool preserves_order,
-             int32_t value_extended_content);
+    constexpr Metadata(TypeKind kind, bool is_null, bool preserves_order,
+                       int32_t value_extended_content);
 
     // Metadata for non-null Value with preserves_order = kPreservesOrder and
     // value_extended_content = 0.
+#ifndef SWIG
+    // SWIG has trouble with constexpr.
+    constexpr
+#endif
     explicit Metadata(TypeKind kind)
         : Metadata(kind, /*is_null=*/false, kPreservesOrder,
-                   /*value_extended_content=*/0) {}
+                   /*value_extended_content=*/0) {
+    }
 
     // Metadata for non-null Value with preserves_order = kPreservesOrder.
-    Metadata(TypeKind kind, int32_t value_extended_content)
+    constexpr Metadata(TypeKind kind, int32_t value_extended_content)
         : Metadata(kind, /*is_null=*/false, kPreservesOrder,
                    value_extended_content) {}
 
     Metadata(const Metadata& that) = default;
     Metadata& operator=(const Metadata& that) = default;
 
-    static Metadata Invalid() {
+    static constexpr Metadata Invalid() {
       return Metadata(static_cast<TypeKind>(kInvalidTypeKind));
     }
 
    private:
-    void SetFlags(bool is_null, bool preserves_order);
-
     // We use different field layouts depending on system bitness.
     template <const int byteness>
     struct ContentLayout;
@@ -822,16 +849,16 @@ class Value {
   // 64-bit part of the value.
   union {
     int64_t int64_value_ = 0;  // also seconds|millis|micros since 1970-1-1.
-    int32_t int32_value_;  // also date
+    int32_t int32_value_;      // also date
     uint64_t uint64_value_;
     uint32_t uint32_value_;
     bool bool_value_;
     float float_value_;
     double double_value_;
-    int64_t timestamp_seconds_;  // Same as google.protobuf.Timestamp.seconds.
-    int32_t bit_field_32_value_;   // Whole-second part of TimeValue.
-    int64_t bit_field_64_value_;   // Whole-second part of DatetimeValue.
-    int32_t enum_value_;           // Used for TYPE_ENUM.
+    int64_t timestamp_seconds_;   // Same as google.protobuf.Timestamp.seconds.
+    int32_t bit_field_32_value_;  // Whole-second part of TimeValue.
+    int64_t bit_field_64_value_;  // Whole-second part of DatetimeValue.
+    int32_t enum_value_;          // Used for TYPE_ENUM.
     internal::StringRef*
         string_ptr_;       // Reffed. Used for TYPE_STRING and TYPE_BYTES.
     TypedList* list_ptr_;  // Reffed. Used for arrays and structs.
@@ -843,6 +870,8 @@ class Value {
         bignumeric_ptr_;  // Owned. Used for values of TYPE_BIGNUMERIC.
     internal::JSONRef*
         json_ptr_;  // Owned. Used for values of TYPE_JSON.
+    internal::IntervalRef*
+        interval_ptr_;  // Owned. Used for values of TYPE_INTERVAL.
   };
   // Intentionally copyable.
 };
@@ -883,6 +912,7 @@ Value Time(TimeValue time);
 Value TimeFromPacked64Micros(int64_t v);
 Value Datetime(DatetimeValue datetime);
 Value DatetimeFromPacked64Micros(int64_t v);
+Value Interval(IntervalValue interval);
 Value Numeric(NumericValue v);
 Value Numeric(int64_t v);
 Value BigNumeric(BigNumericValue v);
@@ -917,6 +947,7 @@ Value NullDate();
 Value NullTimestamp();
 Value NullTime();
 Value NullDatetime();
+Value NullInterval();
 Value NullNumeric();
 Value NullBigNumeric();
 Value Null(const Type* type);
@@ -941,6 +972,9 @@ Value BytesArray(absl::Span<const std::string> values);
 Value BytesArray(absl::Span<const absl::Cord* const> values);
 Value NumericArray(absl::Span<const NumericValue> values);
 Value BigNumericArray(absl::Span<const BigNumericValue> values);
+Value JsonArray(absl::Span<const JSONValue> values);
+// 'values' are JSON values (e.g. '{"a": 10}') and not literal strings values.
+Value UnvalidatedJsonStringArray(absl::Span<const std::string> values);
 
 }  // namespace values
 }  // namespace zetasql

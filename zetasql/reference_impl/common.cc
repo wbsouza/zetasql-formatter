@@ -43,12 +43,14 @@ absl::Status ValidateTypeSupportsEqualityComparison(const Type* type) {
     case TYPE_TIMESTAMP:
     case TYPE_TIME:
     case TYPE_DATETIME:
+    case TYPE_INTERVAL:
     case TYPE_ENUM:
     case TYPE_PROTO:
     case TYPE_STRUCT:
     case TYPE_ARRAY:
       return absl::OkStatus();
     case TYPE_GEOGRAPHY:
+    case TYPE_JSON:
     case TYPE_UNKNOWN:
     default:
       return ::zetasql_base::InvalidArgumentErrorBuilder()
@@ -73,6 +75,7 @@ absl::Status ValidateTypeSupportsOrderComparison(const Type* type) {
     case TYPE_TIMESTAMP:
     case TYPE_TIME:
     case TYPE_DATETIME:
+    case TYPE_INTERVAL:
     case TYPE_ENUM:
       return absl::OkStatus();
     case TYPE_ARRAY: {
@@ -86,6 +89,7 @@ absl::Status ValidateTypeSupportsOrderComparison(const Type* type) {
     case TYPE_GEOGRAPHY:
     case TYPE_PROTO:
     case TYPE_STRUCT:
+    case TYPE_JSON:
     case TYPE_UNKNOWN:
     default:
       return ::zetasql_base::InvalidArgumentErrorBuilder()

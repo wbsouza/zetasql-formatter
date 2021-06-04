@@ -17,6 +17,7 @@
 #ifndef ZETASQL_PUBLIC_FUNCTION_SIGNATURE_H_
 #define ZETASQL_PUBLIC_FUNCTION_SIGNATURE_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -26,9 +27,11 @@
 #include "zetasql/proto/function.pb.h"
 #include "zetasql/public/deprecation_warning.pb.h"
 #include "zetasql/public/function.pb.h"
+#include "zetasql/public/language_options.h"
 #include "zetasql/public/options.pb.h"
 #include "zetasql/public/type.h"
 #include "zetasql/public/value.h"
+#include "absl/algorithm/container.h"
 #include "absl/base/attributes.h"
 #include <cstdint>
 #include "absl/memory/memory.h"
@@ -104,7 +107,7 @@ class FunctionArgumentTypeOptions {
   }
 
   const TVFRelation& relation_input_schema() const {
-    DCHECK(has_relation_input_schema());
+    ZETASQL_DCHECK(has_relation_input_schema());
     return *relation_input_schema_;
   }
 
@@ -113,7 +116,7 @@ class FunctionArgumentTypeOptions {
   }
   bool has_argument_name() const { return !argument_name_.empty(); }
   const std::string& argument_name() const {
-    DCHECK(has_argument_name());
+    ZETASQL_DCHECK(has_argument_name());
     return argument_name_;
   }
   bool argument_name_is_mandatory() const {
@@ -255,15 +258,24 @@ class FunctionArgumentTypeOptions {
   // Also note that the type of <default_value> must outlive this object as well
   // as all the FunctionSignature instances created using this object.
   FunctionArgumentTypeOptions& set_default(Value default_value) {
-    DCHECK(default_value.is_valid()) << "Default value must be valid";
+    ZETASQL_DCHECK(default_value.is_valid()) << "Default value must be valid";
     default_ = std::move(default_value);
     return *this;
   }
+
+  // Returns true if a default value has been defined for this argument.
+  bool has_default() const { return default_.has_value(); }
 
   // Gets the default value of this argument. Cannot use <default> here because
   // it is a C++ reserved word.
   const absl::optional<Value>& get_default() const {
     return default_;
+  }
+
+  // Clears the default argument value set to this object.
+  FunctionArgumentTypeOptions& clear_default() {
+    default_ = absl::nullopt;
+    return *this;
   }
 
  private:
@@ -392,7 +404,7 @@ class FunctionArgumentType {
                        ArgumentCardinality cardinality,
                        int num_occurrences = -1);
   FunctionArgumentType(SignatureArgumentKind kind,
-                       const FunctionArgumentTypeOptions& options,
+                       FunctionArgumentTypeOptions options,
                        int num_occurrences = -1);
   FunctionArgumentType(SignatureArgumentKind kind,  // implicit; NOLINT
                        int num_occurrences = -1);
@@ -400,8 +412,7 @@ class FunctionArgumentType {
   // Does not take ownership of <type>.
   FunctionArgumentType(const Type* type, ArgumentCardinality cardinality,
                        int num_occurrences = -1);
-  FunctionArgumentType(const Type* type,
-                       const FunctionArgumentTypeOptions& options,
+  FunctionArgumentType(const Type* type, FunctionArgumentTypeOptions options,
                        int num_occurrences = -1);
   FunctionArgumentType(const Type* type,  // implicit; NOLINT
                        int num_occurrences = -1);
@@ -509,7 +520,7 @@ class FunctionArgumentType {
 
   // Returns information about a lambda typed function argument.
   const ArgumentTypeLambda& lambda() const {
-    DCHECK(IsLambda());
+    ZETASQL_DCHECK(IsLambda());
     return *lambda_;
   }
 
@@ -519,6 +530,7 @@ class FunctionArgumentType {
 
   bool IsTemplated() const;
 
+  bool IsScalar() const;
   bool IsRelation() const { return kind_ == ARG_TYPE_RELATION; }
   bool IsModel() const { return kind_ == ARG_TYPE_MODEL; }
   bool IsConnection() const { return kind_ == ARG_TYPE_CONNECTION; }
@@ -573,7 +585,7 @@ class FunctionArgumentType {
   std::string UserFacingNameWithCardinality(ProductMode product_mode) const;
 
   // Checks concrete arguments to validate the number of occurrences.
-  absl::Status IsValid() const;
+  absl::Status IsValid(ProductMode product_mode) const;
 
   // If verbose is true, include FunctionOptions modifiers.
   std::string DebugString(bool verbose = false) const;
@@ -806,23 +818,23 @@ class FunctionSignatureOptions {
 class FunctionSignature {
  public:
   // Does not take ownership of <context_ptr>.
-  FunctionSignature(const FunctionArgumentType& result_type,
-                    const FunctionArgumentTypeList& arguments,
-                    void* context_ptr);
+  FunctionSignature(FunctionArgumentType result_type,
+                    FunctionArgumentTypeList arguments, void* context_ptr);
 
-  FunctionSignature(const FunctionArgumentType& result_type,
-                    const FunctionArgumentTypeList& arguments,
-                    int64_t context_id);
+  FunctionSignature(FunctionArgumentType result_type,
+                    FunctionArgumentTypeList arguments, int64_t context_id);
 
-  FunctionSignature(const FunctionArgumentType& result_type,
-                    const FunctionArgumentTypeList& arguments, int64_t context_id,
-                    const FunctionSignatureOptions& options);
+  FunctionSignature(FunctionArgumentType result_type,
+                    FunctionArgumentTypeList arguments, int64_t context_id,
+                    FunctionSignatureOptions options);
 
   // Copy a FunctionSignature, assigning a new context_ptr or context_id.
   FunctionSignature(const FunctionSignature& old, void* context_ptr)
       : FunctionSignature(old) { context_ptr_ = context_ptr; }
   FunctionSignature(const FunctionSignature& old, int64_t context_id)
-      : FunctionSignature(old) { context_id_ = context_id; }
+      : FunctionSignature(old) {
+    context_id_ = context_id;
+  }
 
   ~FunctionSignature() {}
 
@@ -848,7 +860,7 @@ class FunctionSignature {
   // arguments expanded.
   // Requires: HasConcreteArguments()
   int NumConcreteArguments() const {
-    DCHECK(HasConcreteArguments());
+    ZETASQL_DCHECK(HasConcreteArguments());
     return concrete_arguments_.size();
   }
 
@@ -857,7 +869,7 @@ class FunctionSignature {
   // are fully expanded in a concrete signature.
   // Requires that the signature has concrete arguments.
   const FunctionArgumentType& ConcreteArgument(int concrete_idx) const {
-    DCHECK(HasConcreteArguments());
+    ZETASQL_DCHECK(HasConcreteArguments());
     return concrete_arguments_[concrete_idx];
   }
 
@@ -895,7 +907,7 @@ class FunctionSignature {
   // arguments appear at the end.  There may be required arguments before
   // the repeated arguments, and there may be required arguments between the
   // repeated and optional arguments.
-  absl::Status IsValid() const;
+  absl::Status IsValid(ProductMode product_mode) const;
 
   // Checks specific invariants for the argument and return types for regular
   // function calls or table-valued function calls. The latter may use relation
@@ -976,6 +988,15 @@ class FunctionSignature {
       }
     }
     return false;
+  }
+
+  // Returns true if all the arguments in the signature have default values.
+  // Note this function returns true when the signature has no arguments.
+  bool AllArgumentsHaveDefaults() const {
+    return absl::c_all_of(arguments(),
+                          [](const FunctionArgumentType& arg_type) {
+                            return arg_type.HasDefault();
+                          });
   }
 
  private:

@@ -17,6 +17,7 @@
 #include "zetasql/public/convert_type_to_proto.h"
 
 #include <ctype.h>
+
 #include <memory>
 #include <set>
 
@@ -145,7 +146,7 @@ absl::Status TypeToProtoConverter::MakeFieldDescriptor(
   proto_field->set_number(field_number);
   proto_field->set_label(label);
 
-  DCHECK(!proto_field->has_type());
+  ZETASQL_DCHECK(!proto_field->has_type());
   switch (field_type->kind()) {
     case TYPE_INT32:
       proto_field->set_type(google::protobuf::FieldDescriptorProto::TYPE_INT32);
@@ -194,6 +195,11 @@ absl::Status TypeToProtoConverter::MakeFieldDescriptor(
       proto_field->mutable_options()->SetExtension(
           zetasql::format, FieldFormat::DATETIME_MICROS);
       break;
+    case TYPE_INTERVAL:
+      proto_field->set_type(google::protobuf::FieldDescriptorProto::TYPE_BYTES);
+      proto_field->mutable_options()->SetExtension(zetasql::format,
+                                                   FieldFormat::INTERVAL);
+      break;
     case TYPE_GEOGRAPHY:
       proto_field->set_type(google::protobuf::FieldDescriptorProto::TYPE_BYTES);
       proto_field->mutable_options()->SetExtension(
@@ -216,6 +222,9 @@ absl::Status TypeToProtoConverter::MakeFieldDescriptor(
       proto_field->mutable_options()->SetExtension(
           zetasql::format, FieldFormat::JSON);
       break;
+    }
+    case TYPE_TOKENLIST: {
+      return absl::UnimplementedError("TOKENLIST type not yet implemented");
     }
     case TYPE_ENUM: {
       const EnumType* enum_type = field_type->AsEnum();
@@ -325,10 +334,17 @@ absl::Status TypeToProtoConverter::MakeStructProto(
                                                 false);
 
   // Avoid generating protos with duplicate field names.
-  std::set<std::string, zetasql_base::StringCaseLess> field_names;
+  std::set<std::string, zetasql_base::CaseLess> field_names;
 
   for (int i = 0; i < struct_type->num_fields(); ++i) {
     const StructType::StructField& struct_field = struct_type->field(i);
+    int field_number = i + 1;
+    // Note that [19000, 20000) are reserved tag numbers for protobuf and we
+    // cannot use them.
+    if (field_number >= google::protobuf::FieldDescriptor::kFirstReservedNumber) {
+      field_number += (google::protobuf::FieldDescriptor::kLastReservedNumber + 1 -
+                       google::protobuf::FieldDescriptor::kFirstReservedNumber);
+    }
 
     ZETASQL_RETURN_IF_ERROR(MakeFieldDescriptor(
         struct_field.type, struct_field.name,
@@ -336,8 +352,8 @@ absl::Status TypeToProtoConverter::MakeStructProto(
         // or invalid as a proto field name.
         (!IsValidFieldName(struct_field.name) ||
          !zetasql_base::InsertIfNotPresent(&field_names, struct_field.name)),
-        i + 1 /* field_number */, google::protobuf::FieldDescriptorProto::LABEL_OPTIONAL,
-        struct_proto));
+        field_number /* field_number */,
+        google::protobuf::FieldDescriptorProto::LABEL_OPTIONAL, struct_proto));
   }
 
   return absl::OkStatus();
@@ -471,7 +487,7 @@ absl::Status TypeToProtoConverter::MakeFileDescriptorProto(
              << "SQL table row type must be a struct, but got type "
              << type->DebugString();
     }
-    std::set<std::string, zetasql_base::StringCaseLess> field_names;
+    std::set<std::string, zetasql_base::CaseLess> field_names;
     for (const StructType::StructField& field : type->AsStruct()->fields()) {
       if (!options_.sql_table_options.allow_anonymous_field_name &&
           field.name.empty()) {

@@ -42,6 +42,7 @@
 #define ZETASQL_PUBLIC_FUNCTIONS_STRING_H_
 
 #include <bitset>
+#include <cstdint>
 #include <memory>
 #include <set>
 #include <string>
@@ -52,6 +53,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "unicode/casemap.h"
 #include "unicode/uniset.h"
 #include "unicode/utypes.h"
@@ -334,8 +336,9 @@ bool RightPadBytes(absl::string_view input_str, int64_t output_size_bytes,
                    absl::Status* error);
 
 // RPAD(BYTES, INT64)
-bool RightPadBytesDefault(absl::string_view input_str, int64_t output_size_bytes,
-                          std::string* out, absl::Status* error);
+bool RightPadBytesDefault(absl::string_view input_str,
+                          int64_t output_size_bytes, std::string* out,
+                          absl::Status* error);
 
 // LPAD(STRING, INT64, STRING)
 bool LeftPadUtf8(absl::string_view input_str, int64_t output_size_chars,
@@ -392,12 +395,6 @@ bool SafeConvertBytes(absl::string_view str, std::string* out,
 bool Normalize(absl::string_view str, NormalizeMode mode, bool is_casefold,
                std::string* out, absl::Status* error);
 
-// Converts from bytes to a base32-encoded string.
-bool ToBase32(absl::string_view str, std::string* out, absl::Status* error);
-
-// Converts from a base32-encoded string to bytes.
-bool FromBase32(absl::string_view str, std::string* out, absl::Status* error);
-
 // Converts from bytes to a base64-encoded string.
 bool ToBase64(absl::string_view str, std::string* out, absl::Status* error);
 
@@ -424,7 +421,7 @@ bool FirstCharOfStringToASCII(absl::string_view str, int64_t* out,
 // Converts from the first byte of a bytes to extended ASCII values in the
 // range [0, 255]. Always return true.
 bool FirstByteOfBytesToASCII(absl::string_view str, int64_t* out,
-                              absl::Status* error);
+                             absl::Status* error);
 
 // Converts from the first Unicode char in a string to codepoint. Returns an
 // error if the first character of input is not a structurally valid UTF8 char.
@@ -433,7 +430,8 @@ bool FirstCharToCodePoint(absl::string_view str, int64_t* out,
 
 // Converts from a codepoint to a UTF8 string. Returns an error if the input
 // is not a valid UTF8 codepoint.
-bool CodePointToString(int64_t codepoint, std::string* out, absl::Status* error);
+bool CodePointToString(int64_t codepoint, std::string* out,
+                       absl::Status* error);
 
 // Converts from a UTF8 string to codepoints. Returns an error if the input is
 // not a structurally valid UTF8 string.
@@ -447,12 +445,12 @@ bool BytesToCodePoints(absl::string_view str, std::vector<int64_t>* out,
 
 // Converts from codepoints to a UTF8 string. Returns an error if any of the
 // elements in 'codepoints' is not a valid UTF8 codepoint.
-bool CodePointsToString(const std::vector<int64_t>& codepoints, std::string* out,
+bool CodePointsToString(absl::Span<const int64_t> codepoints, std::string* out,
                         absl::Status* error);
 
 // Converts from extended ASCII values to bytes. Returns an error if the input
 // values are not in the range [0, 255].
-bool CodePointsToBytes(const std::vector<int64_t>& codepoints, std::string* out,
+bool CodePointsToBytes(absl::Span<const int64_t> codepoints, std::string* out,
                        absl::Status* error);
 
 // Represents a potential rewrite of a LIKE pattern, e.g. "s LIKE pattern" to
@@ -555,6 +553,32 @@ bool TranslateUtf8(absl::string_view str, absl::string_view source_characters,
 bool TranslateBytes(absl::string_view str, absl::string_view source_bytes,
                     absl::string_view target_bytes, std::string* out,
                     absl::Status* error);
+
+// Converts from bytes to a encoded string with specific encoding format
+// (Proposal doc (broken link)).
+absl::Status BytesToString(absl::string_view str, absl::string_view format,
+                           std::string* out);
+
+// Converts from a encoded string with specific encoding format to bytes
+// (Proposal doc (broken link)).
+absl::Status StringToBytes(absl::string_view str, absl::string_view format,
+                           std::string* out);
+
+// Validates the format string used by BytesToString() and StringToBytes().
+absl::Status ValidateFormat(absl::string_view format);
+
+typedef bool (*ConversionFunc)(absl::string_view str, std::string* out,
+                               absl::Status* error);
+
+// A map that maps the format string to conversion functions between bytes and
+// string for that format. The first element of the value is the
+// bytes to string conversion function, while the second element of the value is
+// the string to bytes conversion function.
+typedef absl::flat_hash_map<std::string,
+                            std::pair<ConversionFunc, ConversionFunc>>
+    ConversionFuncMap;
+
+const ConversionFuncMap& GetConversionFuncMap();
 
 }  // namespace functions
 }  // namespace zetasql

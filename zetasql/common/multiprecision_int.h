@@ -142,6 +142,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <iterator>
 #include <limits>
 #include <string>
@@ -556,7 +557,7 @@ class FixedUint final {
   // Returns pow(10, exponent).
   static const FixedUint& PowerOf10(uint exponent) {
     static constexpr auto kPowersOf10 = GetPowersOf10();
-    DCHECK_LT(exponent, kPowersOf10.size());
+    ZETASQL_DCHECK_LT(exponent, kPowersOf10.size());
     return kPowersOf10[exponent];
   }
   // Equivalent to ToString().size(), but is much faster.
@@ -703,7 +704,7 @@ FixedUint<kNumBitsPerWord, kNumWords>::operator double() const {
     significant_bits += bit_idx;
     bit_idx = kNumBitsPerWord;
     if (--word_idx < 0) {
-      DCHECK_LT(significant_bits, 54);
+      ZETASQL_DCHECK_LT(significant_bits, 54);
       return static_cast<double>(significand);
     }
   }
@@ -796,7 +797,7 @@ void FixedUint<kNumBitsPerWord, kNumWords>::AppendToString(
 template <int kNumBitsPerWord, int kNumWords>
 bool FixedUint<kNumBitsPerWord, kNumWords>::ParseOrAppendDigits(
     absl::string_view str, bool append) {
-  DCHECK(!str.empty());
+  ZETASQL_DCHECK(!str.empty());
   Word radix =
       multiprecision_int_impl::IntTraits<kNumBitsPerWord>::kMaxPowerOf10;
   constexpr size_t kMaxDigitsPerSegment = multiprecision_int_impl::IntTraits<
@@ -1098,11 +1099,13 @@ class FixedInt final {
   }
 
   template <uint32_t divisor>
-  FixedInt& DivAndRoundAwayFromZero(std::integral_constant<uint32_t, divisor> x) {
+  FixedInt& DivAndRoundAwayFromZero(
+      std::integral_constant<uint32_t, divisor> x) {
     return InternalDivMod<DivRoundOp, true>(x);
   }
   template <int32_t divisor>
-  FixedInt& DivAndRoundAwayFromZero(std::integral_constant<int32_t, divisor> x) {
+  FixedInt& DivAndRoundAwayFromZero(
+      std::integral_constant<int32_t, divisor> x) {
     return InternalDivMod<DivRoundOp, true>(x);
   }
   FixedInt& DivAndRoundAwayFromZero(UnsignedWord x) {
@@ -1207,7 +1210,7 @@ class FixedInt final {
 
   static FixedInt PowerOf10(uint exponent) {
     FixedInt result(FixedUint<kNumBitsPerWord, kNumWords>::PowerOf10(exponent));
-    DCHECK(!result.is_negative());
+    ZETASQL_DCHECK(!result.is_negative());
     return result;
   }
   uint CountDecimalDigits() const { return abs().CountDecimalDigits(); }
@@ -1263,6 +1266,8 @@ class FixedInt final {
   };
 
   template <typename Op, bool use_divisor_sign, typename T>
+  // GCC seems to produce bad code here on -02
+  __attribute__((optimize("O0")))
   inline FixedInt& InternalDivMod(const T& divisor) {
     bool neg = is_negative();
     bool should_negate_again =
@@ -1405,7 +1410,7 @@ template <bool is_signed, typename UnsignedWord>
 void VarIntBase<is_signed, UnsignedWord>::SerializeToBytes(
     std::string* bytes) const {
 #ifdef ABSL_IS_LITTLE_ENDIAN
-  DCHECK(!number_.empty());
+  ZETASQL_DCHECK(!number_.empty());
   const char extension =
       is_signed &&
               static_cast<std::make_signed_t<UnsignedWord>>(number_.back()) < 0
@@ -1506,7 +1511,7 @@ uint32_t VarUintRef<kNumBitsPerWord>::DivMod(uint32_t divisor) {
 template <bool is_signed, typename UnsignedWord>
 void VarIntBase<is_signed, UnsignedWord>::AppendToString(
     std::string* result) const {
-  DCHECK(result != nullptr);
+  ZETASQL_DCHECK(result != nullptr);
   if (number_.empty()) {
     result->push_back('0');
     return;

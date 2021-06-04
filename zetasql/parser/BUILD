@@ -14,6 +14,8 @@
 # limitations under the License.
 #
 
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load(":builddefs.bzl", "gen_parser_test")
 load("//bazel:bison.bzl", "genyacc")
 load("//bazel:flex.bzl", "genlex")
 
@@ -23,7 +25,10 @@ package(
 
 genrule(
     name = "gen_extra_files",
-    srcs = ["parse_tree.h"],
+    srcs = [
+        "parse_tree_generated.h",
+        "parse_tree_manual.h",
+    ],
     outs = [
         "parse_tree_visitor.h",
         "parse_tree_decls.h",
@@ -40,6 +45,63 @@ py_binary(
     python_version = "PY3",
     deps = [
     ],
+)
+
+genrule(
+    name = "gen_headers",
+    srcs = [
+        "parse_tree_generated.h.template",
+    ],
+    outs = ["parse_tree_generated.h"],
+    cmd = "$(location :gen_parse_tree) $(OUTS) $(SRCS)",
+    exec_tools = [":gen_parse_tree"],
+)
+
+py_library(
+    name = "generator_utils",
+    srcs = ["generator_utils.py"],
+)
+
+py_test(
+    name = "generator_utils_test",
+    size = "small",
+    srcs = ["generator_utils_test.py"],
+    python_version = "PY3",
+    deps = [
+        ":generator_utils",
+        "@io_abseil_py//absl/testing:absltest",
+    ],
+)
+
+py_binary(
+    name = "gen_parse_tree",
+    srcs = ["gen_parse_tree.py"],
+    data = ["parse_tree_generated.h.template"],
+    main = "gen_parse_tree.py",
+    deps = [
+        ":ast_enums_py_pb2",
+        ":generator_utils",
+        "@io_abseil_py//absl:app",
+        "@io_abseil_py//absl/flags",
+        "@jinja//:jinja2",
+    ],
+)
+
+proto_library(
+    name = "ast_enums_proto",
+    srcs = ["ast_enums.proto"],
+)
+
+cc_proto_library(
+    name = "ast_enums_cc_proto",
+    deps = [":ast_enums_proto"],
+)
+
+load("@com_google_protobuf//:protobuf.bzl", "py_proto_library")
+
+py_proto_library(
+    name = "ast_enums_py_pb2",
+    srcs = ["ast_enums.proto"],
 )
 
 cc_library(
@@ -74,12 +136,13 @@ cc_library(
     ],
     tags = ["nofixdeps"],  # generated and real files are interdependent
     deps = [
+        ":ast_enums_cc_proto",
         ":bison_parser_generated_lib",
+        ":flex_istream",
         ":keywords",
         ":parse_tree",
         "//bazel:flex",
         "//zetasql/base",
-        "//zetasql/base:cleanup",
         "//zetasql/base:map_util",
         "//zetasql/base:ret_check",
         "//zetasql/base:status",
@@ -98,6 +161,7 @@ cc_library(
         "//zetasql/public:type",
         "//zetasql/public:type_cc_proto",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/flags:flag",
@@ -149,6 +213,7 @@ cc_library(
     ],
     tags = ["nofixdeps"],  # generated and real files are interdependent
     deps = [
+        ":flex_istream",
         ":keywords",
         ":parse_tree",
         "//bazel:flex",
@@ -163,8 +228,48 @@ cc_library(
         "//zetasql/public:type_cc_proto",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "flex_istream",
+    hdrs = ["flex_istream.h"],
+    copts = [
+        "-Wno-char-subscripts",
+        "-Wno-return-type",
+        "-Wno-sign-compare",
+        "-Wno-switch",
+        "-Wno-unused-but-set-parameter",
+        "-Wno-unused-function",
+        "-Wnonnull-compare",
+    ],
+    deps = [
+        "//zetasql/base:logging",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "flex_istream_test",
+    srcs = ["flex_istream_test.cc"],
+    copts = [
+        "-Wno-char-subscripts",
+        "-Wno-return-type",
+        "-Wno-sign-compare",
+        "-Wno-switch",
+        "-Wno-unused-but-set-parameter",
+        "-Wno-unused-function",
+        "-Wnonnull-compare",
+    ],
+    deps = [
+        ":flex_istream",
+        "//zetasql/base/testing:zetasql_gtest_main",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ],
@@ -178,10 +283,13 @@ cc_library(
         "parse_tree_errors.cc",
     ],
     hdrs = [
+        "ast_node.h",
         "ast_node_kind.h",
         "parse_tree.h",
         "parse_tree_decls.h",
         "parse_tree_errors.h",
+        "parse_tree_generated.h",
+        "parse_tree_manual.h",
         "parse_tree_visitor.h",
         "visit_result.h",
     ],
@@ -196,6 +304,7 @@ cc_library(
     ],
     tags = ["nofixdeps"],  # generated and real files are interdependent
     deps = [
+        ":ast_enums_cc_proto",
         "//zetasql/base",
         "//zetasql/base:map_util",
         "//zetasql/base:ret_check",
@@ -203,6 +312,7 @@ cc_library(
         "//zetasql/base:status",
         "//zetasql/base:statusor",
         "//zetasql/common:errors",
+        "//zetasql/common:utf_util",
         "//zetasql/proto:internal_error_location_cc_proto",
         "//zetasql/public:deprecation_warning_cc_proto",
         "//zetasql/public:error_helpers",
@@ -217,11 +327,13 @@ cc_library(
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@com_googlesource_code_re2//:re2",
+        "@icu//:common",
     ],
 )
 
@@ -245,6 +357,7 @@ cc_test(
         "//zetasql/base:status",
         "//zetasql/base:statusor",
         "//zetasql/base/testing:status_matchers",
+        "//zetasql/base/testing:zetasql_gtest_main",
         "//zetasql/common:errors",
         "//zetasql/common:status_payload_utils",
         "//zetasql/proto:internal_error_location_cc_proto",
@@ -253,7 +366,6 @@ cc_test(
         "//zetasql/testdata:test_schema_cc_proto",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -276,11 +388,54 @@ cc_test(
         "//zetasql/base:source_location",
         "//zetasql/base:status",
         "//zetasql/base/testing:status_matchers",
+        "//zetasql/base/testing:zetasql_gtest_main",
         "//zetasql/common:status_payload_utils",
         "//zetasql/common/testing:proto_matchers",
         "//zetasql/testdata:test_schema_cc_proto",
         "@com_google_absl//absl/status",
-        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "run_parser_test_lib",
+    testonly = 1,
+    srcs = ["run_parser_test.cc"],
+    copts = [
+        "-Wno-char-subscripts",
+        "-Wno-return-type",
+        "-Wno-sign-compare",
+        "-Wno-switch",
+        "-Wno-unused-but-set-parameter",
+        "-Wno-unused-function",
+        "-Wnonnull-compare",
+    ],
+    deps = [
+        ":parser",
+        "//zetasql/base:edit_distance",
+        "//zetasql/base:logging",
+        "//zetasql/base:path",
+        "//zetasql/base:source_location",
+        "//zetasql/base:status",
+        "//zetasql/base:statusor",
+        "//zetasql/base/testing:status_matchers",
+        "//zetasql/base/testing:zetasql_gtest_main",
+        "//zetasql/public:error_helpers",
+        "//zetasql/public:language_options",
+        "//zetasql/public:options_cc_proto",
+        "//zetasql/public:parse_helpers",
+        "//zetasql/public:parse_resume_location",
+        "//zetasql/scripting:parse_helpers",
+        "//zetasql/scripting:script_segment",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/functional:bind_front",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+        "@com_google_file_based_test_driver//file_based_test_driver",
+        "@com_google_file_based_test_driver//file_based_test_driver:run_test_case_result",
+        "@com_google_file_based_test_driver//file_based_test_driver:test_case_options",
+        "@com_googlesource_code_re2//:re2",
     ],
 )
 
@@ -300,7 +455,7 @@ cc_test(
     deps = [
         ":parser",
         "//zetasql/base/testing:status_matchers",
-        "@com_google_googletest//:gtest_main",
+        "//zetasql/base/testing:zetasql_gtest_main",
     ],
 )
 
@@ -328,7 +483,6 @@ cc_library(
         "//zetasql/base:map_util",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -373,8 +527,9 @@ cc_test(
         ":keywords",
         "//zetasql/base",
         "//zetasql/base:path",
+        "//zetasql/base/testing:zetasql_gtest_main",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest_main",
         "@com_googlesource_code_re2//:re2",
     ],
 )
@@ -400,6 +555,15 @@ genyacc(
     ],
     header_out = "bison_parser.bison.h",
     source_out = "bison_parser.bison.cc",
+)
+
+[gen_parser_test(
+    filename = f.split("/")[-1],
+) for f in glob(["testdata/*.test"])]
+
+bzl_library(
+    name = "builddefs_bzl",
+    srcs = ["builddefs.bzl"],
 )
 
 exports_files([

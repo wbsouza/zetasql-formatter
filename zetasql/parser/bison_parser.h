@@ -111,7 +111,7 @@ class BisonParser {
   // returned characters will remain valid throughout Parse().
   absl::string_view GetInputText(
       const zetasql_bison_parser::location& bison_location) const {
-    DCHECK_GE(bison_location.end.column, bison_location.begin.column);
+    ZETASQL_DCHECK_GE(bison_location.end.column, bison_location.begin.column);
     return absl::string_view(
         input_.data() + bison_location.begin.column,
         bison_location.end.column - bison_location.begin.column);
@@ -250,6 +250,12 @@ class BisonParser {
   void ReleaseAllocatedASTNodes(
       std::vector<std::unique_ptr<ASTNode>>* ast_nodes) {
     *ast_nodes = std::move(*allocated_ast_nodes_);
+  }
+
+  // Returns true if there is whitespace between `left` and `right`.
+  bool HasWhitespace(const zetasql_bison_parser::location& left,
+                     const zetasql_bison_parser::location& right) {
+    return left.end.column != right.begin.column;
   }
 
  private:

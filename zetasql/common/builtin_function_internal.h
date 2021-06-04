@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 
+#include <cstdint>
 #include <map>
 #include <string>
 
@@ -37,22 +38,84 @@ namespace zetasql {
 // impact on stack size while still using the same initializer list.
 class FunctionSignatureOnHeap {
  public:
-  FunctionSignatureOnHeap(const FunctionArgumentType& result_type,
-                          const FunctionArgumentTypeList& arguments,
-                          int64_t context_id)
-      : signature_(new FunctionSignature(result_type, arguments, context_id)) {}
+  FunctionSignatureOnHeap(FunctionArgumentType result_type,
+                          FunctionArgumentTypeList arguments, int64_t context_id)
+      : signature_(new FunctionSignature(std::move(result_type),
+                                         std::move(arguments), context_id)) {}
 
-  FunctionSignatureOnHeap(const FunctionArgumentType& result_type,
-                          const FunctionArgumentTypeList& arguments,
-                          int64_t context_id,
-                          const FunctionSignatureOptions& options)
-      : signature_(new FunctionSignature(result_type, arguments, context_id,
-                                         options)) {}
+  FunctionSignatureOnHeap(FunctionArgumentType result_type,
+                          FunctionArgumentTypeList arguments, int64_t context_id,
+                          FunctionSignatureOptions options)
+      : signature_(new FunctionSignature(std::move(result_type),
+                                         std::move(arguments), context_id,
+                                         std::move(options))) {}
 
   const FunctionSignature& Get() const { return *signature_; }
 
  private:
   std::shared_ptr<FunctionSignature> signature_;
+};
+
+// A proxy object representing a simple FunctionArgumentType object, one that
+// can be constructed very easily and cheaply, but lacking the full
+// expressiveness of an actual FunctionArgumentType.
+// If you need to specify a FunctionArgumentTypeOptions, you can't use the
+// 'Simple' methods.
+struct FunctionArgumentTypeProxy {
+  FunctionArgumentTypeProxy(
+      SignatureArgumentKind kind,
+      FunctionArgumentType::ArgumentCardinality cardinality)
+      : kind(kind), cardinality(cardinality) {}
+  // NOLINTNEXTLINE: runtime/explicit
+  FunctionArgumentTypeProxy(SignatureArgumentKind kind) : kind(kind) {}
+
+  FunctionArgumentTypeProxy(
+      const Type* type, FunctionArgumentType::ArgumentCardinality cardinality)
+      : type(type), cardinality(cardinality) {}
+
+  FunctionArgumentTypeProxy(const Type* type)  // NOLINT: runtime/explicit
+      : type(type) {}
+
+  SignatureArgumentKind kind = ARG_TYPE_FIXED;
+  const Type* type = nullptr;
+  FunctionArgumentType::ArgumentCardinality cardinality =
+      FunctionEnums::REQUIRED;
+
+  operator FunctionArgumentType() const {  // NOLINT: runtime/explicit
+    if (type == nullptr) {
+      return FunctionArgumentType(kind, cardinality);
+    } else {
+      return FunctionArgumentType(type, cardinality);
+    }
+  }
+};
+
+// A proxy object representing a simple FunctionSignature object, one that
+// can be constructed very easily and cheaply, but lacking the full
+// expressiveness of an actual FunctionSignature.
+// If you need to specify a FunctionSignatureOptions, you can't use the 'Simple'
+// methods.
+struct FunctionSignatureProxy {
+  FunctionArgumentTypeProxy result_type;
+  std::initializer_list<FunctionArgumentTypeProxy> arguments;
+  FunctionSignatureId context_id;
+
+  // Implicit conversion to a FunctionSignature object.
+  operator FunctionSignature() const {  // NOLINT: runtime/explicit
+    std::vector<FunctionArgumentType> argument_vec(arguments.begin(),
+                                                   arguments.end());
+    return FunctionSignature(result_type, std::move(argument_vec), context_id);
+  }
+
+  // Implicit conversion to a FunctionSignatureOnHeap. This is occasionally
+  // useful when you want to _mostly_ use FunctionSignatureProxy, but must
+  // fallback to FunctionSignatureOnHeap for a few signatures.
+  operator FunctionSignatureOnHeap() const {  // NOLINT: runtime/explicit
+    std::vector<FunctionArgumentType> argument_vec(arguments.begin(),
+                                                   arguments.end());
+    return FunctionSignatureOnHeap(result_type, std::move(argument_vec),
+                                   context_id);
+  }
 };
 
 using FunctionIdToNameMap =
@@ -87,9 +150,19 @@ std::string DateAddOrSubFunctionSQL(const std::string& display_name,
 
 std::string CountStarFunctionSQL(const std::vector<std::string>& inputs);
 
+std::string AnonCountStarFunctionSQL(const std::vector<std::string>& inputs);
+
+std::string SupportedSignaturesForAnonCountStarFunction(
+    const std::string& unused_function_name,
+    const LanguageOptions& language_options, const Function& function);
+
 std::string BetweenFunctionSQL(const std::vector<std::string>& inputs);
 
 std::string InListFunctionSQL(const std::vector<std::string>& inputs);
+
+std::string LikeAnyFunctionSQL(const std::vector<std::string>& inputs);
+
+std::string LikeAllFunctionSQL(const std::vector<std::string>& inputs);
 
 std::string CaseWithValueFunctionSQL(const std::vector<std::string>& inputs);
 
@@ -97,11 +170,22 @@ std::string CaseNoValueFunctionSQL(const std::vector<std::string>& inputs);
 
 std::string InArrayFunctionSQL(const std::vector<std::string>& inputs);
 
+std::string LikeAnyArrayFunctionSQL(const std::vector<std::string>& inputs);
+
+std::string LikeAllArrayFunctionSQL(const std::vector<std::string>& inputs);
+
 std::string ArrayAtOffsetFunctionSQL(const std::vector<std::string>& inputs);
 
 std::string ArrayAtOrdinalFunctionSQL(const std::vector<std::string>& inputs);
 
 std::string SafeArrayAtOffsetFunctionSQL(
+    const std::vector<std::string>& inputs);
+
+std::string SubscriptFunctionSQL(const std::vector<std::string>& inputs);
+std::string SubscriptWithKeyFunctionSQL(const std::vector<std::string>& inputs);
+std::string SubscriptWithOffsetFunctionSQL(
+    const std::vector<std::string>& inputs);
+std::string SubscriptWithOrdinalFunctionSQL(
     const std::vector<std::string>& inputs);
 
 std::string SafeArrayAtOrdinalFunctionSQL(
@@ -150,6 +234,7 @@ absl::Status CheckExtractPreResolutionArguments(
     const LanguageOptions& language_options);
 
 absl::Status CheckExtractPostResolutionArguments(
+    const zetasql::FunctionSignature& signature,
     const std::vector<InputArgumentType>& arguments,
     const LanguageOptions& language_options);
 
@@ -165,6 +250,7 @@ absl::Status CheckDateDatetimeTimeTimestampDiffArguments(
 
 absl::Status CheckDatetimeAddSubDiffArguments(
     const std::string& function_name,
+    const FunctionSignature& /*signature*/,
     const std::vector<InputArgumentType>& arguments,
     const LanguageOptions& language_options);
 
@@ -173,6 +259,7 @@ absl::Status CheckDatetimeAddSubDiffArguments(
 // ProtoType is present) or newly created in the <type_factory>.
 zetasql_base::StatusOr<const Type*> GetOrMakeEnumValueDescriptorType(
     Catalog* catalog, TypeFactory* type_factory, CycleDetector* cycle,
+    const FunctionSignature& /*signature*/,
     const std::vector<InputArgumentType>& arguments,
     const AnalyzerOptions& analyzer_options);
 
@@ -193,6 +280,7 @@ absl::Status CheckJsonArguments(const std::vector<InputArgumentType>& arguments,
                                 const LanguageOptions& options);
 
 absl::Status CheckFormatPostResolutionArguments(
+    const FunctionSignature& /*signature*/,
     const std::vector<InputArgumentType>& arguments,
     const LanguageOptions& language_options);
 
@@ -219,6 +307,14 @@ std::string NoMatchingSignatureForInFunction(
     const std::vector<InputArgumentType>& arguments, ProductMode product_mode);
 
 std::string NoMatchingSignatureForInArrayFunction(
+    const std::string& qualified_function_name,
+    const std::vector<InputArgumentType>& arguments, ProductMode product_mode);
+
+std::string NoMatchingSignatureForLikeExprFunction(
+    const std::string& qualified_function_name,
+    const std::vector<InputArgumentType>& arguments, ProductMode product_mode);
+
+std::string NoMatchingSignatureForLikeExprArrayFunction(
     const std::string& qualified_function_name,
     const std::vector<InputArgumentType>& arguments, ProductMode product_mode);
 
@@ -278,16 +374,27 @@ std::string ExtractSupportedSignatures(
     const std::string& explicit_datepart_name,
     const LanguageOptions& language_options, const Function& function);
 
+std::string NoMatchingSignatureForSubscript(
+    absl::string_view offset_or_ordinal, absl::string_view operator_name,
+    const std::vector<InputArgumentType>& arguments, ProductMode product_mode);
+
 std::string EmptySupportedSignatures(const LanguageOptions& language_options,
                                      const Function& function);
 
 absl::Status CheckArgumentsSupportEquality(
     const std::string& comparison_name,
+    const FunctionSignature& /*signature*/,
+    const std::vector<InputArgumentType>& arguments,
+    const LanguageOptions& language_options);
+
+absl::Status CheckArgumentsSupportGrouping(
+    const std::string& comparison_name, const FunctionSignature& signature,
     const std::vector<InputArgumentType>& arguments,
     const LanguageOptions& language_options);
 
 absl::Status CheckArgumentsSupportComparison(
     const std::string& comparison_name,
+    const FunctionSignature& /*signature*/,
     const std::vector<InputArgumentType>& arguments,
     const LanguageOptions& language_options);
 
@@ -317,9 +424,16 @@ absl::Status CheckInArrayArguments(
     const std::vector<InputArgumentType>& arguments,
     const LanguageOptions& language_options);
 
+absl::Status CheckLikeExprArrayArguments(
+    const std::vector<InputArgumentType>& arguments,
+    const LanguageOptions& language_options);
+
 absl::Status CheckRangeBucketArguments(
     const std::vector<InputArgumentType>& arguments,
     const LanguageOptions& language_options);
+
+std::string AnonCountStarBadArgumentErrorPrefix(const FunctionSignature&,
+                                                int idx);
 
 // Returns true if an arithmetic operation has a floating point type as its
 // input.
@@ -347,6 +461,11 @@ bool HasBigNumericTypeArgument(
     const FunctionSignature& matched_signature,
     const std::vector<InputArgumentType>& arguments);
 
+// Returns true if at least one input argument has INTERVAL type.
+bool HasIntervalTypeArgument(
+    const FunctionSignature& matched_signature,
+    const std::vector<InputArgumentType>& arguments);
+
 // Returns true if FN_CONCAT_STRING function can coerce argument of given type
 // to STRING.
 bool CanStringConcatCoerceFrom(const zetasql::Type* arg_type);
@@ -359,6 +478,7 @@ bool CanStringConcatCoerceFrom(const zetasql::Type* arg_type);
 zetasql_base::StatusOr<const Type*> ComputeResultTypeForTopStruct(
     const std::string& field2_name, Catalog* catalog, TypeFactory* type_factory,
     CycleDetector* cycle_detector,
+    const FunctionSignature& /*signature*/,
     const std::vector<InputArgumentType>& arguments,
     const AnalyzerOptions& analyzer_options);
 
@@ -369,6 +489,7 @@ zetasql_base::StatusOr<const Type*> ComputeResultTypeForTopStruct(
 //            `distance` Double> >
 zetasql_base::StatusOr<const Type*> ComputeResultTypeForNearestNeighborsStruct(
     Catalog* catalog, TypeFactory* type_factory, CycleDetector* cycle_detector,
+    const FunctionSignature& /*signature*/,
     const std::vector<InputArgumentType>& arguments,
     const AnalyzerOptions& analyzer_options);
 
@@ -376,32 +497,64 @@ void InsertCreatedFunction(NameToFunctionMap* functions,
                            const ZetaSQLBuiltinFunctionOptions& options,
                            Function* function_in);
 
-void InsertFunctionImpl(
-    NameToFunctionMap* functions,
-    const ZetaSQLBuiltinFunctionOptions& options,
-    const std::vector<std::string>& name, Function::Mode mode,
-    const std::vector<FunctionSignatureOnHeap>& signatures_on_heap,
-    const FunctionOptions& function_options);
-
 void InsertFunction(NameToFunctionMap* functions,
                     const ZetaSQLBuiltinFunctionOptions& options,
-                    const std::string& name, Function::Mode mode,
+                    absl::string_view name, Function::Mode mode,
                     const std::vector<FunctionSignatureOnHeap>& signatures,
-                    const FunctionOptions& function_options);
+                    FunctionOptions function_options);
 
 // Note: This function is intentionally overloaded to prevent a default
 // FunctionOptions object to be allocated on the callers stack.
 void InsertFunction(NameToFunctionMap* functions,
                     const ZetaSQLBuiltinFunctionOptions& options,
-                    const std::string& name, Function::Mode mode,
+                    absl::string_view name, Function::Mode mode,
                     const std::vector<FunctionSignatureOnHeap>& signatures);
+
+void InsertSimpleFunction(
+    NameToFunctionMap* functions,
+    const ZetaSQLBuiltinFunctionOptions& options, absl::string_view name,
+    Function::Mode mode,
+    std::initializer_list<FunctionSignatureProxy> signatures,
+    const FunctionOptions& function_options);
+
+// Note: This function is intentionally overloaded to prevent a default
+// FunctionOptions object to be allocated on the callers stack.
+void InsertSimpleFunction(
+    NameToFunctionMap* functions,
+    const ZetaSQLBuiltinFunctionOptions& options, absl::string_view name,
+    Function::Mode mode,
+    std::initializer_list<FunctionSignatureProxy> signatures);
 
 void InsertNamespaceFunction(
     NameToFunctionMap* functions,
-    const ZetaSQLBuiltinFunctionOptions& options, const std::string& space,
-    const std::string& name, Function::Mode mode,
+    const ZetaSQLBuiltinFunctionOptions& options, absl::string_view space,
+    absl::string_view name, Function::Mode mode,
+    const std::vector<FunctionSignatureOnHeap>& signatures);
+
+// Note: This function is intentionally overloaded to prevent a default
+// FunctionOptions object to be allocated on the callers stack.
+void InsertNamespaceFunction(
+    NameToFunctionMap* functions,
+    const ZetaSQLBuiltinFunctionOptions& options, absl::string_view space,
+    absl::string_view name, Function::Mode mode,
     const std::vector<FunctionSignatureOnHeap>& signatures,
-    const FunctionOptions& function_options = FunctionOptions());
+    FunctionOptions function_options);
+
+void InsertSimpleNamespaceFunction(
+    NameToFunctionMap* functions,
+    const ZetaSQLBuiltinFunctionOptions& options, absl::string_view space,
+    absl::string_view name, Function::Mode mode,
+    std::initializer_list<FunctionSignatureProxy> signatures);
+
+// Note: This function is intentionally overloaded to prevent a default
+// FunctionOptions object to be allocated on the callers stack.
+void InsertSimpleNamespaceFunction(
+    NameToFunctionMap* functions,
+    const ZetaSQLBuiltinFunctionOptions& options, absl::string_view space,
+    absl::string_view name, Function::Mode mode,
+    std::initializer_list<FunctionSignatureProxy> signatures,
+    FunctionOptions function_options);
+
 void GetDatetimeExtractFunctions(TypeFactory* type_factory,
                                  const ZetaSQLBuiltinFunctionOptions& options,
                                  NameToFunctionMap* functions);
@@ -431,6 +584,10 @@ void GetDatetimeFormatFunctions(TypeFactory* type_factory,
                                 NameToFunctionMap* functions);
 
 void GetDatetimeFunctions(TypeFactory* type_factory,
+                          const ZetaSQLBuiltinFunctionOptions& options,
+                          NameToFunctionMap* functions);
+
+void GetIntervalFunctions(TypeFactory* type_factory,
                           const ZetaSQLBuiltinFunctionOptions& options,
                           NameToFunctionMap* functions);
 
@@ -481,6 +638,14 @@ void GetMiscellaneousFunctions(TypeFactory* type_factory,
                                const ZetaSQLBuiltinFunctionOptions& options,
                                NameToFunctionMap* functions);
 
+void GetSubscriptFunctions(TypeFactory* type_factory,
+                           const ZetaSQLBuiltinFunctionOptions& options,
+                           NameToFunctionMap* functions);
+
+void GetJSONFunctions(TypeFactory* type_factory,
+                      const ZetaSQLBuiltinFunctionOptions& options,
+                      NameToFunctionMap* functions);
+
 void GetNumericFunctions(TypeFactory* type_factory,
                          const ZetaSQLBuiltinFunctionOptions& options,
                          NameToFunctionMap* functions);
@@ -517,6 +682,13 @@ void GetGeographyFunctions(TypeFactory* type_factory,
                            const ZetaSQLBuiltinFunctionOptions& options,
                            NameToFunctionMap* functions);
 
+void GetAnonFunctions(TypeFactory* type_factory,
+                      const ZetaSQLBuiltinFunctionOptions& options,
+                      NameToFunctionMap* functions);
+
+void GetContainsSubstrFunction(TypeFactory* type_factory,
+                               const ZetaSQLBuiltinFunctionOptions& options,
+                               NameToFunctionMap* functions);
 }  // namespace zetasql
 
 #endif  // ZETASQL_COMMON_BUILTIN_FUNCTION_INTERNAL_H_

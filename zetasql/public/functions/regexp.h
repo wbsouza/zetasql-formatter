@@ -17,6 +17,7 @@
 #ifndef ZETASQL_PUBLIC_FUNCTIONS_REGEXP_H_
 #define ZETASQL_PUBLIC_FUNCTIONS_REGEXP_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -52,15 +53,19 @@ namespace functions {
 //
 class RegExp {
  public:
-  // TODO: extend this class to support memory limits on memory used
-  // by the processed regexp.
-
   // The following two functions parse a regular expression assuming
   // UTF-8 (InitializePatternUtf8) or Latin1 (InitializePatternBytes) encoding.
   // If the regular expression is not correct *error is updated
   // and false is returned.
   bool InitializePatternUtf8(absl::string_view pattern, absl::Status* error);
   bool InitializePatternBytes(absl::string_view pattern, absl::Status* error);
+
+  // Initializes a regular expression from `pattern` with `options`. This
+  // function can be used when other options (including string encoding) need
+  // to be provided for initializing the regular expression. If `pattern` cannot
+  // be parsed, `error` is updated and false is returned.
+  bool InitializeWithOptions(absl::string_view pattern,
+                             const RE2::Options& options, absl::Status* error);
 
   // REGEXP_CONTAINS (substring match)
   bool Contains(absl::string_view str, bool* out, absl::Status* error);
@@ -85,8 +90,8 @@ class RegExp {
   // Note: Both `position` and `occurrence_index` are one-based indices rather
   // than zero-based indices.
   bool Extract(absl::string_view str, PositionUnit position_unit,
-               int64_t position, int64_t occurrence_index, absl::string_view* out,
-               bool* is_null, absl::Status* error);
+               int64_t position, int64_t occurrence_index,
+               absl::string_view* out, bool* is_null, absl::Status* error);
 
   inline bool Extract(absl::string_view str, absl::string_view* out,
                       bool* is_null, absl::Status* error) {
@@ -108,7 +113,7 @@ class RegExp {
   // ...
   // ExtractAllReset(input);
   // while (ExtractAllNext(&output, &error)) {
-  //  LOG(INFO) << output;
+  //  ZETASQL_LOG(INFO) << output;
   // }
   // ZETASQL_RETURN_IF_ERROR(error);
   //
@@ -196,7 +201,7 @@ class RegExp {
   // Accessor to the initialized RE2 object. Must Initialize() first before
   // calling this.
   const RE2& re() const {
-    DCHECK(re_ != nullptr) << "Not initialized";
+    ZETASQL_DCHECK(re_ != nullptr) << "Not initialized";
     return *re_;
   }
 

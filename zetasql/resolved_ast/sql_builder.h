@@ -17,6 +17,7 @@
 #ifndef ZETASQL_RESOLVED_AST_SQL_BUILDER_H_
 #define ZETASQL_RESOLVED_AST_SQL_BUILDER_H_
 
+#include <cstdint>
 #include <deque>
 #include <map>
 #include <memory>
@@ -129,6 +130,8 @@ class SQLBuilder : public ResolvedASTVisitor {
       const ResolvedCreateSchemaStmt* node) override;
   absl::Status VisitResolvedCreateTableStmt(
       const ResolvedCreateTableStmt* node) override;
+  absl::Status VisitResolvedCreateSnapshotTableStmt(
+      const ResolvedCreateSnapshotTableStmt* node) override;
   absl::Status VisitResolvedCreateTableAsSelectStmt(
       const ResolvedCreateTableAsSelectStmt* node) override;
   absl::Status VisitResolvedCreateViewStmt(
@@ -151,6 +154,8 @@ class SQLBuilder : public ResolvedASTVisitor {
       const ResolvedArgumentDef* node) override;
   absl::Status VisitResolvedArgumentRef(
       const ResolvedArgumentRef* node) override;
+  absl::Status VisitResolvedCloneDataStmt(
+      const ResolvedCloneDataStmt* node) override;
   absl::Status VisitResolvedExportDataStmt(
       const ResolvedExportDataStmt* node) override;
   absl::Status VisitResolvedExportModelStmt(
@@ -180,10 +185,16 @@ class SQLBuilder : public ResolvedASTVisitor {
       const ResolvedDropStmt* node) override;
   absl::Status VisitResolvedDropFunctionStmt(
       const ResolvedDropFunctionStmt* node) override;
+  absl::Status VisitResolvedDropTableFunctionStmt(
+      const ResolvedDropTableFunctionStmt* node) override;
   absl::Status VisitResolvedDropMaterializedViewStmt(
       const ResolvedDropMaterializedViewStmt* node) override;
   absl::Status VisitResolvedDropRowAccessPolicyStmt(
       const ResolvedDropRowAccessPolicyStmt* node) override;
+  absl::Status VisitResolvedDropSnapshotTableStmt(
+      const ResolvedDropSnapshotTableStmt* node) override;
+  absl::Status VisitResolvedDropSearchIndexStmt(
+      const ResolvedDropSearchIndexStmt* node) override;
   absl::Status VisitResolvedTruncateStmt(
       const ResolvedTruncateStmt* node) override;
   absl::Status VisitResolvedUpdateStmt(
@@ -202,6 +213,8 @@ class SQLBuilder : public ResolvedASTVisitor {
       const ResolvedAlterRowAccessPolicyStmt* node) override;
   absl::Status VisitResolvedAlterAllRowAccessPoliciesStmt(
       const ResolvedAlterAllRowAccessPoliciesStmt* node) override;
+  absl::Status VisitResolvedAlterSchemaStmt(
+      const ResolvedAlterSchemaStmt* node) override;
   absl::Status VisitResolvedAlterTableSetOptionsStmt(
       const ResolvedAlterTableSetOptionsStmt* node) override;
   absl::Status VisitResolvedAlterTableStmt(
@@ -214,6 +227,8 @@ class SQLBuilder : public ResolvedASTVisitor {
       const ResolvedRenameStmt* node) override;
   absl::Status VisitResolvedImportStmt(const ResolvedImportStmt* node) override;
   absl::Status VisitResolvedModuleStmt(const ResolvedModuleStmt* node) override;
+  absl::Status VisitResolvedAnalyzeStmt(
+      const ResolvedAnalyzeStmt* node) override;
   absl::Status VisitResolvedAssertStmt(const ResolvedAssertStmt* node) override;
   absl::Status VisitResolvedAssignmentStmt(
       const ResolvedAssignmentStmt* node) override;
@@ -231,9 +246,13 @@ class SQLBuilder : public ResolvedASTVisitor {
       const ResolvedAggregateFunctionCall* node) override;
   absl::Status VisitResolvedAnalyticFunctionCall(
       const ResolvedAnalyticFunctionCall* node) override;
+  absl::Status VisitResolvedInlineLambda(
+      const ResolvedInlineLambda* node) override;
   absl::Status VisitResolvedGetProtoField(
       const ResolvedGetProtoField* node) override;
   absl::Status VisitResolvedFlatten(const ResolvedFlatten* node) override;
+  absl::Status VisitResolvedFilterField(
+      const ResolvedFilterField* node) override;
   absl::Status VisitResolvedReplaceField(
       const ResolvedReplaceField* node) override;
   absl::Status VisitResolvedFlattenedArg(
@@ -244,6 +263,8 @@ class SQLBuilder : public ResolvedASTVisitor {
       const ResolvedColumnHolder* node) override;
   absl::Status VisitResolvedSubqueryExpr(
       const ResolvedSubqueryExpr* node) override;
+  absl::Status VisitResolvedTableAndColumnInfo(
+      const ResolvedTableAndColumnInfo* node) override;
   absl::Status VisitResolvedOption(const ResolvedOption* node) override;
   absl::Status VisitResolvedParameter(const ResolvedParameter* node) override;
   absl::Status VisitResolvedSystemVariable(
@@ -254,12 +275,16 @@ class SQLBuilder : public ResolvedASTVisitor {
   absl::Status VisitResolvedMakeStruct(const ResolvedMakeStruct* node) override;
   absl::Status VisitResolvedGetStructField(
       const ResolvedGetStructField* node) override;
+  absl::Status VisitResolvedGetJsonField(
+      const ResolvedGetJsonField* node) override;
   absl::Status VisitResolvedOrderByItem(
       const ResolvedOrderByItem* node) override;
   absl::Status VisitResolvedComputedColumn(
       const ResolvedComputedColumn* node) override;
   absl::Status VisitResolvedAssertRowsModified(
       const ResolvedAssertRowsModified* node) override;
+  absl::Status VisitResolvedReturningClause(
+      const ResolvedReturningClause* node) override;
   absl::Status VisitResolvedDMLDefault(const ResolvedDMLDefault* node) override;
   absl::Status VisitResolvedDMLValue(const ResolvedDMLValue* node) override;
   absl::Status VisitResolvedInsertRow(const ResolvedInsertRow* node) override;
@@ -290,6 +315,8 @@ class SQLBuilder : public ResolvedASTVisitor {
       const ResolvedOrderByScan* node) override;
   absl::Status VisitResolvedAggregateScan(
       const ResolvedAggregateScan* node) override;
+  absl::Status VisitResolvedAnonymizedAggregateScan(
+      const ResolvedAnonymizedAggregateScan* node) override;
   absl::Status VisitResolvedRecursiveScan(
       const ResolvedRecursiveScan* node) override;
   absl::Status VisitResolvedWithScan(const ResolvedWithScan* node) override;
@@ -301,6 +328,9 @@ class SQLBuilder : public ResolvedASTVisitor {
       const ResolvedSampleScan* node) override;
   absl::Status VisitResolvedSingleRowScan(
       const ResolvedSingleRowScan* node) override;
+  absl::Status VisitResolvedPivotScan(const ResolvedPivotScan* node) override;
+  absl::Status VisitResolvedGroupRowsScan(
+      const ResolvedGroupRowsScan* node) override;
 
   // Visit methods for analytic functions related nodes.
   absl::Status VisitResolvedAnalyticFunctionGroup(
@@ -399,10 +429,13 @@ class SQLBuilder : public ResolvedASTVisitor {
       const Type* type, bool is_hidden,
       const ResolvedColumnAnnotations* annotations,
       const ResolvedGeneratedColumnInfo* generated_column_info,
-      std::string* text);
+      const ResolvedExpr* default_expression, std::string* text);
 
   zetasql_base::StatusOr<std::string> GetHintListString(
       const std::vector<std::unique_ptr<const ResolvedOption>>& hint_list);
+
+  absl::Status AppendCloneDataSource(const ResolvedScan* source,
+                                     std::string* sql);
 
   // Always append a (possibly empty) OPTIONS clause.
   absl::Status AppendOptions(
@@ -466,10 +499,22 @@ class SQLBuilder : public ResolvedASTVisitor {
                                         const std::string& object_type,
                                         std::string* sql);
 
+  // If the view was created with explicit column names,
+  // prints the column names.
+  void GetOptionalColumnNameList(const ResolvedCreateViewBase* node,
+                                 std::string* sql);
+
   // Appends PARTITION BY or CLUSTER BY expressions to the provided string, not
   // including the "PARTITION BY " or "CLUSTER BY " prefix.
   absl::Status GetPartitionByListString(
       const std::vector<std::unique_ptr<const ResolvedExpr>>& partition_by_list,
+      std::string* sql);
+
+  // Helper function to get corresponding SQL for a list of TableAndColumnInfo
+  // to be analyzed in ANALYZE STATEMENT.
+  absl::Status GetTableAndColumnInfoList(
+      const std::vector<std::unique_ptr<const ResolvedTableAndColumnInfo>>&
+          table_and_column_info_list,
       std::string* sql);
 
   static std::string GetOptionalObjectType(const std::string& object_type);
@@ -483,8 +528,8 @@ class SQLBuilder : public ResolvedASTVisitor {
   void SetPathForColumn(const ResolvedColumn& column, const std::string& path);
   void SetPathForColumnList(const ResolvedColumnList& column_list,
                             const std::string& scan_alias);
-  void SetPathForColumnsInScan(const ResolvedScan* scan,
-                               const std::string& alias);
+  absl::Status SetPathForColumnsInScan(const ResolvedScan* scan,
+                                       const std::string& alias);
 
   // Helper function to ensure:
   // - Columns in <output_column_list> matches 1:1 in order with
@@ -561,6 +606,12 @@ class SQLBuilder : public ResolvedASTVisitor {
           foreign_key_list,
       const std::vector<std::unique_ptr<const ResolvedCheckConstraint>>&
           check_constraint_list);
+  // Helper function to append foreign key table constraint.
+  zetasql_base::StatusOr<std::string> ProcessForeignKey(
+      const ResolvedForeignKey* foreign_key, bool is_if_not_exists);
+  // Helper function to append primary key table constraint.
+  zetasql_base::StatusOr<std::string> ProcessPrimaryKey(
+      const ResolvedPrimaryKey* primary_key);
   std::string ComputedColumnAliasDebugString() const;
 
   // If we have a recursive view, sets up internal data structures in
@@ -701,6 +752,10 @@ class SQLBuilder : public ResolvedASTVisitor {
   // the <from> string if necessary.
   virtual std::string GetTableAliasForVisitResolvedTableScan(
       const ResolvedTableScan& node, std::string* from);
+
+  // Returns a new unique alias name. The default implementation generates the
+  // name as "a_<id>".
+  virtual std::string GenerateUniqueAliasName();
 };
 
 }  // namespace zetasql

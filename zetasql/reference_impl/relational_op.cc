@@ -18,8 +18,10 @@
 // warrant their own files.
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <queue>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -43,6 +45,8 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/flags/flag.h"
 #include "absl/memory/memory.h"
+#include "absl/random/distributions.h"
+#include "absl/random/random.h"
 #include "absl/status/status.h"
 #include "zetasql/base/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -53,6 +57,7 @@
 #include "zetasql/base/source_location.h"
 #include "zetasql/base/ret_check.h"
 #include "zetasql/base/status.h"
+#include "zetasql/base/status_builder.h"
 #include "zetasql/base/status_macros.h"
 
 using zetasql::types::EmptyStructType;
@@ -559,7 +564,7 @@ std::string EvaluatorTableScanOp::DebugInternal(const std::string& indent,
   const std::string indent_input = absl::StrCat(indent, kIndentFork);
 
   std::vector<std::string> column_strings;
-  CHECK_EQ(column_names_.size(), column_idxs_.size());
+  ZETASQL_CHECK_EQ(column_names_.size(), column_idxs_.size());
   column_strings.reserve(column_names_.size());
   for (int i = 0; i < column_names_.size(); ++i) {
     column_strings.push_back(
@@ -1757,6 +1762,501 @@ const RelationalOp* LimitOp::input() const {
 
 RelationalOp* LimitOp::mutable_input() {
   return GetMutableArg(kInput)->mutable_node()->AsMutableRelationalOp();
+}
+
+// -------------------------------------------------------
+// SampleScanOp
+// -------------------------------------------------------
+
+std::string SampleScanOp::GetIteratorDebugString(
+    absl::string_view input_iter_debug_string) {
+  return absl::StrCat("SampleScanTupleIterator(", input_iter_debug_string, ")");
+}
+
+zetasql_base::StatusOr<std::unique_ptr<SampleScanOp>> SampleScanOp::Create(
+    Method method, std::unique_ptr<ValueExpr> size,
+    std::unique_ptr<ValueExpr> repeatable, std::unique_ptr<RelationalOp> input,
+    std::vector<std::unique_ptr<ValueExpr>> partition_key,
+    const VariableId& sample_weight) {
+  ZETASQL_RET_CHECK(repeatable == nullptr || repeatable->output_type()->IsInt64());
+
+  return absl::WrapUnique(
+      new SampleScanOp(std::move(size), std::move(repeatable), std::move(input),
+                       method, std::move(partition_key), sample_weight));
+}
+
+absl::Status SampleScanOp::SetSchemasForEvaluation(
+    absl::Span<const TupleSchema* const> params_schemas) {
+  ZETASQL_RETURN_IF_ERROR(mutable_size()->SetSchemasForEvaluation(params_schemas));
+  ZETASQL_RETURN_IF_ERROR(mutable_input()->SetSchemasForEvaluation(params_schemas));
+  if (has_repeatable()) {
+    ZETASQL_RETURN_IF_ERROR(
+        mutable_repeatable()->SetSchemasForEvaluation(params_schemas));
+  }
+
+  std::unique_ptr<TupleSchema> input_schema = input()->CreateOutputSchema();
+  auto key_part_params = ConcatSpans(params_schemas, {input_schema.get()});
+  for (ExprArg* arg : mutable_partition_key()) {
+    ZETASQL_RETURN_IF_ERROR(
+        arg->mutable_value_expr()->SetSchemasForEvaluation(key_part_params));
+  }
+  return absl::OkStatus();
+}
+
+namespace {
+class SampleScanTupleIteratorBase : public TupleIterator {
+ public:
+  SampleScanTupleIteratorBase(absl::optional<int64_t> seed,
+                              EvaluationContext* context,
+                              std::unique_ptr<TupleIterator> iter,
+                              std::unique_ptr<TupleSchema> schema,
+                              const VariableId& weight)
+      : bitgen_(MakeBitgen(seed)),
+        context_(context),
+        iter_(std::move(iter)),
+        output_schema_(std::move(schema)),
+        include_weight_(weight.is_valid()) {}
+
+  SampleScanTupleIteratorBase(const SampleScanTupleIteratorBase&) = delete;
+  SampleScanTupleIteratorBase& operator=(const SampleScanTupleIteratorBase&) =
+      delete;
+
+  const TupleSchema& Schema() const override { return *output_schema_; }
+
+  absl::Status Status() const override { return status_; }
+
+  std::string DebugString() const override {
+    return SampleScanOp::GetIteratorDebugString(iter_->DebugString());
+  }
+
+  TupleData* Next() final {
+    zetasql_base::StatusOr<TupleData*> status_or_next = NextInternal();
+    if (status_or_next.ok()) {
+      return status_or_next.value();
+    }
+    status_ = status_or_next.status();
+    return nullptr;
+  }
+
+  // Derived clases implement Next with this safer interface.
+  virtual zetasql_base::StatusOr<TupleData*> NextInternal() = 0;
+
+ protected:
+  // Update 'context_' to indicate that input iterator is done.
+  absl::Status Finish() {
+    if (!seed_.has_value() && saw_row_) {
+      context_->SetNonDeterministicOutput();
+    }
+    return iter_->Status();
+  }
+
+  absl::Status SetWeight(double weight, TupleData* current) {
+    if (current->num_slots() < Schema().num_variables()) {
+      return zetasql_base::InternalErrorBuilder()
+             << "ComputeTupleIterator::Next() found " << current->num_slots()
+             << " slots but expected at least " << Schema().num_variables();
+    }
+    if (include_weight_) {
+      current->mutable_slot(iter_->Schema().num_variables())
+          ->SetValue(Value::Double(weight));
+    }
+    return absl::OkStatus();
+  }
+
+  // Build a bitgen instance, optionally with the given seed.
+  absl::BitGen MakeBitgen(absl::optional<int64_t> seed) {
+    if (seed.has_value()) {
+      return absl::BitGen(std::seed_seq{*seed});
+    }
+    return absl::BitGen();
+  }
+
+  absl::BitGen bitgen_;
+  // If set, bitgen_ was populated using this value.
+  const absl::optional<int64_t> seed_;
+  EvaluationContext* context_;
+  std::unique_ptr<TupleIterator> iter_;
+  std::unique_ptr<TupleSchema> output_schema_;
+  // If true, add a column with the weight measure,
+  const bool include_weight_;
+
+  // If true, iter_ yielded at least one row.
+  bool saw_row_ = false;
+
+ private:
+  // Output status, copied from iter_.
+  absl::Status status_;
+};
+
+class BernoulliSampleScanTupleIterator : public SampleScanTupleIteratorBase {
+ public:
+  BernoulliSampleScanTupleIterator(double percent, absl::optional<int64_t> seed,
+                                   EvaluationContext* context,
+                                   std::unique_ptr<TupleIterator> iter,
+                                   std::unique_ptr<TupleSchema> schema,
+                                   const VariableId& weight)
+      : SampleScanTupleIteratorBase(seed, context, std::move(iter),
+                                    std::move(schema), weight),
+        percent_(percent),
+        weight_(1.0 / percent_) {}
+
+  BernoulliSampleScanTupleIterator(const BernoulliSampleScanTupleIterator&) =
+      delete;
+  BernoulliSampleScanTupleIterator& operator=(
+      const BernoulliSampleScanTupleIterator&) = delete;
+
+  zetasql_base::StatusOr<TupleData*> NextInternal() override {
+    // Randomly elide values
+    while (!absl::Bernoulli(bitgen_, percent_)) {
+      TupleData* current = iter_->Next();
+      if (current == nullptr) {
+        ZETASQL_RETURN_IF_ERROR(Finish());
+        return nullptr;
+      }
+    }
+
+    TupleData* current = iter_->Next();
+    if (current == nullptr) {
+      ZETASQL_RETURN_IF_ERROR(Finish());
+      return nullptr;
+    }
+    ZETASQL_RETURN_IF_ERROR(SetWeight(weight_, current));
+
+    saw_row_ = true;
+    return current;
+  }
+
+ private:
+  const double percent_;
+  const double weight_;
+};
+
+class ReservoirSampleScanTupleIterator : public SampleScanTupleIteratorBase {
+ public:
+  ReservoirSampleScanTupleIterator(
+      int64_t reservoir_size, absl::optional<int64_t> seed,
+      EvaluationContext* context, absl::Span<const TupleData* const> params,
+      std::unique_ptr<TupleIterator> iter, std::unique_ptr<TupleSchema> schema,
+      absl::Span<const KeyArg* const> partition_key, const VariableId& weight)
+      : SampleScanTupleIteratorBase(seed, context, std::move(iter),
+                                    std::move(schema), weight),
+        reservoir_size_(reservoir_size),
+        params_(params),
+        partition_key_(partition_key) {}
+
+  ReservoirSampleScanTupleIterator(const ReservoirSampleScanTupleIterator&) =
+      delete;
+  ReservoirSampleScanTupleIterator& operator=(
+      const ReservoirSampleScanTupleIterator&) = delete;
+
+  zetasql_base::StatusOr<TupleData*> NextInternal() override {
+    if (!built_reservoir_) {
+      built_reservoir_ = true;
+      ZETASQL_RETURN_IF_ERROR(BuildReservoirState());
+    }
+
+    if (reservoir_next_ >= reservoir_output_.size()) {
+      return nullptr;
+    }
+    return &reservoir_output_[reservoir_next_++];
+  }
+
+ private:
+  struct ScoredEntry {
+    uint32_t score;
+    TupleData tuple;
+
+    bool operator<(const ScoredEntry& other) const {
+      return score < other.score;
+    }
+  };
+
+  struct Reservoir {
+    // For a reservoir of size N, 'entries' is the top N scoring candidates seen
+    // thus far.
+    std::priority_queue<ScoredEntry> entries;
+    int64_t num_candidates_considered;
+  };
+
+  // Consume all tuples in 'input_' and do a reservoir sample on them. The
+  // output tuples are stored in 'reservoir_output_'. If 'input_' signaled an
+  // error, 'reservoir_output_' is empty and 'status_' contains the error from
+  // 'input_'.
+  absl::Status BuildReservoirState() {
+    // Nothing to do if the output requests no rows.
+    if (reservoir_size_ == 0) {
+      return Finish();
+    }
+
+    // Consume all input, assigning each input tuple a random integral
+    // identifier. Within the tuple's partition, only keep that tuple in the
+    // output if the random integer is among the K most extreme values.
+    ZETASQL_ASSIGN_OR_RETURN(auto comp, MakeTupleComparator());
+    // We use a std::map here not because we need order but because it allows
+    // us to re-use the comparitor class. The reference implementation inserts
+    // shuffles when appropriate to remove incidentally created orders.
+    std::map<TupleData, Reservoir, TupleComparator> reservoir_map(*comp);
+    while (auto tuple = iter_->Next()) {
+      auto score = absl::Uniform<uint32_t>(bitgen_);
+      ZETASQL_ASSIGN_OR_RETURN(TupleData partition_key, ComputePartitionKey(*tuple));
+      Reservoir& partition = reservoir_map[partition_key];
+
+      if (partition.entries.size() < reservoir_size_) {
+        // Append to the output since there are not yet K values.
+        partition.entries.push({score, *tuple});
+      } else {
+        // Push an entry onto the heap and then remove the 'largest' element
+        // from the heap. It is not important if it is the largest or smallest
+        // value, we just want the K most extreme values.
+        partition.entries.push({score, *tuple});
+        partition.entries.pop();
+      }
+
+      partition.num_candidates_considered++;
+      saw_row_ = true;
+    }
+    ZETASQL_RETURN_IF_ERROR(Finish());
+
+    // Move the tuples into reservoir_output_ so they can be yielded via calls
+    // to Next().
+    for (auto& [key, res] : reservoir_map) {
+      double weight =
+          (1.0 * res.num_candidates_considered) / res.entries.size();
+      while (!res.entries.empty()) {
+        reservoir_output_.push_back(std::move(res.entries.top().tuple));
+        res.entries.pop();
+        ZETASQL_RETURN_IF_ERROR(SetWeight(weight, &reservoir_output_.back()));
+      }
+    }
+    return absl::OkStatus();
+  }
+
+  zetasql_base::StatusOr<std::unique_ptr<TupleComparator>> MakeTupleComparator() {
+    std::vector<int> compare_slots;
+    compare_slots.reserve(partition_key_.size());
+    for (int i = 0; i < partition_key_.size(); ++i) {
+      compare_slots.emplace_back(i);
+    }
+    return TupleComparator::Create(partition_key_, compare_slots,
+                                   /*params=*/{}, context_);
+  }
+
+  zetasql_base::StatusOr<TupleData> ComputePartitionKey(const TupleData& input_row) {
+    TupleData result(static_cast<int>(partition_key_.size()));
+    for (int i = 0; i < partition_key_.size(); ++i) {
+      absl::Status s;
+      if (!partition_key_[i]->value_expr()->EvalSimple(
+              ConcatSpans(absl::Span<const TupleData* const>(params_),
+                          {&input_row}),
+              context_, result.mutable_slot(i), &s)) {
+        return s;
+      }
+    }
+    return result;
+  }
+
+  // This is the number of rows that the sample will select for each reservoir.
+  const int64_t reservoir_size_;
+
+  // Params are used to evaluate partition key expressions.
+  absl::Span<const TupleData* const> params_;
+  // For stratified resevoir samples, partition_key_ defines which reservoir
+  // each row is considered for.
+  absl::Span<const KeyArg* const> partition_key_;
+
+  // If true, reservoir_output_ is populated. reservoir_input_ might specify a
+  // length of zero which means a populated reservoir_output_ could be empty.
+  bool built_reservoir_ = false;
+  // The next item in reservoir_output_ to yield.
+  int reservoir_next_ = 0;
+  // The sampled tuples from the input via reservoir sampling.
+  std::vector<TupleData> reservoir_output_;
+};
+}  // namespace
+
+zetasql_base::StatusOr<std::unique_ptr<TupleIterator>> SampleScanOp::CreateIterator(
+    absl::Span<const TupleData* const> params, int num_extra_slots,
+    EvaluationContext* context) const {
+  absl::Status status;
+
+  TupleSlot size_slot;
+  if (!size()->EvalSimple(params, context, &size_slot, &status)) {
+    return status;
+  }
+  const Value& size = size_slot.value();
+
+  if (size.is_null()) {
+    return zetasql_base::OutOfRangeErrorBuilder()
+           << "SampleScan requires non-null size";
+  }
+
+  // Get the seed from REPEATABLE if there was a REPEATABLE input. absl::nullopt
+  // will cause the iterator to generate a seed.
+  absl::optional<int64_t> seed;
+  if (has_repeatable()) {
+    TupleSlot repeatable_slot;
+    if (!repeatable()->EvalSimple(params, context, &repeatable_slot, &status)) {
+      return status;
+    }
+    const Value& repeatable = repeatable_slot.value();
+    if (repeatable.is_null()) {
+      return zetasql_base::OutOfRangeErrorBuilder() << "REPEATABLE must not be null";
+    }
+    if (repeatable.ToInt64() < 0) {
+      return zetasql_base::OutOfRangeErrorBuilder()
+             << "REPEATABLE must not be negative";
+    }
+
+    seed = repeatable.ToInt64();
+  }
+
+  if (has_weight()) {
+    // The input iterator needs to allocate an extra tuple slot for weight.
+    num_extra_slots++;
+  }
+  ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<TupleIterator> iter,
+                   input()->CreateIterator(params, num_extra_slots, context));
+  const bool underlying_iter_preserves_order = iter->PreservesOrder();
+
+  if (method_ == Method::kReservoirRows) {
+    if (size.int64_value() < 0) {
+      return zetasql_base::OutOfRangeErrorBuilder()
+             << "SampleScan requires non-negative size";
+    }
+    iter = absl::make_unique<ReservoirSampleScanTupleIterator>(
+        size.int64_value(), seed, context, params, std::move(iter),
+        CreateOutputSchema(), partition_key(), weight());
+  }
+  if (method_ == Method::kBernoulliPercent) {
+    if (size.is_null()) {
+      return zetasql_base::InvalidArgumentErrorBuilder()
+             << "PERCENT value must not be null";
+    }
+    double value = size.ToDouble();
+    if (value < 0 || value > 100) {
+      return zetasql_base::OutOfRangeErrorBuilder()
+             << "PERCENT value must be in the range [0, 100]";
+    }
+    iter = absl::make_unique<BernoulliSampleScanTupleIterator>(
+        value / 100.0, seed, context, std::move(iter), CreateOutputSchema(),
+        weight());
+  }
+
+  // Scramble the output if the scrambling is enabled and either the underlying
+  // iterator scrambles or this operator does not preserve order.
+  if (context->options().scramble_undefined_orderings &&
+      !(underlying_iter_preserves_order && is_order_preserving())) {
+    iter = absl::make_unique<ReorderingTupleIterator>(std::move(iter));
+  }
+  return iter;
+}
+
+std::unique_ptr<TupleSchema> SampleScanOp::CreateOutputSchema() const {
+  const auto& input_schema = input()->CreateOutputSchema();
+  std::vector<VariableId> vars = input_schema->variables();
+  if (has_weight()) {
+    vars.push_back(weight());
+  }
+  return absl::make_unique<TupleSchema>(vars);
+}
+
+std::string SampleScanOp::IteratorDebugString() const {
+  return GetIteratorDebugString(input()->IteratorDebugString());
+}
+
+std::string SampleScanOp::DebugInternal(const std::string& indent,
+                                        bool verbose) const {
+  std::string result = "SampleScanOp(";
+  switch (method_) {
+    case Method::kBernoulliPercent:
+      absl::StrAppend(&result, "BERNOULLI");
+      break;
+    case Method::kReservoirRows:
+      absl::StrAppend(&result, "RESERVOIR");
+      break;
+  }
+  absl::StrAppend(&result, ", ");
+  absl::StrAppend(&result, is_order_preserving() ? "ordered" : "unordered");
+  absl::StrAppend(
+      &result, ArgDebugString({"input", "size", "repeatable", "partition_by"},
+                              {k1, k1, kOpt, kNOpt}, indent, verbose,
+                              /*more_children=*/has_weight()));
+  if (has_weight()) {
+    absl::StrAppend(&result, indent, kIndentFork,
+                    GetArg(kWeight)->DebugString(), " := weight");
+  }
+  absl::StrAppend(&result, ")");
+  return result;
+}
+
+SampleScanOp::SampleScanOp(
+    std::unique_ptr<ValueExpr> size, std::unique_ptr<ValueExpr> repeatable,
+    std::unique_ptr<RelationalOp> input, Method method,
+    std::vector<std::unique_ptr<ValueExpr>> partition_key,
+    const VariableId& sample_weight)
+    : method_(method) {
+  SetArg(kInput, absl::make_unique<RelationalArg>(std::move(input)));
+  SetArg(kSize, absl::make_unique<ExprArg>(std::move(size)));
+  if (repeatable) {
+    SetArg(kRepeatable, absl::make_unique<ExprArg>(std::move(repeatable)));
+  } else {
+    SetArg(kRepeatable, nullptr);
+  }
+  std::vector<std::unique_ptr<KeyArg>> partition_key_args;
+  partition_key_args.reserve(partition_key.size());
+  for (auto& key_part : partition_key) {
+    partition_key_args.emplace_back(
+        absl::make_unique<KeyArg>(std::move(key_part)));
+  }
+  SetArgs<KeyArg>(kPartitionKey, std::move(partition_key_args));
+  std::unique_ptr<ExprArg> weight_arg;
+  if (sample_weight.is_valid()) {
+    weight_arg = absl::make_unique<ExprArg>(sample_weight, types::DoubleType());
+  }
+  SetArg(kWeight, std::move(weight_arg));
+}
+
+const RelationalOp* SampleScanOp::input() const {
+  return GetArg(kInput)->node()->AsRelationalOp();
+}
+
+RelationalOp* SampleScanOp::mutable_input() {
+  return GetMutableArg(kInput)->mutable_node()->AsMutableRelationalOp();
+}
+
+const ValueExpr* SampleScanOp::size() const {
+  return GetArg(kSize)->node()->AsValueExpr();
+}
+
+ValueExpr* SampleScanOp::mutable_size() {
+  return GetMutableArg(kSize)->mutable_node()->AsMutableValueExpr();
+}
+
+bool SampleScanOp::has_repeatable() const {
+  return GetArg(kRepeatable) != nullptr;
+}
+
+const ValueExpr* SampleScanOp::repeatable() const {
+  return GetArg(kRepeatable)->node()->AsValueExpr();
+}
+
+absl::Span<const KeyArg* const> SampleScanOp::partition_key() const {
+  return GetArgs<KeyArg>(kPartitionKey);
+}
+
+absl::Span<KeyArg* const> SampleScanOp::mutable_partition_key() {
+  return GetMutableArgs<KeyArg>(kPartitionKey);
+}
+
+bool SampleScanOp::has_weight() const { return GetArg(kWeight) != nullptr; }
+
+const VariableId& SampleScanOp::weight() const {
+  static const VariableId* empty = new VariableId();
+  return has_weight() ? GetArg(kWeight)->variable() : *empty;
+}
+
+ValueExpr* SampleScanOp::mutable_repeatable() {
+  return GetMutableArg(kRepeatable)->mutable_node()->AsMutableValueExpr();
 }
 
 // -------------------------------------------------------
@@ -3312,7 +3812,7 @@ std::string ArrayScanOp::DebugInternal(const std::string& indent,
 ArrayScanOp::ArrayScanOp(const VariableId& element, const VariableId& position,
                          absl::Span<const std::pair<VariableId, int>> fields,
                          std::unique_ptr<ValueExpr> array) {
-  CHECK(array->output_type()->IsArray());
+  ZETASQL_CHECK(array->output_type()->IsArray());
   const Type* element_type = array->output_type()->AsArray()->element_type();
   SetArg(kElement, !element.is_valid()
                        ? nullptr
@@ -4009,7 +4509,13 @@ class LoopTupleIterator : public TupleIterator {
         }
       }
       ZETASQL_ASSIGN_OR_RETURN(data, BeginNextIteration());
-      return data;
+
+      if (!first_iteration_ || data != nullptr) {
+        return data;
+      }
+      if (first_iteration_) {
+        first_iteration_ = false;
+      }
     }
     // An iteration is already in progress; fetch the next tuple.
     data = iter_->Next();
@@ -4086,6 +4592,8 @@ class LoopTupleIterator : public TupleIterator {
 
   // Current status of loop iteration.
   absl::Status status_;
+
+  bool first_iteration_ = true;
 };
 
 }  // namespace

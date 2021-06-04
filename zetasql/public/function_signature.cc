@@ -16,6 +16,7 @@
 
 #include "zetasql/public/function_signature.h"
 
+#include <cstdint>
 #include <memory>
 #include <set>
 
@@ -25,14 +26,15 @@
 #include "zetasql/public/function.h"
 #include "zetasql/public/function.pb.h"
 #include "zetasql/public/language_options.h"
+#include "zetasql/public/options.pb.h"
 #include "zetasql/public/parse_location.h"
 #include "zetasql/public/strings.h"
 #include "zetasql/public/table_valued_function.h"
 #include "zetasql/resolved_ast/serialization.pb.h"
+#include "zetasql/base/case.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "zetasql/base/statusor.h"
-#include "zetasql/base/case.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
@@ -75,7 +77,7 @@ bool CanHaveDefaultValue(SignatureArgumentKind kind) {
     case ARG_TYPE_DESCRIPTOR:
       return false;
     default:
-      DCHECK(false) << "Invalid signature argument kind: " << kind;
+      ZETASQL_DCHECK(false) << "Invalid signature argument kind: " << kind;
       return false;
   }
 }
@@ -365,8 +367,7 @@ FunctionArgumentType FunctionArgumentType::Lambda(
   arg_type.lambda_ = std::make_shared<ArgumentTypeLambda>(
       std::move(lambda_argument_types), std::move(lambda_body_type));
   arg_type.num_occurrences_ = 1;
-  // Type may be null or non null for both signature and resolved signature.
-  arg_type.type_ = arg_type.lambda().body_type().type();
+  arg_type.type_ = nullptr;
   return arg_type;
 }
 
@@ -467,7 +468,7 @@ std::string FunctionArgumentType::SignatureArgumentKindToString(
 std::shared_ptr<const FunctionArgumentTypeOptions>
 FunctionArgumentType::SimpleOptions(ArgumentCardinality cardinality) {
   static auto* options =
-      new std::vector<std::shared_ptr<const FunctionArgumentTypeOptions>>{
+      new std::array<std::shared_ptr<const FunctionArgumentTypeOptions>, 3>{
           std::shared_ptr<const FunctionArgumentTypeOptions>(
               new FunctionArgumentTypeOptions(FunctionEnums::REQUIRED)),
           std::shared_ptr<const FunctionArgumentTypeOptions>(
@@ -492,7 +493,7 @@ FunctionArgumentType::FunctionArgumentType(
       num_occurrences_(num_occurrences),
       type_(type),
       options_(options) {
-  DCHECK_EQ(kind == ARG_TYPE_FIXED, type != nullptr);
+  ZETASQL_DCHECK_EQ(kind == ARG_TYPE_FIXED, type != nullptr);
 }
 
 FunctionArgumentType::FunctionArgumentType(SignatureArgumentKind kind,
@@ -501,12 +502,12 @@ FunctionArgumentType::FunctionArgumentType(SignatureArgumentKind kind,
     : FunctionArgumentType(kind, /*type=*/nullptr, SimpleOptions(cardinality),
                            num_occurrences) {}
 
-FunctionArgumentType::FunctionArgumentType(
-    SignatureArgumentKind kind, const FunctionArgumentTypeOptions& options,
-    int num_occurrences)
+FunctionArgumentType::FunctionArgumentType(SignatureArgumentKind kind,
+                                           FunctionArgumentTypeOptions options,
+                                           int num_occurrences)
     : FunctionArgumentType(
           kind, /*type=*/nullptr,
-          std::make_shared<FunctionArgumentTypeOptions>(options),
+          std::make_shared<FunctionArgumentTypeOptions>(std::move(options)),
           num_occurrences) {}
 
 FunctionArgumentType::FunctionArgumentType(SignatureArgumentKind kind,
@@ -520,12 +521,12 @@ FunctionArgumentType::FunctionArgumentType(const Type* type,
     : FunctionArgumentType(ARG_TYPE_FIXED, type, SimpleOptions(cardinality),
                            num_occurrences) {}
 
-FunctionArgumentType::FunctionArgumentType(
-    const Type* type, const FunctionArgumentTypeOptions& options,
-    int num_occurrences)
+FunctionArgumentType::FunctionArgumentType(const Type* type,
+                                           FunctionArgumentTypeOptions options,
+                                           int num_occurrences)
     : FunctionArgumentType(
           ARG_TYPE_FIXED, type,
-          std::make_shared<FunctionArgumentTypeOptions>(options),
+          std::make_shared<FunctionArgumentTypeOptions>(std::move(options)),
           num_occurrences) {}
 
 FunctionArgumentType::FunctionArgumentType(const Type* type,
@@ -570,20 +571,30 @@ bool FunctionArgumentType::IsTemplated() const {
   return kind_ != ARG_TYPE_FIXED && !IsFixedRelation() && !IsVoid();
 }
 
-// Intentionally restrictive for known use cases. Could be expanded in the
-// future.
-static bool IsLambdaAllowedArgType(const FunctionArgumentType& arg_type) {
-  const SignatureArgumentKind kind = arg_type.kind();
+bool FunctionArgumentType::IsScalar() const {
+  return kind_ == ARG_TYPE_FIXED || kind_ == ARG_TYPE_ANY_1 ||
+         kind_ == ARG_TYPE_ANY_2 || kind_ == ARG_ARRAY_TYPE_ANY_1 ||
+         kind_ == ARG_ARRAY_TYPE_ANY_2 || kind_ == ARG_PROTO_MAP_ANY ||
+         kind_ == ARG_PROTO_MAP_KEY_ANY || kind_ == ARG_PROTO_MAP_VALUE_ANY ||
+         kind_ == ARG_PROTO_ANY || kind_ == ARG_STRUCT_ANY ||
+         kind_ == ARG_ENUM_ANY || kind_ == ARG_TYPE_ARBITRARY;
+}
+
+// Intentionally restrictive for known functional programming functions. If this
+// is to be expanded in the future, make sure type inference part of signature
+// matching works as intended.
+static bool IsLambdaAllowedArgKind(const SignatureArgumentKind kind) {
   return kind == ARG_TYPE_FIXED || kind == ARG_TYPE_ANY_1 ||
-         kind == ARG_TYPE_ANY_2 || kind == ARG_ARRAY_TYPE_ANY_1 ||
-         kind == ARG_ARRAY_TYPE_ANY_2;
+         kind == ARG_TYPE_ANY_2;
 }
 
 absl::Status FunctionArgumentType::CheckLambdaArgType(
     const FunctionArgumentType& arg_type) {
-  ZETASQL_RET_CHECK(IsLambdaAllowedArgType(arg_type))
-      << "arg_type type not supported by lambda: "
-      << arg_type.DebugString(/*verbose=*/true);
+  if (!IsLambdaAllowedArgKind(arg_type.kind())) {
+    return ::zetasql_base::UnimplementedErrorBuilder()
+           << "Argument kind not supported by lambda: "
+           << SignatureArgumentKindToString(arg_type.kind());
+  }
 
   // Make sure the argument type options are just simple REQUIRED options.
   zetasql::Type::FileDescriptorSetMap arg_fdset_map;
@@ -604,7 +615,7 @@ absl::Status FunctionArgumentType::CheckLambdaArgType(
   return absl::OkStatus();
 }
 
-absl::Status FunctionArgumentType::IsValid() const {
+absl::Status FunctionArgumentType::IsValid(ProductMode product_mode) const {
   switch (cardinality()) {
     case REPEATED:
       if (IsConcrete()) {
@@ -644,7 +655,9 @@ absl::Status FunctionArgumentType::IsValid() const {
         if (type() != nullptr && !GetDefault().value().type()->Equals(type())) {
           return MakeSqlError()
                  << "Default value type does not match the argument type: "
-                 << DebugString();
+                 << type()->ShortTypeName(product_mode) << " vs "
+                 << GetDefault().value().type()->ShortTypeName(product_mode)
+                 << "; " << DebugString();
         }
       }
       break;
@@ -676,6 +689,22 @@ absl::Status FunctionArgumentType::IsValid() const {
 
 std::string FunctionArgumentType::UserFacingName(
     ProductMode product_mode) const {
+  if (IsLambda()) {
+    // If we only return "LAMBDA", for signature not found error, the user would
+    // get a list of two identical signature strings.
+    std::string args = absl::StrJoin(
+        lambda().argument_types(), ", ",
+        [product_mode](std::string* out, const FunctionArgumentType& arg) {
+          out->append(arg.UserFacingName(product_mode));
+        });
+    if (lambda().argument_types().size() == 1) {
+      return absl::Substitute(
+          "LAMBDA($0->$1)", args,
+          lambda().body_type().UserFacingName(product_mode));
+    }
+    return absl::Substitute("LAMBDA(($0)->$1)", args,
+                            lambda().body_type().UserFacingName(product_mode));
+  }
   if (type() == nullptr) {
     switch (kind()) {
       case ARG_ARRAY_TYPE_ANY_1:
@@ -690,7 +719,9 @@ std::string FunctionArgumentType::UserFacingName(
       case ARG_PROTO_MAP_ANY:
         return "PROTO_MAP";
       case ARG_PROTO_MAP_KEY_ANY:
+        return "PROTO_MAP_KEY";
       case ARG_PROTO_MAP_VALUE_ANY:
+        return "PROTO_MAP_VALUE";
       case ARG_TYPE_ANY_1:
       case ARG_TYPE_ANY_2:
       case ARG_TYPE_ARBITRARY:
@@ -710,7 +741,7 @@ std::string FunctionArgumentType::UserFacingName(
       case ARG_TYPE_FIXED:
       default:
         // We really should have had type() != nullptr in this case.
-        DCHECK(type() != nullptr) << DebugString();
+        ZETASQL_DCHECK(type() != nullptr) << DebugString();
         return "?";
     }
   } else {
@@ -735,8 +766,9 @@ std::string FunctionArgumentType::UserFacingNameWithCardinality(
 
 std::string FunctionArgumentType::DebugString(bool verbose) const {
   // Note, an argument cannot be both repeated and optional.
-  std::string cardinality(repeated() ? "repeated"
-                                     : optional() ? "optional" : "");
+  std::string cardinality(repeated()   ? "repeated"
+                          : optional() ? "optional"
+                                       : "");
   std::string occurrences(IsConcrete() && !required()
                               ? absl::StrCat("(", num_occurrences_, ")")
                               : "");
@@ -748,8 +780,13 @@ std::string FunctionArgumentType::DebugString(bool verbose) const {
         [verbose](std::string* out, const FunctionArgumentType& arg) {
           out->append(arg.DebugString(verbose));
         });
-    absl::SubstituteAndAppend(&result, "LAMBDA($0)->$1", args,
-                              lambda().body_type().DebugString());
+    if (lambda().argument_types().size() == 1) {
+      absl::SubstituteAndAppend(&result, "LAMBDA($0->$1)", args,
+                                lambda().body_type().DebugString());
+    } else {
+      absl::SubstituteAndAppend(&result, "LAMBDA(($0)->$1)", args,
+                                lambda().body_type().DebugString());
+    }
   } else if (type_ != nullptr) {
     absl::StrAppend(&result, type_->DebugString());
   } else if (IsRelation() && options_->has_relation_input_schema()) {
@@ -780,6 +817,11 @@ std::string FunctionArgumentType::GetSQLDeclaration(
         [product_mode](std::string* out, const FunctionArgumentType& arg) {
           out->append(arg.GetSQLDeclaration(product_mode));
         });
+    if (lambda().argument_types().size() == 1) {
+      return absl::Substitute(
+          "LAMBDA($0->$1)", args,
+          lambda().body_type().GetSQLDeclaration(product_mode));
+    }
     return absl::Substitute(
         "LAMBDA(($0)->$1)", args,
         lambda().body_type().GetSQLDeclaration(product_mode));
@@ -800,34 +842,35 @@ std::string FunctionArgumentType::GetSQLDeclaration(
   return result;
 }
 
-FunctionSignature::FunctionSignature(const FunctionArgumentType& result_type,
-                                     const FunctionArgumentTypeList& arguments,
+FunctionSignature::FunctionSignature(FunctionArgumentType result_type,
+                                     FunctionArgumentTypeList arguments,
                                      void* context_ptr)
-    : arguments_(arguments), result_type_(result_type),
+    : arguments_(std::move(arguments)),
+      result_type_(std::move(result_type)),
       num_repeated_arguments_(ComputeNumRepeatedArguments()),
       num_optional_arguments_(ComputeNumOptionalArguments()),
-      context_ptr_(context_ptr), options_(FunctionSignatureOptions()) {
-  ZETASQL_DCHECK_OK(IsValid());
+      context_ptr_(context_ptr) {
+  ZETASQL_DCHECK_OK(IsValid(ProductMode::PRODUCT_EXTERNAL));
   ComputeConcreteArgumentTypes();
 }
 
-FunctionSignature::FunctionSignature(const FunctionArgumentType& result_type,
-                                     const FunctionArgumentTypeList& arguments,
+FunctionSignature::FunctionSignature(FunctionArgumentType result_type,
+                                     FunctionArgumentTypeList arguments,
                                      int64_t context_id)
-    : FunctionSignature(result_type, arguments, context_id,
-                        FunctionSignatureOptions()) {}
+    : FunctionSignature(std::move(result_type), std::move(arguments),
+                        context_id, FunctionSignatureOptions()) {}
 
-FunctionSignature::FunctionSignature(const FunctionArgumentType& result_type,
-                                     const FunctionArgumentTypeList& arguments,
+FunctionSignature::FunctionSignature(FunctionArgumentType result_type,
+                                     FunctionArgumentTypeList arguments,
                                      int64_t context_id,
-                                     const FunctionSignatureOptions& options)
-    : arguments_(arguments),
-      result_type_(result_type),
+                                     FunctionSignatureOptions options)
+    : arguments_(std::move(arguments)),
+      result_type_(std::move(result_type)),
       num_repeated_arguments_(ComputeNumRepeatedArguments()),
       num_optional_arguments_(ComputeNumOptionalArguments()),
       context_id_(context_id),
-      options_(options) {
-  ZETASQL_DCHECK_OK(IsValid());
+      options_(std::move(options)) {
+  ZETASQL_DCHECK_OK(IsValid(ProductMode::PRODUCT_EXTERNAL));
   ComputeConcreteArgumentTypes();
 }
 
@@ -1081,9 +1124,8 @@ bool FunctionArgumentType::TemplatedKindIsRelated(SignatureArgumentKind kind)
   return false;
 }
 
-absl::Status FunctionSignature::IsValid() const {
-  if (result_type_.repeated() ||
-      result_type_.optional()) {
+absl::Status FunctionSignature::IsValid(ProductMode product_mode) const {
+  if (result_type_.repeated() || result_type_.optional()) {
     return MakeSqlError() << "Result type cannot be repeated or optional";
   }
 
@@ -1098,7 +1140,7 @@ absl::Status FunctionSignature::IsValid() const {
       !result_type_.IsRelation()) {
     bool result_type_matches_an_argument_type = false;
     for (const auto& arg : arguments_) {
-      if (result_type_.TemplatedKindIsRelated(arg.kind())) {
+      if (arg.TemplatedKindIsRelated(result_type_.kind())) {
         result_type_matches_an_argument_type = true;
         break;
       }
@@ -1113,17 +1155,26 @@ absl::Status FunctionSignature::IsValid() const {
   // Optional arguments must be at the end of the argument list, and repeated
   // arguments must be consecutive.  Arguments must themselves be valid.
   bool saw_optional = false;
+  bool saw_default_value = false;
   bool after_repeated_block = false;
   bool in_repeated_block = false;
+  absl::flat_hash_set<SignatureArgumentKind> templated_kind_used_by_lambda;
   for (int arg_index = 0; arg_index < arguments().size(); arg_index++) {
     const auto& arg = arguments()[arg_index];
-    ZETASQL_RETURN_IF_ERROR(arg.IsValid());
+    ZETASQL_RETURN_IF_ERROR(arg.IsValid(product_mode));
     if (arg.IsVoid()) {
       return MakeSqlError()
              << "Arguments cannot have type VOID: " << DebugString();
     }
     if (arg.optional()) {
       saw_optional = true;
+      if (arg.HasDefault()) {
+        saw_default_value = true;
+      } else if (saw_default_value) {
+        return MakeSqlError() << "Optional arguments with default values must "
+                                 "be at the end of the argument list: "
+                              << DebugString();
+      }
     } else if (saw_optional) {
       return MakeSqlError()
              << "Optional arguments must be at the end of the argument list: "
@@ -1154,10 +1205,10 @@ absl::Status FunctionSignature::IsValid() const {
           if (!lambda_arg_type.IsTemplated()) {
             continue;
           }
+          templated_kind_used_by_lambda.insert(lambda_arg_type.kind());
           has_tempalted_args = true;
           if (lambda_arg_type.TemplatedKindIsRelated(arguments()[j].kind())) {
             is_related_to_previous_function_arg = true;
-            break;
           }
         }
         if (has_tempalted_args && !is_related_to_previous_function_arg) {
@@ -1167,6 +1218,16 @@ absl::Status FunctionSignature::IsValid() const {
                     "signature: "
                  << DebugString();
         }
+      }
+    } else {
+      if (templated_kind_used_by_lambda.contains(arg.kind())) {
+        return MakeSqlError()
+               << "Templated argument kind used by lambda argument cannot be "
+                  "used by arguments to the right of the lambda using it. "
+                  "Kind: "
+               << FunctionArgumentType::SignatureArgumentKindToString(
+                      arg.kind())
+               << " at index: " << arg_index;
       }
     }
   }
@@ -1234,24 +1295,24 @@ absl::Status FunctionSignature::IsValidForFunction() const {
 }
 
 absl::Status FunctionSignature::IsValidForTableValuedFunction() const {
-  // Optional and repeated arguments before relation arguments are not
+  // Repeated arguments before relation arguments are not
   // supported yet since ResolveTVF() currently requires that relation
   // arguments in the signature map positionally to the function call's
   // arguments.
   // TODO: Support repeated relation arguments at the end of the
   // function signature only, then update the ZETASQL_RET_CHECK below.
-  bool seen_non_required_args = false;
+  bool seen_repeated_args = false;
   for (const FunctionArgumentType& argument : arguments()) {
     if (argument.IsRelation()) {
       ZETASQL_RET_CHECK(!argument.repeated())
           << "Repeated relation argument is not supported: " << DebugString();
-      ZETASQL_RET_CHECK(!seen_non_required_args)
-          << "Relation arguments cannot follow repeated or optional arguments: "
+      ZETASQL_RET_CHECK(!seen_repeated_args)
+          << "Relation arguments cannot follow repeated arguments: "
           << DebugString();
       // If the relation argument has a required schema, make sure that the
       // column names are unique.
       if (argument.options().has_relation_input_schema()) {
-        std::set<std::string, zetasql_base::StringCaseLess> column_names;
+        std::set<std::string, zetasql_base::CaseLess> column_names;
         for (const TVFRelation::Column& column :
              argument.options().relation_input_schema().columns()) {
           ZETASQL_RET_CHECK(zetasql_base::InsertIfNotPresent(&column_names, column.name))
@@ -1262,8 +1323,8 @@ absl::Status FunctionSignature::IsValidForTableValuedFunction() const {
     if (argument.options().has_relation_input_schema()) {
       ZETASQL_RET_CHECK(argument.IsRelation()) << DebugString();
     }
-    if (!argument.required()) {
-      seen_non_required_args = true;
+    if (argument.repeated()) {
+      seen_repeated_args = true;
     }
   }
   // The result type must be a relation type, since the table-valued function

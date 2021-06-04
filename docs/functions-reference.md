@@ -22,6 +22,32 @@ in the function description:
   description), the default time zone, which is implementation defined, is used if a time
   zone is not specified.
 
+## Lambdas 
+<a id="lambdas"></a>
+
+**Syntax:**
+
+```sql
+(arg[, ...]) -> body_expression
+```
+
+```sql
+arg -> body_expression
+```
+
+**Description**
+
+For some functions, ZetaSQL supports lambdas as builtin function
+arguments. A lambda takes a list of arguments and an expression as the lambda
+body.
+
++   `arg`:
+    +   Name of the lambda argument is defined by the user.
+    +   No type is specified for the lambda argument. The type is inferred from
+        the context.
++   `body_expression`:
+    +   The lambda body can be any valid scalar expression.
+
 ## SAFE. prefix
 
 **Syntax:**
@@ -38,8 +64,7 @@ itself: it does not prevent errors that occur while evaluating argument
 expressions. The `SAFE.` prefix only prevents errors that occur because of the
 value of the function inputs, such as "value out of range" errors; other
 errors, such as internal or system errors, may still occur. If the function
-does not return an error, `SAFE.` has no effect on the output. If the function
-never returns an error, like `RAND`, then `SAFE.` has no effect.
+does not return an error, `SAFE.` has no effect on the output.
 
 [Operators][link-to-operators], such as `+` and `=`, do not support the `SAFE.`
 prefix. To prevent errors from a division
@@ -70,6 +95,6 @@ SELECT SAFE.SUBSTR('bar', 0, 2) AS safe_output;
 ```
 
 [link-to-SAFE_DIVIDE]: #safe_divide
-[link-to-SAFE_CAST]: #safe-casting
+[link-to-SAFE_CAST]: #safe_casting
 [link-to-operators]: #operators
 

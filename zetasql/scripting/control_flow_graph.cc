@@ -23,11 +23,13 @@
 #include "zetasql/public/parse_location.h"
 #include "zetasql/scripting/script_segment.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "zetasql/base/statusor.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_join.h"
+#include "zetasql/base/map_util.h"
 #include "zetasql/base/status_builder.h"
 
 namespace zetasql {
@@ -134,21 +136,6 @@ struct NodeData {
   // This arises when execution of the node is completely empty, causing any
   // edge leading into the node to instead go to whatever follows it.
   // Examples include an empty statement list or BEGIN/END block.
-  //
-  // Note: Skipped nodes may still contain end-edges, representing unreachable
-  // statements within them, for example:
-  //
-  // BEGIN
-  // EXCEPTION WHEN ERROR THEN
-  //   SELECT 1;
-  // END;
-  // SELECT 2;
-  //
-  // In this script, execution of the BEGIN node is a nop because the exception
-  // handler clause can never be reached.  However, "SELECT 1" still exists as
-  // an end-edge, so that the "SELECT 1" => "SELECT 2" edge can be constructed
-  // later.  The end result is that "SELECT 1" is unreachable (no predecessors),
-  // but, if we were to somehow reach it, "SELECT 2" would come next.
   bool empty() const { return start == nullptr; }
 
   // Return true if this node refers to a statement require special
@@ -215,6 +202,65 @@ struct BlockWithExceptionHandlerData {
 class ControlFlowGraphBuilder : public NonRecursiveParseTreeVisitor {
  public:
   explicit ControlFlowGraphBuilder(ControlFlowGraph* graph) : graph_(graph) {}
+
+  // Removes unreachable nodes, and edges between them, from the graph.
+  absl::Status PruneUnreachable() {
+    // First, walk the graph to find out all nodes and edges which are
+    // reachable.
+    absl::flat_hash_set<const ControlFlowNode*> visited_nodes;
+    absl::flat_hash_set<const ControlFlowEdge*> visited_edges;
+
+    std::vector<const ControlFlowNode*> stack = {graph_->start_node()};
+    while (!stack.empty()) {
+      const ControlFlowNode* node = stack.back();
+      stack.pop_back();
+      if (zetasql_base::InsertIfNotPresent(&visited_nodes, node)) {
+        for (const auto& succ : node->successors()) {
+          ZETASQL_RET_CHECK(zetasql_base::InsertIfNotPresent(&visited_edges, succ.second));
+          stack.push_back(succ.second->successor());
+        }
+      }
+    }
+
+    // Remove unreachable edges from the predecessor list of any reachable
+    // nodes.
+    for (const auto& [ast_node, cfg_node] : graph_->node_map_) {
+      if (visited_nodes.contains(cfg_node)) {
+        RemoveUnreachablePredecessors(visited_nodes, visited_edges,
+                                      cfg_node.get());
+      }
+    }
+    RemoveUnreachablePredecessors(visited_nodes, visited_edges,
+                                  graph_->end_node_.get());
+
+    // Delete unreachable edges
+    for (auto it = graph_->edges_.begin(); it != graph_->edges_.end();) {
+      if (!visited_edges.contains(it->get())) {
+        auto it_copy = it;
+        ++it;
+        graph_->edges_.erase(it_copy);
+      } else {
+        ++it;
+      }
+    }
+
+    // Delete unreachable nodes
+    for (auto it = graph_->node_map_.begin(); it != graph_->node_map_.end();) {
+      if (!visited_nodes.contains(it->second.get())) {
+        auto it_copy = it;
+        ++it;
+        graph_->node_map_.erase(it_copy);
+      } else {
+        ++it;
+      }
+    }
+
+    if (!visited_nodes.contains(graph_->end_node_.get())) {
+      graph_->end_node_.reset();
+    }
+
+    return absl::OkStatus();
+  }
 
   zetasql_base::StatusOr<VisitResult> visitASTBreakStatement(
       const ASTBreakStatement* node) override {
@@ -321,28 +367,11 @@ class ControlFlowGraphBuilder : public NonRecursiveParseTreeVisitor {
       std::unique_ptr<NodeData> prev_nonempty_child_data;
       std::unique_ptr<NodeData> curr_child_data;
 
-      std::list<IncompleteEdge> pending_unreachable_incomplete_edges;
-
       for (int i = 0; i < node->num_children(); ++i) {
         ZETASQL_ASSIGN_OR_RETURN(curr_child_data, TakeNodeData(node->child(i)));
         if (curr_child_data->empty()) {
-          // Even if the current statement is empty, it could still have edges
-          // going out of it if we have a block if nothing in it but an
-          // (unreachable) exception handler.  The exception handler is
-          // unreachable, but the edges going out of it still need to link to
-          // the next statement.
-          pending_unreachable_incomplete_edges.splice(
-              pending_unreachable_incomplete_edges.begin(),
-              std::move(curr_child_data->end_edges));
           continue;
         }
-
-        for (const IncompleteEdge& edge :
-             pending_unreachable_incomplete_edges) {
-          ZETASQL_RETURN_IF_ERROR(LinkNodes(edge.predecessor, curr_child_data->start,
-                                    edge.kind, node));
-        }
-        pending_unreachable_incomplete_edges.clear();
 
         if (prev_nonempty_child_data != nullptr &&
             !prev_nonempty_child_data->IsSpecialControlFlowStatement()) {
@@ -362,16 +391,13 @@ class ControlFlowGraphBuilder : public NonRecursiveParseTreeVisitor {
             std::move(prev_nonempty_child_data->end_edges);
       }
 
-      stmt_list_node_data->end_edges.splice(
-          stmt_list_node_data->end_edges.begin(),
-          std::move(pending_unreachable_incomplete_edges));
-
       return absl::OkStatus();
     });
   }
 
   zetasql_base::StatusOr<VisitResult> visitASTScript(const ASTScript* node) override {
-    graph_->end_node_ = absl::WrapUnique(new ControlFlowNode(nullptr, graph_));
+    graph_->end_node_ = absl::WrapUnique(
+        new ControlFlowNode(nullptr, ControlFlowNode::Kind::kDefault, graph_));
     return VisitResult::VisitChildren(node, [=]() -> absl::Status {
       ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<const NodeData> stmt_list_data,
                        TakeNodeData(node->statement_list_node()));
@@ -447,6 +473,67 @@ class ControlFlowGraphBuilder : public NonRecursiveParseTreeVisitor {
     });
   }
 
+  zetasql_base::StatusOr<VisitResult> visitASTCaseStatement(
+      const ASTCaseStatement* node) override {
+    return VisitResult::VisitChildren(node, [=]() -> absl::Status {
+      ZETASQL_ASSIGN_OR_RETURN(NodeData * case_stmt_node_data, CreateNodeData(node));
+      ZETASQL_ASSIGN_OR_RETURN(ControlFlowNode* case_stmt_cfg_node,
+                       AddGraphNode(node,
+                                    node->expression() == nullptr ?
+                                      ThrowSemantics::kNoThrow
+                                      : ThrowSemantics::kCanThrow));
+      case_stmt_node_data->start = case_stmt_cfg_node;
+      ControlFlowNode * prev_condition = nullptr;
+
+      ZETASQL_RET_CHECK(node->when_then_clauses() != nullptr);
+      for (const ASTWhenThenClause* when_then_clause :
+               node->when_then_clauses()->when_then_clauses()) {
+        ZETASQL_ASSIGN_OR_RETURN(ControlFlowNode * curr_condition,
+                         AddGraphNode(when_then_clause));
+        ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<NodeData> body_data,
+                         TakeNodeData(when_then_clause->body()));
+
+        if (prev_condition == nullptr) {
+          // First condition
+          ZETASQL_RETURN_IF_ERROR(LinkNodes(case_stmt_cfg_node,
+                                    curr_condition,
+                                    ControlFlowEdge::Kind::kNormal,
+                                    /*exit_to=*/nullptr));
+        } else {
+          // All subsequent conditions
+          ZETASQL_RETURN_IF_ERROR(LinkNodes(prev_condition, curr_condition,
+                                    ControlFlowEdge::Kind::kFalseCondition));
+        }
+        if (!body_data->empty()) {
+          ZETASQL_RETURN_IF_ERROR(LinkNodes(curr_condition, body_data->start,
+                                    ControlFlowEdge::Kind::kTrueCondition));
+        } else {
+          case_stmt_node_data->AddOpenEndEdge(
+              curr_condition, ControlFlowEdge::Kind::kTrueCondition);
+        }
+        case_stmt_node_data->TakeEndEdgesFrom(body_data.get());
+        prev_condition = curr_condition;
+      }
+
+      bool has_nonempty_else = false;
+      if (node->else_list() != nullptr) {
+        ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<NodeData> else_data,
+                         TakeNodeData(node->else_list()));
+        if (!else_data->empty()) {
+          has_nonempty_else = true;
+          ZETASQL_RETURN_IF_ERROR(LinkNodes(prev_condition, else_data->start,
+                                    ControlFlowEdge::Kind::kFalseCondition));
+        }
+        case_stmt_node_data->TakeEndEdgesFrom(else_data.get());
+      }
+      if (!has_nonempty_else) {
+        case_stmt_node_data->AddOpenEndEdge(
+            prev_condition, ControlFlowEdge::Kind::kFalseCondition);
+      }
+      return absl::OkStatus();
+    });
+  }
+
   zetasql_base::StatusOr<VisitResult> visitASTWhileStatement(
       const ASTWhileStatement* node) override {
     loop_data_.emplace_back();
@@ -483,6 +570,94 @@ class ControlFlowGraphBuilder : public NonRecursiveParseTreeVisitor {
       }
       for (ControlFlowNode* continue_node : loop_data.continue_nodes) {
         ZETASQL_RETURN_IF_ERROR(LinkNodes(continue_node, loop_cfg_node,
+                                  ControlFlowEdge::Kind::kNormal, node));
+      }
+      loop_data_.pop_back();
+      return absl::OkStatus();
+    });
+  }
+
+  zetasql_base::StatusOr<VisitResult> visitASTRepeatStatement(
+      const ASTRepeatStatement* node) override {
+    loop_data_.emplace_back();
+    return VisitResult::VisitChildren(node, [=]() -> absl::Status {
+      ZETASQL_ASSIGN_OR_RETURN(ControlFlowNode* repeat_cfg_node,
+                       AddGraphNode(node, ThrowSemantics::kNoThrow));
+      ZETASQL_ASSIGN_OR_RETURN(ControlFlowNode * until_cfg_node,
+                       AddGraphNode(node->until_clause()));
+      ZETASQL_ASSIGN_OR_RETURN(NodeData * repeat_stmt_node_data, CreateNodeData(node));
+      repeat_stmt_node_data->start = repeat_cfg_node;
+      ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<const NodeData> body_data,
+                       TakeNodeData(node->body()));
+
+      ZETASQL_RETURN_IF_ERROR(
+          LinkNodes(repeat_cfg_node,
+                    body_data->empty() ? until_cfg_node : body_data->start,
+                    ControlFlowEdge::Kind::kNormal,
+                    /*exit_to=*/nullptr));
+      ZETASQL_RETURN_IF_ERROR(LinkEndNodes(body_data.get(), until_cfg_node, node));
+      ZETASQL_RETURN_IF_ERROR(
+          LinkNodes(until_cfg_node,
+                    repeat_cfg_node,
+                    ControlFlowEdge::Kind::kTrueCondition,
+                    /*exit_to=*/nullptr));
+      repeat_stmt_node_data->AddOpenEndEdge(
+          until_cfg_node, ControlFlowEdge::Kind::kFalseCondition);
+
+      // Handle BREAK/CONTINUE statements inside the loop.
+      const LoopData& loop_data = loop_data_.back();
+      for (ControlFlowNode* break_node : loop_data.break_nodes) {
+        repeat_stmt_node_data->AddOpenEndEdge(break_node,
+                                              ControlFlowEdge::Kind::kNormal);
+      }
+      for (ControlFlowNode* continue_node : loop_data.continue_nodes) {
+        ZETASQL_RETURN_IF_ERROR(LinkNodes(continue_node, until_cfg_node,
+                                  ControlFlowEdge::Kind::kNormal, node));
+      }
+      loop_data_.pop_back();
+      return absl::OkStatus();
+    });
+  }
+
+  zetasql_base::StatusOr<VisitResult> visitASTForInStatement(
+      const ASTForInStatement* node) override {
+    loop_data_.emplace_back();
+    return VisitResult::VisitChildren(node, [=]() -> absl::Status {
+      ZETASQL_ASSIGN_OR_RETURN(ControlFlowNode * initial_cfg_node,
+                       AddGraphNode(node, ControlFlowNode::Kind::kForInitial));
+      ZETASQL_ASSIGN_OR_RETURN(NodeData * for_in_stmt_node_data, CreateNodeData(node));
+      for_in_stmt_node_data->start = initial_cfg_node;
+      ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<const NodeData> body_data,
+                       TakeNodeData(node->body()));
+
+      // If there are more rows from the query, node will evaluate to
+      // kTrueCondition. If not, node will evaluate to kFalseCondition.
+      ZETASQL_ASSIGN_OR_RETURN(ControlFlowNode * continue_cfg_node,
+                       AddGraphNode(node, ControlFlowNode::Kind::kForAdvance));
+      ZETASQL_RETURN_IF_ERROR(
+          LinkNodes(initial_cfg_node,
+                    body_data->empty() ? continue_cfg_node : body_data->start,
+                    ControlFlowEdge::Kind::kTrueCondition,
+                    /*exit_to=*/nullptr));
+      ZETASQL_RETURN_IF_ERROR(
+          LinkNodes(continue_cfg_node,
+                    body_data->empty() ? continue_cfg_node : body_data->start,
+                    ControlFlowEdge::Kind::kTrueCondition,
+                    /*exit_to=*/nullptr));
+      ZETASQL_RETURN_IF_ERROR(LinkEndNodes(body_data.get(), continue_cfg_node, node));
+      for_in_stmt_node_data->AddOpenEndEdge(
+          initial_cfg_node, ControlFlowEdge::Kind::kFalseCondition);
+      for_in_stmt_node_data->AddOpenEndEdge(
+          continue_cfg_node, ControlFlowEdge::Kind::kFalseCondition);
+
+      // Handle BREAK/CONTINUE statements inside the loop.
+      const LoopData& loop_data = loop_data_.back();
+      for (ControlFlowNode* break_node : loop_data.break_nodes) {
+        for_in_stmt_node_data->AddOpenEndEdge(break_node,
+                                              ControlFlowEdge::Kind::kNormal);
+      }
+      for (ControlFlowNode* continue_node : loop_data.continue_nodes) {
+        ZETASQL_RETURN_IF_ERROR(LinkNodes(continue_node, continue_cfg_node,
                                   ControlFlowEdge::Kind::kNormal, node));
       }
       loop_data_.pop_back();
@@ -596,15 +771,23 @@ class ControlFlowGraphBuilder : public NonRecursiveParseTreeVisitor {
     }
   }
   std::string DebugNodeIdentifier(const ASTNode* node) {
-    CHECK(node != nullptr);
+    ZETASQL_CHECK(node != nullptr);
     return zetasql::DebugNodeIdentifier(node, graph_->script_text());
   }
 
   zetasql_base::StatusOr<ControlFlowNode*> AddGraphNode(
+      const ASTNode* ast_node, ThrowSemantics throw_semantics) {
+    return AddGraphNode(ast_node, ControlFlowNode::Kind::kDefault,
+                        throw_semantics);
+  }
+
+  zetasql_base::StatusOr<ControlFlowNode*> AddGraphNode(
       const ASTNode* ast_node,
+      ControlFlowNode::Kind kind = ControlFlowNode::Kind::kDefault,
       ThrowSemantics throw_semantics = ThrowSemantics::kCanThrow) {
     auto emplace_result = graph_->node_map_.emplace(
-        ast_node, absl::WrapUnique(new ControlFlowNode(ast_node, graph_)));
+        std::make_pair(ast_node, kind),
+        absl::WrapUnique(new ControlFlowNode(ast_node, kind, graph_)));
     if (!emplace_result.second) {
       return zetasql_base::InternalErrorBuilder()
              << "Graph node already exists for AST node "
@@ -631,19 +814,9 @@ class ControlFlowGraphBuilder : public NonRecursiveParseTreeVisitor {
     return node_data;
   }
 
-  zetasql_base::StatusOr<ControlFlowNode*> LookupNode(const ASTNode* ast_node) {
-    auto it = graph_->node_map_.find(ast_node);
-    if (it == graph_->node_map_.end()) {
-      ZETASQL_RET_CHECK_FAIL() << zetasql_base::InternalErrorBuilder()
-                       << "Unable to locate node in graph: "
-                       << DebugNodeIdentifier(ast_node);
-    }
-    return it->second.get();
-  }
-
   absl::Status LinkEndNodes(const NodeData* pred, ControlFlowNode* succ,
                             const ASTNode* exit_to) {
-    CHECK(succ != nullptr);
+    ZETASQL_CHECK(succ != nullptr);
     for (const auto& edge : pred->end_edges) {
       ZETASQL_RETURN_IF_ERROR(LinkNodes(edge.predecessor, succ, edge.kind, exit_to));
     }
@@ -653,33 +826,36 @@ class ControlFlowGraphBuilder : public NonRecursiveParseTreeVisitor {
   absl::Status LinkNodes(ControlFlowNode* cfg_pred, ControlFlowNode* cfg_succ,
                          ControlFlowEdge::Kind kind,
                          const ASTNode* exit_to = nullptr) {
-    CHECK(cfg_pred != nullptr);
-    CHECK(cfg_succ != nullptr);
+    ZETASQL_CHECK(cfg_pred != nullptr);
+    ZETASQL_CHECK(cfg_succ != nullptr);
     if (kind == ControlFlowEdge::Kind::kException) {
-      // Everything can throw except for break, continue, return,
+      // Everything can throw except for begin, repeat, break, continue, return,
       // and empty statement list.
-      ZETASQL_RET_CHECK(cfg_pred->ast_node()->node_kind() != AST_BREAK_STATEMENT &&
+      ZETASQL_RET_CHECK(cfg_pred->ast_node()->node_kind() != AST_BEGIN_END_BLOCK &&
+                cfg_pred->ast_node()->node_kind() != AST_REPEAT_STATEMENT &&
+                cfg_pred->ast_node()->node_kind() != AST_BREAK_STATEMENT &&
                 cfg_pred->ast_node()->node_kind() != AST_CONTINUE_STATEMENT &&
                 cfg_pred->ast_node()->node_kind() != AST_RETURN_STATEMENT &&
                 cfg_pred->ast_node()->node_kind() != AST_STATEMENT_LIST)
           << "Unexpected node kind throwing exception: "
           << cfg_pred->ast_node()->SingleNodeDebugString();
-    } else if (cfg_pred->ast_node()->node_kind() == AST_IF_STATEMENT ||
+    } else if (cfg_pred->ast_node()->node_kind() == AST_FOR_IN_STATEMENT ||
+               cfg_pred->ast_node()->node_kind() == AST_WHEN_THEN_CLAUSE ||
+               cfg_pred->ast_node()->node_kind() == AST_IF_STATEMENT ||
                cfg_pred->ast_node()->node_kind() == AST_ELSEIF_CLAUSE ||
+               cfg_pred->ast_node()->node_kind() == AST_UNTIL_CLAUSE ||
                (cfg_pred->ast_node()->node_kind() == AST_WHILE_STATEMENT &&
                 cfg_pred->ast_node()
                         ->GetAsOrDie<ASTWhileStatement>()
                         ->condition() != nullptr)) {
+      // Although AST_FOR_IN_STATEMENT is not strictly a condition, it is
+      // treated as one based on whether there are more rows from the query.
       ZETASQL_RET_CHECK(kind == ControlFlowEdge::Kind::kTrueCondition ||
                 kind == ControlFlowEdge::Kind::kFalseCondition)
           << "conditional statement must use true/false condition"
           << cfg_pred->DebugString();
     } else if (cfg_pred->ast_node()->IsStatement() ||
-               cfg_pred->ast_node()->node_kind() == AST_STATEMENT_LIST ||
-               (cfg_pred->ast_node()->node_kind() == AST_WHILE_STATEMENT &&
-                cfg_pred->ast_node()
-                        ->GetAsOrDie<ASTWhileStatement>()
-                        ->condition() == nullptr)) {
+               cfg_pred->ast_node()->node_kind() == AST_STATEMENT_LIST) {
       ZETASQL_RET_CHECK(kind == ControlFlowEdge::Kind::kNormal)
           << "Unconditional statement must use normal edge"
           << cfg_pred->DebugString();
@@ -687,9 +863,10 @@ class ControlFlowGraphBuilder : public NonRecursiveParseTreeVisitor {
       ZETASQL_RET_CHECK_FAIL() << "unexpected ast node: "
                        << cfg_pred->ast_node()->GetNodeKindString();
     }
-    graph_->edges_.emplace_back(absl::WrapUnique(
-        new ControlFlowEdge(cfg_pred, cfg_succ, kind, exit_to, graph_)));
-    const ControlFlowEdge* edge = graph_->edges_.back().get();
+    std::unique_ptr<ControlFlowEdge> edge_holder = absl::WrapUnique(
+        new ControlFlowEdge(cfg_pred, cfg_succ, kind, exit_to, graph_));
+    const ControlFlowEdge* edge = edge_holder.get();
+    graph_->edges_.insert(std::move(edge_holder));
 
     // Mark edge as successor of predecessor
     if (!cfg_pred->successors_.emplace(kind, edge).second) {
@@ -704,6 +881,23 @@ class ControlFlowGraphBuilder : public NonRecursiveParseTreeVisitor {
     cfg_succ->predecessors_.emplace_back(edge);
 
     return absl::OkStatus();
+  }
+
+  void RemoveUnreachablePredecessors(
+      const absl::flat_hash_set<const ControlFlowNode*>& reachable_nodes,
+      const absl::flat_hash_set<const ControlFlowEdge*>& reachable_edges,
+      ControlFlowNode* node) {
+    std::vector<const ControlFlowEdge*> reachable_predecessors;
+    reachable_predecessors.reserve(node->predecessors().size());
+    for (const ControlFlowEdge* pred : node->predecessors()) {
+      if (reachable_edges.contains(pred)) {
+        reachable_predecessors.push_back(pred);
+      }
+    }
+
+    if (reachable_predecessors.size() != node->predecessors().size()) {
+      node->predecessors_ = reachable_predecessors;
+    }
   }
 
   // Keeps track of temporary information about each AST node needed while
@@ -739,6 +933,7 @@ ControlFlowGraph::Create(const ASTScript* ast_script,
   auto graph = absl::WrapUnique(new ControlFlowGraph(ast_script, script_text));
   ControlFlowGraphBuilder builder(graph.get());
   ZETASQL_RETURN_IF_ERROR(ast_script->TraverseNonRecursive(&builder));
+  ZETASQL_RETURN_IF_ERROR(builder.PruneUnreachable());
   return std::move(graph);
 }
 
@@ -797,6 +992,11 @@ ControlFlowEdge::SideEffects ControlFlowEdge::ComputeSideEffects() const {
       case AST_EXCEPTION_HANDLER:
         ++side_effects.num_exception_handlers_exited;
         break;
+      case AST_FOR_IN_STATEMENT:
+        ++side_effects.num_for_loops_exited;
+        side_effects.destroyed_variables.emplace(
+            node->GetAsOrDie<ASTForInStatement>()->variable()->GetAsString());
+        break;
       default:
         break;
     }
@@ -833,6 +1033,11 @@ void AddSideEffectsToDebugString(const ControlFlowEdge& edge,
                     side_effects.num_exception_handlers_exited,
                     " exception handler(s)]");
   }
+  if (side_effects.num_for_loops_exited != 0) {
+    absl::StrAppend(debug_string, " [exiting ",
+                    side_effects.num_for_loops_exited,
+                    " FOR loop(s)]");
+  }
 }
 }  // namespace
 
@@ -847,21 +1052,41 @@ std::string ControlFlowEdge::DebugString() const {
 }
 
 namespace {
+
+ParseLocationPoint GetCanonicalNodePosition(const ControlFlowNode* node) {
+  switch (node->kind()) {
+    case ControlFlowNode::Kind::kDefault:
+    case ControlFlowNode::Kind::kForInitial:
+      return node->ast_node()->GetParseLocationRange().start();
+    case ControlFlowNode::Kind::kForAdvance:
+      return node->ast_node()->GetParseLocationRange().end();
+  }
+}
+
 bool CompareControlFlowNodesByScriptLocation(const ControlFlowNode* node1,
                                              const ControlFlowNode* node2) {
+  // A nullptr AST node means the sentinal end node; this should always come
+  // last.
   if (node1->ast_node() != nullptr && node2->ast_node() == nullptr) {
-    return node1;
+    return true;
   }
   if (node2->ast_node() != nullptr && node1->ast_node() == nullptr) {
-    return node2;
+    return false;
   }
 
-  int node1_offset =
-      node1->ast_node()->GetParseLocationRange().start().GetByteOffset();
-  int node2_offset =
-      node2->ast_node()->GetParseLocationRange().start().GetByteOffset();
+  int node1_offset = GetCanonicalNodePosition(node1).GetByteOffset();
+  int node2_offset = GetCanonicalNodePosition(node2).GetByteOffset();
 
-  return node1_offset < node2_offset;
+  if (node1_offset < node2_offset) {
+    return true;
+  }
+
+  if (node1_offset > node2_offset) {
+    return false;
+  }
+
+  // For two identical ast nodes, order by kind.
+  return static_cast<int>(node1->kind()) < static_cast<int>(node2->kind());
 }
 }  // namespace
 
@@ -875,7 +1100,18 @@ std::string ControlFlowNode::DebugString() const {
       return absl::StrCat("<empty loop body>",
                           DebugLocationText(ast_node_, graph_->script_text()));
     }
-    return DebugNodeIdentifier(ast_node_, graph_->script_text());
+    std::string result = DebugNodeIdentifier(ast_node_, graph_->script_text());
+    switch (kind_) {
+      case Kind::kDefault:
+        break;
+      case Kind::kForInitial:
+        absl::StrAppend(&result, " (initialize loop)");
+        break;
+      case Kind::kForAdvance:
+        absl::StrAppend(&result, " (advance loop)");
+        break;
+    }
+    return result;
   } else {
     return "<end>";
   }
@@ -901,35 +1137,42 @@ std::string ControlFlowNode::SuccessorsDebugString(
 
 std::vector<const ControlFlowNode*> ControlFlowGraph::GetAllNodes() const {
   std::vector<const ControlFlowNode*> nodes;
-  nodes.reserve(node_map_.size());
+  nodes.reserve(node_map_.size() + 1);
   for (const auto& entry : node_map_) {
     nodes.push_back(entry.second.get());
   }
+  if (end_node() != nullptr) {
+    nodes.push_back(end_node());
+  }
+
+  // Sort nodes so they are presented in the order that they appear in the
+  // script, rather than the order returned by the hash map iterator.
+  std::sort(nodes.begin(), nodes.end(),
+            CompareControlFlowNodesByScriptLocation);
+
   return nodes;
 }
 
 std::string ControlFlowGraph::DebugString() const {
-  CHECK(start_node_ != nullptr);
+  ZETASQL_CHECK(start_node_ != nullptr);
   std::string debug_string;
   absl::StrAppend(&debug_string, "start: ", start_node_->DebugString(),
                   "\nedges:");
 
-  // Sort nodes by script location so that the debug string is stable enough to
-  // be used in test output.
   std::vector<const ControlFlowNode*> nodes = GetAllNodes();
-  std::sort(nodes.begin(), nodes.end(),
-            CompareControlFlowNodesByScriptLocation);
 
   for (const ControlFlowNode* node : nodes) {
-    absl::StrAppend(&debug_string, "\n  ", node->DebugString(), "\n",
-                    node->SuccessorsDebugString("    "));
+    if (node != end_node_.get()) {
+      absl::StrAppend(&debug_string, "\n  ", node->DebugString(), "\n",
+                      node->SuccessorsDebugString("    "));
+    }
   }
   return debug_string;
 }
 
 const ControlFlowNode* ControlFlowGraph::GetControlFlowNode(
-    const ASTNode* ast_node) const {
-  auto it = node_map_.find(ast_node);
+    const ASTNode* ast_node, ControlFlowNode::Kind kind) const {
+  auto it = node_map_.find(std::make_pair(ast_node, kind));
   if (it != node_map_.end()) {
     return it->second.get();
   }

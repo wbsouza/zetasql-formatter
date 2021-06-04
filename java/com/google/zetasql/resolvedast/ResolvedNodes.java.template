@@ -34,6 +34,7 @@ import com.google.zetasql.FieldDescriptorRefProto;
 import com.google.zetasql.FileDescriptorSetsBuilder;
 import com.google.zetasql.Function;
 import com.google.zetasql.FunctionProtos.TVFArgumentProto;
+import com.google.zetasql.ZetaSQLAnnotation.AnnotationMapProto;
 import com.google.zetasql.OneofDescriptorRefProto;
 import com.google.zetasql.ResolvedFunctionCallInfo;
 import com.google.zetasql.FunctionProtos.ResolvedFunctionCallInfoProto;
@@ -41,15 +42,17 @@ import com.google.zetasql.FunctionProtos.FunctionSignatureProto;
 import com.google.zetasql.FunctionProtos.TVFSignatureProto;
 import com.google.zetasql.FunctionRefProto;
 import com.google.zetasql.FunctionSignature;
-import com.google.zetasql.ZetaSQLDescriptorPool.ZetaSQLFieldDescriptor;
+import com.google.zetasql.DescriptorPool.ZetaSQLFieldDescriptor;
 import com.google.zetasql.ZetaSQLResolvedNodeKind.ResolvedNodeKind;
 import com.google.zetasql.ZetaSQLStrings;
 import com.google.zetasql.ZetaSQLType.ProtoTypeProto;
 import com.google.zetasql.ZetaSQLType.TypeProto;
+import com.google.zetasql.ZetaSQLTypeParameters.TypeParametersProto;
 import com.google.zetasql.Model;
 import com.google.zetasql.ModelRefProto;
 import com.google.zetasql.Procedure;
 import com.google.zetasql.ProcedureRefProto;
+import com.google.zetasql.ResolvedCollationProto;
 import com.google.zetasql.ResolvedColumnProto;
 import com.google.zetasql.ResolvedNodeProto;
 import com.google.zetasql.Table;
@@ -59,6 +62,7 @@ import com.google.zetasql.TableValuedFunctionRefProto;
 import com.google.zetasql.TVFSignature;
 import com.google.zetasql.Type;
 import com.google.zetasql.TypeAnnotationProto.FieldFormat;
+import com.google.zetasql.TypeParameters;
 import com.google.zetasql.Value;
 import com.google.zetasql.ValueWithTypeProto;
 import com.google.zetasql.resolvedast.ResolvedColumn;
@@ -73,9 +77,51 @@ import com.google.zetasql.{{node.proto_field_type}};
 # for node in nodes|sort_by_name
 import com.google.zetasql.{{node.proto_type}};
 # endfor
-
 import java.util.List;
+import javax.annotation.Nullable;
 {{ blank_line }}
+
+/**
+ * This is a dummy implementation of AnnotationMap.
+ * TODO: implement AnnotationMap in
+ *   package com.google.zetasql
+ */
+final class AnnotationMap {
+  public AnnotationMap() {
+  }
+
+  public AnnotationMapProto serialize(
+      FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
+    return AnnotationMapProto.getDefaultInstance();
+  }
+
+  public String debugString() {
+    return "";
+  }
+}
+
+/**
+ * This is a dummy implementation of ResolvedCollation.
+ * TODO: implement ResolvedCollation in
+ *   package com.google.zetasql
+ */
+final class ResolvedCollation {
+  public ResolvedCollation() {
+  }
+
+  public ResolvedCollationProto serialize() {
+    return ResolvedCollationProto.getDefaultInstance();
+  }
+
+  public static ResolvedCollation deserialize(ResolvedCollationProto proto) {
+    return new ResolvedCollation();
+  }
+
+  public String debugString() {
+    return "";
+  }
+}
+
 /**
  * This class is a container for all subclasses of {@link ResolvedNode}.
  *
@@ -100,6 +146,7 @@ public final class ResolvedNodes {
 
   static FunctionSignatureProto serialize(FunctionSignature functionSignature,
       FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
+    if (functionSignature == null) return null;
     return functionSignature.serialize(fileDescriptorSetsBuilder);
   }
 
@@ -128,7 +175,7 @@ public final class ResolvedNodes {
 
   static TVFSignatureProto serialize(
       TVFSignature tvfSignature, FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
-    return tvfSignature.serialize();
+    return tvfSignature.serialize(fileDescriptorSetsBuilder);
   }
 
   static TableValuedFunctionRefProto serialize(
@@ -178,6 +225,24 @@ public final class ResolvedNodes {
     builder.setName(col.getName());
     builder.setType(serialize(col.getType(), fileDescriptorSetsBuilder));
     return builder.build();
+  }
+
+  static AnnotationMapProto serialize(
+      AnnotationMap annotationMap,
+      FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
+    return annotationMap.serialize(fileDescriptorSetsBuilder);
+  }
+
+  static ResolvedCollationProto serialize(
+      ResolvedCollation resolvedCollation,
+      FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
+    return resolvedCollation.serialize();
+  }
+
+  static TypeParametersProto serialize(
+      TypeParameters typeParameters,
+      FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
+    return typeParameters.serialize();
   }
 
   public static ResolvedNode deserialize(
@@ -287,10 +352,18 @@ public final class ResolvedNodes {
       {{field.name|lower_camel_case}} = {{field.name|lower_camel_case}}Builder.build();
       # endif
     # else
+      # if field.not_serialize_if_default
+      if (proto.has{{field.name|upper_camel_case}}()) {
+      # endif
       # if field.has_proto_setter
       {{field.name|lower_camel_case}} = proto.get{{field.name|upper_camel_case}}();
       # else
       {{field.name|lower_camel_case}} = helper.deserialize(proto.get{{field.name|upper_camel_case}}());
+      # endif
+      # if field.not_serialize_if_default
+      } else {
+      {{field.name|lower_camel_case}} = {{field.java_default}};
+      }
       # endif
     # endif
   # endfor
@@ -383,7 +456,9 @@ public final class ResolvedNodes {
       public Builder set{{field.name|upper_camel_case}}({{field.full_java_type}} v) {
         this.{{field.name|lower_camel_case}} = v;
         {% if field.full_java_type == field.nullable_java_type %}
+        {% if field.is_constructor_arg and not field.is_optional_constructor_arg and field.is_not_ignorable %}
         Preconditions.checkNotNull(v, "{{field.name|lower_camel_case}} must not be null");
+        {% endif %}
         {% endif %}
         {% if field.propagate_order %}
         {# Perform the action on set, not on build, because users may wish to
@@ -415,7 +490,7 @@ public final class ResolvedNodes {
       protected void validate() {
         super.validate();
         {% for field in (node.fields) %}
-        {% if field.is_constructor_arg and not field.is_optional_constructor_arg %}
+        {% if field.is_constructor_arg and not field.is_optional_constructor_arg and field.is_not_ignorable %}
         Preconditions.checkArgument(
             {{field.name|lower_camel_case}} != null, "{{field.name|lower_camel_case}} must be set");
         {% endif %}
@@ -582,6 +657,15 @@ public final class ResolvedNodes {
     public void accept(Visitor visitor) {
       visitor.visit(this);
     }
+  {{ blank_line }}
+    @Override
+    public {{node.name}} accept(RewritingVisitor visitor) {
+      return visitor.visit(this);
+    }
+  # else
+  {{ blank_line }}
+    @Override
+    public abstract {{node.name}} accept(RewritingVisitor visitor);
   # endif
   {{ blank_line }}
     @Override

@@ -17,12 +17,14 @@
 #ifndef ZETASQL_PUBLIC_FUNCTIONS_DATE_TIME_UTIL_H_
 #define ZETASQL_PUBLIC_FUNCTIONS_DATE_TIME_UTIL_H_
 
+#include <cstdint>
 #include <string>
 
 #include "google/protobuf/timestamp.pb.h"
 #include "google/type/date.pb.h"
 #include "zetasql/public/civil_time.h"
 #include "zetasql/public/functions/datetime.pb.h"
+#include "zetasql/public/interval_value.h"
 #include "zetasql/public/proto/type_annotation.pb.h"
 #include "absl/base/attributes.h"
 #include <cstdint>
@@ -101,7 +103,8 @@ absl::Status MakeTimeZone(absl::string_view timezone_string,
                           absl::TimeZone* timezone);
 
 // Creates a absl::Time from an int64_t based timestamp value.
-ABSL_MUST_USE_RESULT absl::Time MakeTime(int64_t timestamp, TimestampScale scale);
+ABSL_MUST_USE_RESULT absl::Time MakeTime(int64_t timestamp,
+                                         TimestampScale scale);
 
 // Converts a absl::Time value into an int64_t timestamp for the given <scale>.
 // Returns false if the value is outside the representable range.
@@ -408,7 +411,8 @@ absl::Status ConstructDatetime(int32_t date, const TimeValue& time,
 // Extracts a DateTimestampPart from the given date
 // Returns error status if the input date value is invalid, or if the
 // requested DateTimestampPart is not applicable to Date.
-absl::Status ExtractFromDate(DateTimestampPart part, int32_t date, int32_t* output);
+absl::Status ExtractFromDate(DateTimestampPart part, int32_t date,
+                             int32_t* output);
 
 // Extracts a DateTimestampPart from the given timestamp as of the specified
 // <timezone_string>.  Returns error status if the input timestamp or timezone
@@ -439,7 +443,8 @@ absl::Status ExtractFromTime(DateTimestampPart part, const TimeValue& time,
 // status if the input DATETIME value is invalid. Extracting the DATE part from
 // a DATETIME value effectively converts a DATETIME to a date.
 absl::Status ExtractFromDatetime(DateTimestampPart part,
-                                 const DatetimeValue& datetime, int32_t* output);
+                                 const DatetimeValue& datetime,
+                                 int32_t* output);
 
 // Extracts a TIME from the given DATETIME value. Returns error
 // status if the input DATETIME value is invalid.
@@ -556,8 +561,13 @@ absl::Status AddDate(int32_t date, DateTimestampPart part, int64_t interval,
                      int32_t* output);
 
 // Similar to AddDate, but it doesn't create an error when overflow occurs.
-absl::Status AddDateOverflow(int32_t date, DateTimestampPart part, int32_t interval,
-                             int32_t* output, bool* had_overflow);
+absl::Status AddDateOverflow(int32_t date, DateTimestampPart part,
+                             int32_t interval, int32_t* output,
+                             bool* had_overflow);
+
+// DATE + INTERVAL = DATETIME
+absl::Status AddDate(int32_t date, zetasql::IntervalValue interval,
+                     DatetimeValue* output);
 
 // Same as above, but subtracts the interval from a part of the date value.
 absl::Status SubDate(int32_t date, DateTimestampPart part, int64_t interval,
@@ -583,6 +593,9 @@ absl::Status SubDate(int32_t date, DateTimestampPart part, int64_t interval,
 absl::Status DiffDates(int32_t date1, int32_t date2, DateTimestampPart part,
                        int32_t* output);
 
+// Interval difference between dates: date1 - date2
+zetasql_base::StatusOr<IntervalValue> IntervalDiffDates(int32_t date1, int32_t date2);
+
 // Add an interval to a part of the given datetime value.
 // Returns error status if the input datetime value is invalid (out of range),
 // or the output datetime value is invalid (out of range), or the
@@ -598,6 +611,11 @@ absl::Status AddDatetime(const DatetimeValue& datetime, DateTimestampPart part,
 // avoid overflow.
 absl::Status SubDatetime(const DatetimeValue& datetime, DateTimestampPart part,
                          int64_t interval, DatetimeValue* output);
+
+// DATETIME + INTERVAL
+absl::Status AddDatetime(DatetimeValue datetime,
+                         zetasql::IntervalValue interval,
+                         DatetimeValue* output);
 
 // Returns the diff (signed integer) of the specified DateTimestampPart
 // between a given datetime pair, based on datetime1 - datetime2.
@@ -621,6 +639,10 @@ absl::Status SubDatetime(const DatetimeValue& datetime, DateTimestampPart part,
 absl::Status DiffDatetimes(const DatetimeValue& datetime1,
                            const DatetimeValue& datetime2,
                            DateTimestampPart part, int64_t* output);
+
+// Interval difference between datetimes: datetime1 - datetime2
+zetasql_base::StatusOr<IntervalValue> IntervalDiffDatetimes(
+    const DatetimeValue& datetime1, const DatetimeValue& datetime2);
 
 // Truncates the datetime to the beginning of the specified DateTimestampPart
 // granularity.
@@ -665,7 +687,8 @@ absl::Status TruncateDatetime(const DatetimeValue& datetime,
 //  LastDayOfDate("2001-12-31", WEEK) -> "2002-01-05"
 //  LastDayOfDate("2001-12-31", ISOWEEK) -> "2002-01-06"
 //  LastDayOfDate("2001-12-31", WEEK_FRIDAY) -> "2002-01-03"
-absl::Status LastDayOfDate(int32_t date, DateTimestampPart part, int32_t* output);
+absl::Status LastDayOfDate(int32_t date, DateTimestampPart part,
+                           int32_t* output);
 
 absl::Status LastDayOfDatetime(const DatetimeValue& datetime,
                                DateTimestampPart part, int32_t* output);
@@ -679,13 +702,17 @@ absl::Status LastDayOfDatetime(const DatetimeValue& datetime,
 // difference in nanos between max and min nano timestamps).  Does not
 // range check the arguments.
 absl::Status TimestampDiff(int64_t timestamp1, int64_t timestamp2,
-                           TimestampScale scale,
-                           DateTimestampPart part, int64_t* output);
+                           TimestampScale scale, DateTimestampPart part,
+                           int64_t* output);
 
 // This function has exact same contract as the function above except it takes 2
 // absl::Time as input.
 absl::Status TimestampDiff(absl::Time timestamp1, absl::Time timestamp2,
                            DateTimestampPart part, int64_t* output);
+
+// Interval difference between timestamps: timestamp1 - timestamp2
+zetasql_base::StatusOr<IntervalValue> IntervalDiffTimestamps(absl::Time timestamp1,
+                                                     absl::Time timestamp2);
 
 // Add an interval to a part of the given Timestamp value.
 // Returns error status if the input Timestamp value is invalid (out of range),
@@ -745,6 +772,11 @@ absl::Status AddTimestamp(absl::Time timestamp, absl::TimeZone timezone,
 absl::Status AddTimestamp(absl::Time timestamp,
                           absl::string_view timezone_string,
                           DateTimestampPart part, int64_t interval,
+                          absl::Time* output);
+
+// TIMESTAMP + INTERVAL
+absl::Status AddTimestamp(absl::Time timestamp, absl::TimeZone timezone,
+                          zetasql::IntervalValue interval,
                           absl::Time* output);
 
 // Similar to AddTimestamp() above, but it doesn't return an error when overflow
@@ -813,6 +845,10 @@ absl::Status SubTime(const TimeValue& time, DateTimestampPart part,
 absl::Status DiffTimes(const TimeValue& time1, const TimeValue& time2,
                        DateTimestampPart part, int64_t* output);
 
+// Interval difference between times: time1 - time2
+zetasql_base::StatusOr<IntervalValue> IntervalDiffTimes(const TimeValue& time1,
+                                                const TimeValue& time2);
+
 // Truncates the time to the beginning of the specified DateTimestampPart
 // granularity.
 // For example:
@@ -833,7 +869,8 @@ absl::Status TruncateTime(const TimeValue& time, DateTimestampPart part,
 // and DAY.
 // Returns error if the date is invalid (out of range), or the DateTimestampPart
 // is not allowed.
-absl::Status TruncateDate(int32_t date, DateTimestampPart part, int32_t* output);
+absl::Status TruncateDate(int32_t date, DateTimestampPart part,
+                          int32_t* output);
 
 // Truncates the timestamp to the beginning of the specified DateTimestampPart
 // granularity.  Assumes that the input <timestamp> is at MICROSECOND precision.
@@ -854,7 +891,8 @@ absl::Status TruncateDate(int32_t date, DateTimestampPart part, int32_t* output)
 // <part> in that <timezone>.
 absl::Status TimestampTrunc(int64_t timestamp, absl::TimeZone timezone,
                             DateTimestampPart part, int64_t* output);
-absl::Status TimestampTrunc(int64_t timestamp, absl::string_view timezone_string,
+absl::Status TimestampTrunc(int64_t timestamp,
+                            absl::string_view timezone_string,
                             DateTimestampPart part, int64_t* output);
 
 // The 2 functions below have same contract as the 2 above except the
@@ -903,16 +941,15 @@ int DateTimestampPart_FromName(absl::string_view name);
 // DATE format.  <*output_is_null> will be set to true if this encoded value
 // should decode as NULL.  (This happens for DATE_DECIMAL format for value 0.)
 // Return an error if the format is unsupported or the encoded value is invalid.
-absl::Status DecodeFormattedDate(
-    int64_t input_formatted_date, FieldFormat::Format format,
-    int32_t* output_date, bool* output_is_null);
+absl::Status DecodeFormattedDate(int64_t input_formatted_date,
+                                 FieldFormat::Format format,
+                                 int32_t* output_date, bool* output_is_null);
 
 // Encode a zetasql DATE value using <format>.
 // Return an error if the format is unsupported or the input value cannot
 // encoded into that format.
-absl::Status EncodeFormattedDate(
-    int32_t input_date, FieldFormat::Format format,
-    int32_t* output_formatted_date);
+absl::Status EncodeFormattedDate(int32_t input_date, FieldFormat::Format format,
+                                 int32_t* output_formatted_date);
 
 // Returns current date as of the specified timezone.
 ABSL_MUST_USE_RESULT int32_t CurrentDate(absl::TimeZone timezone);
@@ -930,6 +967,12 @@ ABSL_MUST_USE_RESULT int64_t CurrentTimestamp();
 // scale that can still accurately represent the timestamp.
 void NarrowTimestampScaleIfPossible(absl::Time time, TimestampScale* scale);
 
+inline bool IntervalUnaryMinus(IntervalValue in, IntervalValue* out,
+                               absl::Status* error) {
+  *out = -in;
+  return true;
+}
+
 // The namespace 'internal_functions' includes the internal implementation
 // details and is not part of the public api.
 namespace internal_functions {
@@ -938,6 +981,27 @@ absl::Status ExpandPercentZQ(absl::string_view format_string,
                              absl::Time base_time, absl::TimeZone timezone,
                              bool expand_quarter,
                              std::string* expanded_format_string);
+
+// 1==Sun, ..., 7=Sat
+int DayOfWeekIntegerSunToSat1To7(absl::Weekday weekday);
+
+// Returns the timezone sign, hour and minute.
+void GetSignHourAndMinuteTimeZoneOffset(const absl::TimeZone::CivilInfo& info,
+                                        bool* positive_offset,
+                                        int32_t* hour_offset,
+                                        int32_t* minute_offset);
+
+// Returns <timezone> if the timezone offset for (<base_time>, <timezone>)
+// is minute aligned.  Otherwise returns a fixed-offset timezone using that
+// offset truncated to a minute boundary (i.e., eliminating the non-zero
+// seconds part of the offset).
+//
+// ZetaSQL does not support rendering numeric timezones with sub-minute
+// offsets (neither do ISO6801 or RFC3339).  If the timezone has a sub-minute
+// offset like -07:52:58 (which happens for the America/Los_Angeles time zone
+// in years before 1884), we instead treat it (and display it) as -07:52.
+absl::TimeZone GetNormalizedTimeZone(absl::Time base_time,
+                                     absl::TimeZone timezone);
 
 }  // namespace internal_functions
 }  // namespace functions

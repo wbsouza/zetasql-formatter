@@ -16,6 +16,8 @@
 
 #include "zetasql/public/id_string.h"
 
+#include <cstdint>
+
 #include "zetasql/base/logging.h"
 #include "zetasql/base/case.h"
 #include "absl/synchronization/mutex.h"
@@ -35,9 +37,9 @@ int64_t IdStringPool::max_pool_id_ = 0;
 // static
 void IdStringPool::CheckPoolIdAlive(int64_t pool_id) {
   absl::MutexLock l(&global_mutex_);
-  DCHECK(live_pool_ids_ != nullptr);
+  ZETASQL_DCHECK(live_pool_ids_ != nullptr);
   if (!zetasql_base::ContainsKey(*live_pool_ids_, pool_id)) {
-    LOG(FATAL) << "IdString was accessed after its IdStringPool ("
+    ZETASQL_LOG(FATAL) << "IdString was accessed after its IdStringPool ("
                << pool_id << ") was destructed";
   }
 }
@@ -47,7 +49,7 @@ IdStringPool::IdStringPool()
 #ifndef NDEBUG
     : arena_(std::make_shared<zetasql_base::UnsafeArena>(/*block_size=*/1024)),
       pool_id_(AllocatePoolId()) {
-  VLOG(1) << "Allocated IdStringPool " << pool_id_;
+  ZETASQL_VLOG(1) << "Allocated IdStringPool " << pool_id_;
 #else
     : arena_(std::make_shared<zetasql_base::UnsafeArena>(/*block_size=*/1024)) {
 #endif
@@ -56,7 +58,7 @@ IdStringPool::IdStringPool()
 IdStringPool::IdStringPool(const std::shared_ptr<zetasql_base::UnsafeArena>& arena)
 #ifndef NDEBUG
     : arena_(arena), pool_id_(AllocatePoolId()) {
-  VLOG(1) << "Allocated IdStringPool " << pool_id_;
+  ZETASQL_VLOG(1) << "Allocated IdStringPool " << pool_id_;
 #else
     : arena_(arena) {
 #endif
@@ -64,16 +66,17 @@ IdStringPool::IdStringPool(const std::shared_ptr<zetasql_base::UnsafeArena>& are
 
 IdStringPool::~IdStringPool() {
 #ifndef NDEBUG
-  VLOG(1) << "Deleting IdStringPool " << pool_id_;
+  ZETASQL_VLOG(1) << "Deleting IdStringPool " << pool_id_;
   absl::MutexLock l(&global_mutex_);
-  CHECK_EQ(1, live_pool_ids_->erase(pool_id_));
+  ZETASQL_CHECK_EQ(1, live_pool_ids_->erase(pool_id_));
 #endif
 }
 
 #ifndef NDEBUG
 int64_t IdStringPool::AllocatePoolId() {
   absl::MutexLock l(&global_mutex_);
-  if (live_pool_ids_ == nullptr) live_pool_ids_ = new std::unordered_set<int64_t>;
+  if (live_pool_ids_ == nullptr)
+    live_pool_ids_ = new std::unordered_set<int64_t>;
   int64_t pool_id = ++max_pool_id_;
   zetasql_base::InsertOrDie(live_pool_ids_, pool_id);
   return pool_id;

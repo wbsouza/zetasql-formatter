@@ -17,6 +17,8 @@
 
 package com.google.zetasql.resolvedast;
 
+import static java.util.stream.Collectors.joining;
+
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -25,8 +27,9 @@ import com.google.protobuf.Descriptors.OneofDescriptor;
 import com.google.protobuf.ProtocolMessageEnum;
 import com.google.zetasql.Connection;
 import com.google.zetasql.Constant;
+import com.google.zetasql.DescriptorPool.ZetaSQLFieldDescriptor;
+import com.google.zetasql.DescriptorPool.ZetaSQLOneofDescriptor;
 import com.google.zetasql.FunctionSignature;
-import com.google.zetasql.ZetaSQLDescriptorPool.ZetaSQLFieldDescriptor;
 import com.google.zetasql.ZetaSQLStrings;
 import com.google.zetasql.Model;
 import com.google.zetasql.Procedure;
@@ -36,6 +39,7 @@ import com.google.zetasql.Table;
 import com.google.zetasql.TableValuedFunction;
 import com.google.zetasql.Type;
 import com.google.zetasql.TypeAnnotationProto.FieldFormat;
+import com.google.zetasql.TypeParameters;
 import com.google.zetasql.Value;
 import com.google.zetasql.resolvedast.ResolvedFunctionCallBaseEnums.ErrorMode;
 import com.google.zetasql.resolvedast.ResolvedInsertStmtEnums.InsertMode;
@@ -54,6 +58,7 @@ import com.google.zetasql.resolvedast.ResolvedNodes.ResolvedWindowFrameExpr;
 import com.google.zetasql.resolvedast.ResolvedStatementEnums.ObjectAccess;
 import java.util.ArrayList;
 import java.util.List;
+import javax.annotation.Nullable;
 
 /**
  * Helper functions for generating debug strings for {@link ResolvedNode}s.
@@ -88,8 +93,8 @@ class DebugStrings {
     return !v.isValid();
   }
 
-  static boolean isDefaultValue(FunctionSignature signature) {
-    return signature.isDefaultValue();
+  static boolean isDefaultValue(@Nullable FunctionSignature signature) {
+    return signature == null || signature.isDefaultValue();
   }
 
   static boolean isDefaultValue(ResolvedFunctionCallInfo call) {
@@ -111,6 +116,25 @@ class DebugStrings {
   // Used for positional parameters.
   static boolean isDefaultValue(long position) {
     return position == 0;
+  }
+
+  static boolean isDefaultValue(AnnotationMap annotationMap) {
+    return annotationMap == null;
+  }
+
+  static boolean isDefaultValue(ResolvedCollation resolvedCollation) {
+    // TODO: implement ResolvedCollation in Java.
+    return resolvedCollation == null || resolvedCollation.debugString().isEmpty();
+  }
+
+  static boolean isDefaultValue(TypeParameters typeParameters) {
+    // TODO: Modify once type parameters are made non-optional in the resolved AST and
+    // the default value is an empty type parameters object.
+    return (typeParameters == null || typeParameters.isEmpty());
+  }
+
+  static boolean isDefaultValue(Table table) {
+    return table == null || table.getName().isEmpty();
   }
 
   // toStringImpl functions for different node field types, similar to the C++ implementation in
@@ -216,6 +240,18 @@ class DebugStrings {
     return toStringImpl(values, ".");
   }
 
+  static String toStringImpl(AnnotationMap annotationMap) {
+    return annotationMap.debugString();
+  }
+
+  static String toStringImpl(ResolvedCollation resolvedCollation) {
+    return resolvedCollation.debugString();
+  }
+
+  static String toStringImpl(TypeParameters typeParameters) {
+    return typeParameters.debugString();
+  }
+
   static String toStringPeriodSeparatedForFieldDescriptors(List<ZetaSQLFieldDescriptor> fields) {
     StringBuilder sb = new StringBuilder();
     for (ZetaSQLFieldDescriptor field : fields) {
@@ -251,6 +287,10 @@ class DebugStrings {
   // This formats a list of identifiers (quoting if needed).
   static String toStringCommaSeparated(List<String> values) {
     return "[" + toStringImpl(values, ", ") + "]";
+  }
+
+  static String toStringCommaSeparated(ImmutableList<ResolvedCollation> resolvedCollations) {
+    return resolvedCollations.stream().map(ResolvedCollation::debugString).collect(joining(","));
   }
 
   // Functions for classes in the generated code with customized debugStrings. These functions
@@ -309,12 +349,21 @@ class DebugStrings {
    */
   static void collectDebugStringFields(
       ResolvedFunctionCallBase node, List<DebugStringField> fields) {
-    Preconditions.checkArgument(fields.size() <= 1);
+    Preconditions.checkArgument(fields.size() <= 2);
 
     fields.clear();
+    Preconditions.checkArgument(
+        node.getArgumentList().isEmpty() || node.getGenericArgumentList().isEmpty());
     if (!node.getArgumentList().isEmpty()) {
       // Use empty name to avoid printing "arguments=" with extra indentation.
-      fields.add(new DebugStringField("", node.getArgumentList()));
+      fields.add(new DebugStringField(/*name=*/ "", node.getArgumentList()));
+    }
+    if (!node.getGenericArgumentList().isEmpty()) {
+      // Use empty name to avoid printing "generic_arguments=" with extra indentation.
+      fields.add(new DebugStringField(/*name=*/ "", node.getGenericArgumentList()));
+    }
+    if (!node.getHintList().isEmpty()) {
+      fields.add(new DebugStringField("hint_list", node.getHintList()));
     }
   }
 
@@ -340,9 +389,18 @@ class DebugStrings {
    if (node.getReturnNullOnError()) {
      fields.add(new DebugStringField("return_null_on_error", "TRUE"));
    }
-    if (node.getExtendedCast() != null) {
-      fields.add(new DebugStringField("extended_cast", node.getExtendedCast()));
-    }
+   if (node.getExtendedCast() != null) {
+     fields.add(new DebugStringField("extended_cast", node.getExtendedCast()));
+   }
+   if (node.getFormat() != null) {
+     fields.add(new DebugStringField("format", node.getFormat()));
+   }
+   if (node.getTimeZone() != null) {
+      fields.add(new DebugStringField("time_zone", node.getTimeZone()));
+   }
+   if (node.getTypeParameters() != null && !node.getTypeParameters().isEmpty()) {
+     fields.add(new DebugStringField("type_parameters", node.getTypeParameters().debugString()));
+   }
   }
 
   static String getNameForDebugString(ResolvedCast node) {

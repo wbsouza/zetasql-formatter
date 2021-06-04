@@ -21,6 +21,7 @@
 
 #include <stddef.h>
 
+#include <cstdint>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -410,7 +411,7 @@ class VirtualTupleSlot {
   // Move 'value' into this object. If we should be storing SharedProtoState for
   // 'value', initializes it.
   void SetValue(Value&& value) {
-    *value_ = value;
+    *value_ = std::move(value);
     MaybeResetSharedProtoState();
   }
 
@@ -457,7 +458,7 @@ inline void TupleSlot::SetValue(const Value& value) {
 
 inline void TupleSlot::SetValue(Value&& value) {
   VirtualTupleSlot slot(this);
-  slot.SetValue(value);
+  slot.SetValue(std::move(value));
 }
 
 inline void TupleSlot::CopyFromSlot(const TupleSlot& other) {
@@ -561,11 +562,11 @@ struct Tuple {
 
 // Returns a TupleData corresponding to 'values' with no extra information in
 // its slots.
-inline TupleData CreateTupleDataFromValues(const std::vector<Value>& values) {
+inline TupleData CreateTupleDataFromValues(std::vector<Value> values) {
   TupleData data(values.size());
   for (int i = 0; i < values.size(); ++i) {
     VirtualTupleSlot virtual_slot(data.mutable_slot(i));
-    virtual_slot.SetValue(values[i]);
+    virtual_slot.SetValue(std::move(values[i]));
   }
   return data;
 }
@@ -627,13 +628,13 @@ class MemoryAccountant {
 
   MemoryAccountant(const MemoryAccountant&) = delete;
   MemoryAccountant& operator=(const MemoryAccountant&) = delete;
-  ~MemoryAccountant() { DCHECK_EQ(remaining_bytes_, total_num_bytes_); }
+  ~MemoryAccountant() { ZETASQL_DCHECK_EQ(remaining_bytes_, total_num_bytes_); }
 
   // If there are 'num_bytes' available, updates the number of remaining bytes
   // accordingly and returns true. Else returns false and populates
   // 'status'. Does not return absl::Status for performance reasons.
   bool RequestBytes(int64_t num_bytes, absl::Status* status) {
-    DCHECK_GE(num_bytes, 0);
+    ZETASQL_DCHECK_GE(num_bytes, 0);
     if (num_bytes > remaining_bytes_) {
       *status = zetasql_base::ResourceExhaustedErrorBuilder()
                 << "Out of memory: requested " << num_bytes
@@ -649,7 +650,7 @@ class MemoryAccountant {
   // RequestBytes().
   void ReturnBytes(int64_t num_bytes) {
     remaining_bytes_ += num_bytes;
-    DCHECK_LE(remaining_bytes_, total_num_bytes_);
+    ZETASQL_DCHECK_LE(remaining_bytes_, total_num_bytes_);
   }
 
   int64_t remaining_bytes() const { return remaining_bytes_; }
@@ -758,7 +759,7 @@ class TupleDataOrderedQueue {
   // for performance reasons.
   bool Insert(std::unique_ptr<TupleData> data, absl::Status* status) {
     const int64_t byte_size = data->GetPhysicalByteSize() +
-                            sizeof(std::pair<const TupleData*, ValueEntry>);
+                              sizeof(std::pair<const TupleData*, ValueEntry>);
     if (!accountant_->RequestBytes(byte_size, status)) {
       return false;
     }

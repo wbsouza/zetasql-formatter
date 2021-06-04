@@ -19,6 +19,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <type_traits>
@@ -26,6 +27,7 @@
 #include "zetasql/base/logging.h"
 #include "zetasql/common/errors.h"
 #include "zetasql/common/multiprecision_int.h"
+#include "zetasql/public/numeric_constants.h"
 #include "absl/base/attributes.h"
 #include <cstdint>
 #include "absl/base/optimization.h"
@@ -36,11 +38,6 @@
 #include "zetasql/base/status_builder.h"
 
 namespace zetasql {
-namespace internal {
-constexpr uint32_t k1e9 = 1000 * 1000 * 1000;
-constexpr uint64_t k1e19 = static_cast<uint64_t>(k1e9) * k1e9 * 10;
-constexpr __int128 k1e38 = static_cast<__int128>(k1e19) * k1e19;
-}  // namespace internal
 
 // This class represents values of the ZetaSQL NUMERIC type. Such values are
 // decimal numbers with maximum total precision of 38 decimal digits and fixed
@@ -481,8 +478,8 @@ class NumericValue final {
   NumericValue(uint64_t high_bits, uint64_t low_bits);
   explicit constexpr NumericValue(__int128 value);
 
-  static zetasql_base::StatusOr<NumericValue> FromStringInternal(absl::string_view str,
-                                                         bool is_strict);
+  template <bool is_strict>
+  static zetasql_base::StatusOr<NumericValue> FromStringInternal(absl::string_view str);
 
   template <int kNumBitsPerWord, int kNumWords>
   static zetasql_base::StatusOr<NumericValue> FromFixedUint(
@@ -875,8 +872,9 @@ class BigNumericValue final {
  private:
   explicit constexpr BigNumericValue(const FixedInt<64, 4>& value);
   explicit constexpr BigNumericValue(const std::array<uint64_t, 4>& uint_array);
+  template <bool is_strict>
   static zetasql_base::StatusOr<BigNumericValue> FromStringInternal(
-      absl::string_view str, bool is_strict);
+      absl::string_view str);
   static double RemoveScaleAndConvertToDouble(const FixedInt<64, 4>& value);
 
   FixedInt<64, 4> value_;
@@ -938,7 +936,8 @@ constexpr uint32_t k5to11 = k5to10 * 5;
 constexpr uint32_t k5to12 = k5to11 * 5;
 constexpr uint32_t k5to13 = k5to12 * 5;
 constexpr uint64_t k5to19 = static_cast<uint64_t>(k5to10) * k5to9;
-constexpr std::integral_constant<int32_t, internal::k1e9> kSignedScalingFactor{};
+constexpr std::integral_constant<int32_t, internal::k1e9>
+    kSignedScalingFactor{};
 
 }  // namespace internal
 
@@ -1320,7 +1319,7 @@ template <bool round, int N>
   value /= std::integral_constant<uint32_t, internal::k5to13>();
   value /= std::integral_constant<uint32_t, internal::k5to12>();
   // 5^38 > 2^64, so the highest uint64_t must be 0, even after adding 2^38.
-  DCHECK_EQ(value.number()[N - 1], 0);
+  ZETASQL_DCHECK_EQ(value.number()[N - 1], 0);
   FixedUint<64, N - 1> value_trunc(value);
   if (round &&
       (value_trunc.number()[0] & (1ULL << (kMaxFractionalDigits - 1)))) {
@@ -1362,7 +1361,7 @@ inline zetasql_base::StatusOr<NumericValue> BigNumericValue::ToNumericValue() co
   abs_value /= std::integral_constant<uint32_t, internal::k5to10>();
   abs_value /= std::integral_constant<uint32_t, internal::k5to10>();
   abs_value /= std::integral_constant<uint32_t, internal::k5to9>();
-  DCHECK_EQ(abs_value.number()[3], 0);
+  ZETASQL_DCHECK_EQ(abs_value.number()[3], 0);
   FixedUint<64, 3> abs_value_trunc(abs_value);
   if (abs_value_trunc.number()[0] & (1ULL << 28)) {
     abs_value_trunc += (uint64_t{1} << 29);

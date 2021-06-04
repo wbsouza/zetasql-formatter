@@ -35,6 +35,8 @@ message ResolvedSubqueryExprEnums {
     ARRAY = 1;
     EXISTS = 2;
     IN = 3;
+    LIKE_ANY = 4;
+    LIKE_ALL = 5;
   }
 }
 
@@ -104,6 +106,22 @@ message ResolvedCreateStatementEnums {
     DETERMINISM_IMMUTABLE = 3;
     DETERMINISM_STABLE = 4;
     DETERMINISM_VOLATILE = 5;
+  }
+}
+
+message ResolvedGeneratedColumnInfoEnums {
+  enum StoredMode {
+    NON_STORED = 0;
+    STORED = 1;
+    STORED_VOLATILE = 2;
+  }
+}
+
+message ResolvedDropStmtEnums {
+  enum DropMode {
+    DROP_MODE_UNSPECIFIED = 0;
+    RESTRICT = 1;
+    CASCADE = 2;
   }
 }
 

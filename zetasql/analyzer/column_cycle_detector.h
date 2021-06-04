@@ -47,17 +47,17 @@ class ASTNode;
 //
 // ZETASQL_RETURN_IF_ERROR(cd->VisitNewColumn("a"));
 // auto finish_a =
-//     zetasql_base::MakeCleanup([&cd] { ZETASQL_CHECK_OK(cd.FinishCurrentColumn()); });
+//     absl::MakeCleanup([&cd] { ZETASQL_CHECK_OK(cd.FinishCurrentColumn()); });
 // ZETASQL_RETURN_IF_ERROR(cd.AddDependencyOn("b"));
 //
 // ZETASQL_RETURN_IF_ERROR(cd->VisitNewColumn("b"));
 // auto finish_b =
-//     zetasql_base::MakeCleanup([&cd] { ZETASQL_CHECK_OK(cd.FinishCurrentColumn()); });
+//     absl::MakeCleanup([&cd] { ZETASQL_CHECK_OK(cd.FinishCurrentColumn()); });
 // ZETASQL_RETURN_IF_ERROR(cd.AddDependencyOn("c"));
 //
 // ZETASQL_RETURN_IF_ERROR(cd->VisitNewColumn("c"));
 // auto finish_c =
-//     zetasql_base::MakeCleanup([&cd] { ZETASQL_CHECK_OK(cd.FinishCurrentColumn()); });
+//     absl::MakeCleanup([&cd] { ZETASQL_CHECK_OK(cd.FinishCurrentColumn()); });
 // ZETASQL_RETURN_IF_ERROR(cd.AddDependencyOn("a")); // <--- This will fail.
 //
 // PS. This cycle detector gets instantated for every generated column, but
@@ -83,7 +83,7 @@ class ColumnCycleDetector {
   // previously visited column (if there is one). It is an error to call this
   // method more times than VisitNewColumn() has been called. Each call to
   // VisitNewColumn() should be matched by a call to FinishCurrentColumn(). If
-  // you miss calling FinishCurrentColumn() it will hit a DCHECK on the
+  // you miss calling FinishCurrentColumn() it will hit a ZETASQL_DCHECK on the
   // destructor.
   absl::Status FinishCurrentColumn();
 

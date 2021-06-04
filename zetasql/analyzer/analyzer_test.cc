@@ -24,9 +24,12 @@
 #include "google/protobuf/descriptor.h"
 #include "zetasql/common/status_payload_utils.h"
 #include "zetasql/base/testing/status_matchers.h"
+#include "zetasql/common/testing/testing_proto_util.h"
 #include "zetasql/parser/parser.h"
 #include "zetasql/public/function.h"
 #include "zetasql/public/function.pb.h"
+#include "zetasql/public/literal_remover.h"
+#include "zetasql/public/options.pb.h"
 #include "zetasql/public/parse_resume_location.h"
 #include "zetasql/public/simple_catalog.h"
 #include "zetasql/public/sql_formatter.h"
@@ -42,17 +45,18 @@
 #include "gtest/gtest.h"
 #include "absl/container/node_hash_set.h"
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
 #include "zetasql/base/case.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "zetasql/base/map_util.h"
-#include "zetasql/base/status.h"
 
 namespace zetasql {
 
 using testing::_;
 using testing::HasSubstr;
 using testing::IsNull;
+using testing::Not;
 using zetasql_base::testing::StatusIs;
 
 class AnalyzerOptionsTest : public ::testing::Test {
@@ -101,7 +105,7 @@ TEST_F(AnalyzerOptionsTest, AddSystemVariable) {
 
   // Unsupported type
   AnalyzerOptions external_mode(options_);
-  external_mode.mutable_language_options()->set_product_mode(
+  external_mode.mutable_language()->set_product_mode(
       ProductMode::PRODUCT_EXTERNAL);
   EXPECT_THAT(
       external_mode.AddSystemVariable({"zzz"}, type_factory_.get_int32()),
@@ -407,7 +411,7 @@ TEST_F(AnalyzerOptionsTest, SetDdlPseudoColumns) {
   LanguageOptions language_options;
   language_options.SetSupportsAllStatementKinds();
   language_options.EnableLanguageFeature(FEATURE_CREATE_TABLE_PARTITION_BY);
-  options_.set_language_options(language_options);
+  options_.set_language(language_options);
 
   // Each test case contains the statement to analyze and the expected table and
   // options that the DDL pseudo-column callback will receive.
@@ -465,16 +469,19 @@ TEST_F(AnalyzerOptionsTest, ErrorMessageFormat) {
   EXPECT_EQ(ErrorMessageMode::ERROR_MESSAGE_ONE_LINE,
             options_.error_message_mode());
 
-  EXPECT_EQ("generic::invalid_argument: Table not found: BadTable [at 2:6]",
-            zetasql::internal::StatusToString(AnalyzeStatement(
-                query, options_, catalog(), &type_factory_, &output)));
+  EXPECT_EQ(
+      "generic::invalid_argument: Table not found: BadTable; Did you mean "
+      "abTable? [at 2:6]",
+      zetasql::internal::StatusToString(AnalyzeStatement(
+          query, options_, catalog(), &type_factory_, &output)));
   EXPECT_EQ("generic::invalid_argument: Unrecognized name: BadCol [at 2:5]",
             zetasql::internal::StatusToString(AnalyzeExpression(
                 expr, options_, catalog(), &type_factory_, &output)));
 
   options_.set_error_message_mode(ErrorMessageMode::ERROR_MESSAGE_WITH_PAYLOAD);
   EXPECT_EQ(
-      "generic::invalid_argument: Table not found: BadTable "
+      "generic::invalid_argument: Table not found: BadTable; Did you mean "
+      "abTable? "
       "[zetasql.ErrorLocation] { line: 2 column: 6 }",
       zetasql::internal::StatusToString(AnalyzeStatement(
           query, options_, catalog(), &type_factory_, &output)));
@@ -487,7 +494,8 @@ TEST_F(AnalyzerOptionsTest, ErrorMessageFormat) {
   options_.set_error_message_mode(
       ErrorMessageMode::ERROR_MESSAGE_MULTI_LINE_WITH_CARET);
   EXPECT_EQ(
-      "generic::invalid_argument: Table not found: BadTable [at 2:6]\n"
+      "generic::invalid_argument: Table not found: BadTable; Did you mean "
+      "abTable? [at 2:6]\n"
       "from BadTable\n"
       "     ^",
       zetasql::internal::StatusToString(AnalyzeStatement(
@@ -498,6 +506,41 @@ TEST_F(AnalyzerOptionsTest, ErrorMessageFormat) {
       "    ^",
       zetasql::internal::StatusToString(AnalyzeExpression(
           expr, options_, catalog(), &type_factory_, &output)));
+}
+
+TEST_F(AnalyzerOptionsTest, NestedCatalogTypesErrorMessageFormat) {
+  std::unique_ptr<const AnalyzerOutput> output;
+
+  SimpleCatalog leaf_catalog_1("leaf_catalog_1");
+  SimpleCatalog leaf_catalog_2("leaf_catalog_2");
+  catalog()->AddCatalog(&leaf_catalog_1);
+  catalog()->AddCatalog(&leaf_catalog_2);
+
+  const ProtoType* proto_type_with_catalog = nullptr;
+  ZETASQL_ASSERT_OK(type_factory_.MakeProtoType(
+      TypeProto::descriptor(), &proto_type_with_catalog, {"catalog_name"}));
+  leaf_catalog_1.AddType("zetasql.TypeProto", proto_type_with_catalog);
+
+  const ProtoType* proto_type_without_catalog = nullptr;
+  ZETASQL_ASSERT_OK(type_factory_.MakeProtoType(TypeProto::descriptor(),
+                                        &proto_type_without_catalog));
+  leaf_catalog_2.AddType("zetasql.TypeProto", proto_type_without_catalog);
+
+  // The catalog name is shown.
+  EXPECT_EQ(
+      "generic::invalid_argument: Invalid cast from INT64 to "
+      "catalog_name.zetasql.TypeProto [at 1:6]",
+      zetasql::internal::StatusToString(
+          AnalyzeExpression("CAST(1 AS leaf_catalog_1.zetasql.TypeProto)",
+                            options_, catalog(), &type_factory_, &output)));
+
+  // The catalog name is not shown.
+  EXPECT_EQ(
+      "generic::invalid_argument: Invalid cast from INT64 to "
+      "zetasql.TypeProto [at 1:6]",
+      zetasql::internal::StatusToString(
+          AnalyzeExpression("CAST(1 AS leaf_catalog_2.zetasql.TypeProto)",
+                            options_, catalog(), &type_factory_, &output)));
 }
 
 // Some of these were previously dchecking because of bug 20010119.
@@ -697,15 +740,19 @@ TEST_F(AnalyzerOptionsTest, DeprecationWarnings) {
   }
 }
 
-void InitSourceTree(google::protobuf::compiler::DiskSourceTree* source_tree) {
-  // Support both sides of --incompatible_generated_protos_in_virtual_imports.
-  source_tree->MapPath(
-      "", zetasql_base::JoinPath(getenv("TEST_SRCDIR"), "com_google_protobuf",
-            "_virtual_imports", "descriptor_proto"));
-  source_tree->MapPath(
-      "", zetasql_base::JoinPath(getenv("TEST_SRCDIR"), "com_google_protobuf"));
-  source_tree->MapPath(
-      "", zetasql_base::JoinPath(getenv("TEST_SRCDIR"), "com_google_zetasql"));
+TEST_F(AnalyzerOptionsTest, ResolvedASTRewrites) {
+  // Should be on by default.
+  EXPECT_TRUE(options_.rewrite_enabled(REWRITE_FLATTEN));
+  options_.enable_rewrite(REWRITE_FLATTEN, /*enable=*/false);
+  EXPECT_FALSE(options_.rewrite_enabled(REWRITE_FLATTEN));
+  options_.enable_rewrite(REWRITE_FLATTEN);
+  EXPECT_TRUE(options_.rewrite_enabled(REWRITE_FLATTEN));
+
+  absl::flat_hash_set<ResolvedASTRewrite> rewrites;
+  rewrites.insert(REWRITE_INVALID_DO_NOT_USE);
+  options_.set_enabled_rewrites(rewrites);
+  EXPECT_FALSE(options_.rewrite_enabled(REWRITE_FLATTEN));
+  EXPECT_TRUE(options_.rewrite_enabled(REWRITE_INVALID_DO_NOT_USE));
 }
 
 // Need to implement this to catch importing errors.
@@ -736,15 +783,15 @@ TEST_F(AnalyzerOptionsTest, Deserialize) {
       "zetasql/testdata/test_schema.proto",
       "zetasql/testdata/external_extension.proto",
   };
-  google::protobuf::compiler::DiskSourceTree source_tree;
-  InitSourceTree(&source_tree);
+  std::unique_ptr<google::protobuf::compiler::DiskSourceTree> source_tree =
+      CreateProtoSourceTree();
   MultiFileErrorCollector error_collector;
 
   std::unique_ptr<google::protobuf::compiler::Importer> proto_importer(
-      new google::protobuf::compiler::Importer(&source_tree, &error_collector));
+      new google::protobuf::compiler::Importer(source_tree.get(), &error_collector));
 
   for (const std::string& test_file : test_files) {
-    CHECK(proto_importer->Import(test_file) != nullptr)
+    ZETASQL_CHECK(proto_importer->Import(test_file) != nullptr)
         << "Error importing " << test_file << ": "
         << error_collector.GetError();
   }
@@ -775,12 +822,16 @@ TEST_F(AnalyzerOptionsTest, Deserialize) {
   AnalyzerOptionsProto proto;
   proto.set_error_message_mode(ERROR_MESSAGE_WITH_PAYLOAD);
   proto.set_prune_unused_columns(true);
-  proto.set_record_parse_locations(true);
   proto.set_allow_undeclared_parameters(true);
   proto.set_parameter_mode(PARAMETER_POSITIONAL);
   proto.mutable_language_options()->set_product_mode(PRODUCT_INTERNAL);
   proto.set_default_timezone("Asia/Shanghai");
   proto.set_preserve_column_aliases(false);
+
+  auto* parse_location_options = proto.mutable_parse_location_options();
+  parse_location_options->set_record_parse_locations(true);
+  parse_location_options->set_function_call_record_type(
+      AnalyzerOptionsProto::ParseLocationOptionsProto::FUNCTION_CALL);
 
   auto* param = proto.add_query_parameters();
   param->set_name("q1");
@@ -886,7 +937,9 @@ TEST_F(AnalyzerOptionsTest, Deserialize) {
   ZETASQL_CHECK_OK(AnalyzerOptions::Deserialize(proto, pools, &factory, &options));
 
   ASSERT_TRUE(options.prune_unused_columns());
-  ASSERT_TRUE(options.record_parse_locations());
+  ASSERT_TRUE(options.parse_location_options().record_parse_locations);
+  ASSERT_EQ(AnalyzerOptions::FUNCTION_CALL,
+            options.parse_location_options().function_call_record_type);
   ASSERT_TRUE(options.allow_undeclared_parameters());
   ASSERT_EQ(ERROR_MESSAGE_WITH_PAYLOAD, options.error_message_mode());
   ASSERT_EQ(PRODUCT_INTERNAL, options.language().product_mode());
@@ -955,13 +1008,14 @@ TEST_F(AnalyzerOptionsTest, Deserialize) {
 }
 
 TEST_F(AnalyzerOptionsTest, ClassAndProtoSize) {
-  EXPECT_EQ(224, sizeof(AnalyzerOptions) - sizeof(LanguageOptions) -
+  EXPECT_EQ(232, sizeof(AnalyzerOptions) - sizeof(LanguageOptions) -
                      sizeof(AllowedHintsAndOptions) -
                      sizeof(Catalog::FindOptions) - sizeof(SystemVariablesMap) -
-                     2 * sizeof(QueryParametersMap) - 1 * sizeof(std::string))
+                     2 * sizeof(QueryParametersMap) - 1 * sizeof(std::string) -
+                     sizeof(absl::flat_hash_set<ResolvedASTRewrite>))
       << "The size of AnalyzerOptions class has changed, please also update "
       << "the proto and serialization code if you added/removed fields in it.";
-  EXPECT_EQ(18, AnalyzerOptionsProto::descriptor()->field_count())
+  EXPECT_EQ(20, AnalyzerOptionsProto::descriptor()->field_count())
       << "The number of fields in AnalyzerOptionsProto has changed, please "
       << "also update the serialization code accordingly.";
 }
@@ -976,15 +1030,15 @@ TEST_F(AnalyzerOptionsTest, AllowedHintsAndOptionsSerializeAndDeserialize) {
       "zetasql/testdata/test_schema.proto",
       "zetasql/testdata/external_extension.proto",
   };
-  google::protobuf::compiler::DiskSourceTree source_tree;
-  InitSourceTree(&source_tree);
+  std::unique_ptr<google::protobuf::compiler::DiskSourceTree> source_tree =
+      CreateProtoSourceTree();
   MultiFileErrorCollector error_collector;
 
   std::unique_ptr<google::protobuf::compiler::Importer> proto_importer(
-      new google::protobuf::compiler::Importer(&source_tree, &error_collector));
+      new google::protobuf::compiler::Importer(source_tree.get(), &error_collector));
 
   for (const std::string& test_file : test_files) {
-    CHECK(proto_importer->Import(test_file) != nullptr)
+    ZETASQL_CHECK(proto_importer->Import(test_file) != nullptr)
         << "Error importing " << test_file << ": "
         << error_collector.GetError();
   }
@@ -1034,7 +1088,8 @@ TEST_F(AnalyzerOptionsTest, AllowedHintsAndOptionsSerializeAndDeserialize) {
 }
 
 TEST(AllowedHintsAndOptionsTest, ClassAndProtoSize) {
-  EXPECT_EQ(104, sizeof(AllowedHintsAndOptions) - sizeof(std::set<std::string>))
+  EXPECT_EQ(8, sizeof(AllowedHintsAndOptions) - sizeof(std::set<std::string>) -
+                   2 * sizeof(absl::flat_hash_map<std::string, std::string>))
       << "The size of AllowedHintsAndOptions class has changed, please also "
       << "update the proto and serialization code if you added/removed fields "
       << "in it.";
@@ -1207,7 +1262,7 @@ TEST(AnalyzerSupportedFeaturesTest, SupportedFeaturesTest) {
     AnalyzerOptions options;
     options.mutable_language()->SetEnabledLanguageFeatures(
         input.supported_features);
-    LOG(INFO) << "Supported features: " << input.FeaturesToString();
+    ZETASQL_LOG(INFO) << "Supported features: " << input.FeaturesToString();
     SampleCatalog catalog(options.language());
     const absl::Status status = AnalyzeStatement(
         input.statement, options, catalog.catalog(), &type_factory, &output);
@@ -1279,15 +1334,16 @@ TEST(AnalyzerTest, ExternalExtension) {
       "zetasql/testdata/test_schema.proto",
       "zetasql/testdata/external_extension.proto",
   };
-  google::protobuf::compiler::DiskSourceTree source_tree;
-  InitSourceTree(&source_tree);
+
+  std::unique_ptr<google::protobuf::compiler::DiskSourceTree> source_tree =
+      CreateProtoSourceTree();
 
   MultiFileErrorCollector error_collector;
   std::unique_ptr<google::protobuf::compiler::Importer> proto_importer(
-      new google::protobuf::compiler::Importer(&source_tree, &error_collector));
+      new google::protobuf::compiler::Importer(source_tree.get(), &error_collector));
 
   for (const std::string& test_file : test_files) {
-    CHECK(proto_importer->Import(test_file) != nullptr)
+    ZETASQL_CHECK(proto_importer->Import(test_file) != nullptr)
         << "Error importing " << test_file << ": "
         << error_collector.GetError();
   }
@@ -1340,6 +1396,102 @@ TEST(AnalyzerTest, ExternalExtension) {
                              &output1));
 }
 
+static void ExpectStatementHasAnonymization(
+    const std::string& sql, bool expect_anonymization = true,
+    bool expect_analyzer_success = true) {
+  AnalyzerOptions options;
+  options.mutable_language()->SetSupportedStatementKinds(
+      {RESOLVED_QUERY_STMT, RESOLVED_CREATE_TABLE_AS_SELECT_STMT});
+  options.mutable_language()->EnableLanguageFeature(FEATURE_ANONYMIZATION);
+  options.enable_rewrite(REWRITE_ANONYMIZATION, /*enable=*/false);
+  SampleCatalog catalog(options.language());
+  TypeFactory type_factory;
+  std::unique_ptr<const AnalyzerOutput> output;
+  absl::Status status = AnalyzeStatement(
+      sql, options, catalog.catalog(), &type_factory, &output);
+  if (expect_analyzer_success) {
+    ZETASQL_EXPECT_OK(status);
+    EXPECT_EQ(output->analyzer_output_properties().has_anonymization,
+              expect_anonymization);
+  } else {
+    // Note that if the analyzer failed, then there is no AnalyzerOutput.
+    EXPECT_FALSE(status.ok());
+  }
+}
+
+TEST(AnalyzerTest, TestStatementHasAnonymization) {
+  ExpectStatementHasAnonymization(
+      "SELECT * FROM KeyValue", false);
+  ExpectStatementHasAnonymization(
+      "SELECT WITH ANONYMIZATION key FROM KeyValue GROUP BY key");
+  ExpectStatementHasAnonymization("SELECT ANON_COUNT(*) FROM KeyValue");
+  ExpectStatementHasAnonymization("SELECT ANON_SUM(key) FROM KeyValue");
+  ExpectStatementHasAnonymization("SELECT ANON_AVG(key) FROM KeyValue");
+  ExpectStatementHasAnonymization("SELECT ANON_COUNT(value) FROM KeyValue");
+  ExpectStatementHasAnonymization(
+      "SELECT * FROM (SELECT ANON_COUNT(*) FROM KeyValue)");
+  ExpectStatementHasAnonymization(
+      "SELECT (SELECT ANON_COUNT(*) FROM KeyValue) FROM KeyValue");
+  ExpectStatementHasAnonymization(
+      absl::StrCat("SELECT * FROM KeyValue ",
+                   "WHERE key IN (SELECT ANON_COUNT(*) FROM KeyValue)"));
+  // DDL has anonymization
+  ExpectStatementHasAnonymization(
+      "CREATE TABLE foo AS SELECT ANON_COUNT(*) AS a FROM KeyValue");
+
+  // Resolution fails, has_anonymization is false even though we found it
+  // in the first part of the query (before finding the error).
+  ExpectStatementHasAnonymization(
+      absl::StrCat("SELECT ANON_COUNT(*) FROM KeyValue ",
+                   "UNION ALL ",
+                   "SELECT 'string_literal'"), false, false);
+}
+
+static void ExpectExpressionHasAnonymization(const std::string& sql,
+                                             bool expect_anonymization = true) {
+  AnalyzerOptions options;
+  options.mutable_language()->EnableLanguageFeature(FEATURE_ANONYMIZATION);
+  SampleCatalog catalog(options.language());
+  TypeFactory type_factory;
+  std::unique_ptr<const AnalyzerOutput> output;
+  absl::Status status = AnalyzeExpression(
+      sql, options, catalog.catalog(), &type_factory, &output);
+  ZETASQL_ASSERT_OK(status);
+  EXPECT_EQ(output->analyzer_output_properties().has_anonymization,
+            expect_anonymization);
+}
+
+TEST(AnalyzerTest, TestExpressionHasAnonymization) {
+  // Note that AnalyzeExpression only works for scalar expressions, not
+  // aggregate expressions.
+  ExpectExpressionHasAnonymization("concat('a', 'b')", false);
+  ExpectExpressionHasAnonymization("5 IN (SELECT ANON_COUNT(*) FROM KeyValue)");
+}
+
+TEST(AnalyzerTest, AstRewriting) {
+  AnalyzerOptions options;
+  options.mutable_language()->EnableLanguageFeature(
+      FEATURE_V_1_3_UNNEST_AND_FLATTEN_ARRAYS);
+  SampleCatalog catalog(options.language());
+  TypeFactory type_factory;
+  std::unique_ptr<const AnalyzerOutput> output;
+
+  for (const bool should_rewrite : { true, false }) {
+    options.enable_rewrite(REWRITE_FLATTEN, should_rewrite);
+    ZETASQL_ASSERT_OK(AnalyzeStatement("SELECT FLATTEN([STRUCT([] AS X)].X)", options,
+                               catalog.catalog(), &type_factory, &output));
+    if (should_rewrite) {
+      // If rewrites are enabled the Flatten should be rewritten away.
+      EXPECT_THAT(output->resolved_statement()->DebugString(),
+                  Not(HasSubstr("FlattenedArg")));
+    } else {
+      // Otherwise it should remain.
+      EXPECT_THAT(output->resolved_statement()->DebugString(),
+                  HasSubstr("FlattenedArg"));
+    }
+  }
+}
+
 // Test that the language_options setters and getters on AnalyzerOptions work
 // correctly and don't overwrite the options outside LanguageOptions.
 TEST(AnalyzerTest, LanguageOptions) {
@@ -1358,7 +1510,7 @@ TEST(AnalyzerTest, LanguageOptions) {
   language_options.SetSupportsAllStatementKinds();
   EXPECT_TRUE(language_options.SupportsStatementKind(RESOLVED_DELETE_STMT));
 
-  analyzer_options.set_language_options(language_options);
+  analyzer_options.set_language(language_options);
   EXPECT_TRUE(
       analyzer_options.language().SupportsStatementKind(RESOLVED_DELETE_STMT));
   EXPECT_TRUE(
@@ -1411,8 +1563,9 @@ TEST(SQLBuilderTest, WithScanWithFilterScan) {
   auto table = absl::make_unique<SimpleTable>(table_name);
 
   // With entry list.
-  const ResolvedColumn scan_column(10, table_name, col_name,
-                                   type_factory.get_int32());
+  const ResolvedColumn scan_column(
+      10, zetasql::IdString::MakeGlobal(table_name),
+      zetasql::IdString::MakeGlobal(col_name), type_factory.get_int32());
   auto table_scan = MakeResolvedTableScan({scan_column}, table.get(),
                                           /*for_system_time_expr=*/nullptr);
   auto filter_scan = MakeResolvedFilterScan(
@@ -1423,8 +1576,9 @@ TEST(SQLBuilderTest, WithScanWithFilterScan) {
       MakeResolvedWithEntry(with_query_name, std::move(filter_scan)));
 
   // With scan query.
-  const ResolvedColumn query_column(20, with_query_name, col_name,
-                                    type_factory.get_int32());
+  const ResolvedColumn query_column(
+      20, zetasql::IdString::MakeGlobal(with_query_name),
+      zetasql::IdString::MakeGlobal(col_name), type_factory.get_int32());
   auto with_ref_scan = MakeResolvedWithRefScan({query_column}, with_query_name);
   auto query = MakeResolvedProjectScan({query_column}, /*expr_list=*/{},
                                        std::move(with_ref_scan));
@@ -1445,6 +1599,42 @@ TEST(SQLBuilderTest, WithScanWithFilterScan) {
       formatted_sql);
 }
 
+// Test that SqlBuilder prefer ResolvedTableScan.column_index_list over column
+// and table names in ResolvedTableScan, which should have no semantic meaning.
+// See the class comment on `ResolvedTableScan`.
+TEST(SQLBuilderTest, TableScanPrefersColumnIndexList) {
+  const std::string table_name = "T1";
+  const std::string col_name = "C";
+  const std::string unused_name = "UNUSED_NAME";
+  const int column_id = 9;
+
+  TypeFactory type_factory;
+  auto table = absl::make_unique<SimpleTable>(table_name);
+  ZETASQL_ASSERT_OK(table->AddColumn(
+      new SimpleColumn(table_name, col_name, type_factory.get_int32()),
+      /*is_owned=*/true));
+  const ResolvedColumn scan_column(column_id, IdString::MakeGlobal(unused_name),
+                                   IdString::MakeGlobal(unused_name),
+                                   type_factory.get_int32());
+  auto table_scan = MakeResolvedTableScan({scan_column}, table.get(),
+                                          /*for_system_time_expr=*/nullptr);
+  table_scan->set_column_index_list({0});
+  const ResolvedColumn query_column(
+      column_id, IdString::MakeGlobal(unused_name),
+      IdString::MakeGlobal(unused_name), type_factory.get_int32());
+  auto query = MakeResolvedProjectScan({query_column}, /*expr_list=*/{},
+                                       std::move(table_scan));
+
+  SQLBuilder sql_builder;
+  ZETASQL_ASSERT_OK(sql_builder.Process(*query));
+  std::string formatted_sql;
+  ZETASQL_ASSERT_OK(FormatSql(sql_builder.sql(), &formatted_sql));
+  EXPECT_EQ(
+      "SELECT\n  t1_2.a_1 AS a_1\nFROM\n  (\n"
+      "    SELECT\n      T1.C AS a_1\n    FROM\n      T1\n  ) AS t1_2;",
+      formatted_sql);
+}
+
 // Adding specific unit test to input provided by Random Query Generator tree.
 // From a SQL String (like in golden file sql_builder.test), we get a different
 // tree (JoinScan is under other ResolvedScans and this scenario isn't tested.
@@ -1461,8 +1651,9 @@ TEST(SQLBuilderTest, WithScanWithJoinScan) {
       absl::make_unique<SimpleTable>(table_name2);
 
   // With entry list.
-  const ResolvedColumn scan_column(10, table_name1, col_name,
-                                   type_factory.get_int32());
+  const ResolvedColumn scan_column(
+      10, zetasql::IdString::MakeGlobal(table_name1),
+      zetasql::IdString::MakeGlobal(col_name), type_factory.get_int32());
   auto table_scan1 = MakeResolvedTableScan({scan_column}, table1.get(),
                                            /*for_system_time_expr=*/nullptr);
   auto table_scan2 = MakeResolvedTableScan(/*column_list=*/{}, table2.get(),
@@ -1476,8 +1667,9 @@ TEST(SQLBuilderTest, WithScanWithJoinScan) {
       MakeResolvedWithEntry(with_query_name, std::move(join_scan)));
 
   // With scan query.
-  const ResolvedColumn query_column(20, with_query_name, col_name,
-                                    type_factory.get_int32());
+  const ResolvedColumn query_column(
+      20, zetasql::IdString::MakeGlobal(with_query_name),
+      zetasql::IdString::MakeGlobal(col_name), type_factory.get_int32());
   std::unique_ptr<ResolvedWithRefScan> with_ref_scan =
       MakeResolvedWithRefScan({query_column}, with_query_name);
 
@@ -1518,12 +1710,14 @@ TEST(SQLBuilderTest, WithScanWithArrayScan) {
       absl::make_unique<SimpleTable>(table_name);
 
   // With entry list.
-  const ResolvedColumn scan_column(10, table_name, col_name,
-                                   type_factory.get_int32());
+  const ResolvedColumn scan_column(
+      10, zetasql::IdString::MakeGlobal(table_name),
+      zetasql::IdString::MakeGlobal(col_name), type_factory.get_int32());
   auto table_scan = MakeResolvedTableScan({scan_column}, table.get(),
                                           /*for_system_time_expr=*/nullptr);
-  const ResolvedColumn array_column(15, "ArrayName", "ArrayCol",
-                                    type_factory.get_int32());
+  const ResolvedColumn array_column(
+      15, zetasql::IdString::MakeGlobal("ArrayName"),
+      zetasql::IdString::MakeGlobal("ArrayCol"), type_factory.get_int32());
   auto array_expr = MakeResolvedSubqueryExpr(
       type_factory.get_bool(), ResolvedSubqueryExpr::ARRAY,
       /*parameter_list=*/{}, /*in_expr=*/nullptr,
@@ -1537,8 +1731,9 @@ TEST(SQLBuilderTest, WithScanWithArrayScan) {
       MakeResolvedWithEntry(with_query_name, std::move(array_scan)));
 
   // With scan query.
-  const ResolvedColumn query_column(20, with_query_name, col_name,
-                                    type_factory.get_int32());
+  const ResolvedColumn query_column(
+      20, zetasql::IdString::MakeGlobal(with_query_name),
+      zetasql::IdString::MakeGlobal(col_name), type_factory.get_int32());
   std::unique_ptr<ResolvedWithRefScan> with_ref_scan =
       MakeResolvedWithRefScan({query_column}, with_query_name);
   auto query = MakeResolvedProjectScan({query_column}, /*expr_list=*/{},

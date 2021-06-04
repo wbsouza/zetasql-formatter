@@ -88,6 +88,7 @@ public final class FunctionSignature implements Serializable {
     this.options = options;
     isConcrete = computeIsConcrete();
     concreteArguments = ImmutableList.copyOf(computeConcreteArgumentTypes());
+    validate();
   }
 
   public FunctionSignatureProto serialize(FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
@@ -102,7 +103,7 @@ public final class FunctionSignature implements Serializable {
   }
 
   public static FunctionSignature deserialize(
-      FunctionSignatureProto proto, ImmutableList<ZetaSQLDescriptorPool> pools) {
+      FunctionSignatureProto proto, ImmutableList<? extends DescriptorPool> pools) {
     List<FunctionArgumentType> arguments = new ArrayList<>();
     for (FunctionArgumentTypeProto argument : proto.getArgumentList()) {
       arguments.add(FunctionArgumentType.deserialize(argument, pools));
@@ -259,5 +260,18 @@ public final class FunctionSignature implements Serializable {
 
   public boolean isDefaultValue() {
     return false;
+  }
+
+  private void validate() {
+    boolean hasDefaultArg = false;
+    for (FunctionArgumentType argument : arguments) {
+      if (hasDefaultArg) {
+        Preconditions.checkArgument(
+            argument.getOptions().getDefault() != null,
+            "Optional arguments with default values must be at the end of the argument list");
+      } else if (argument.getOptions().getDefault() != null) {
+        hasDefaultArg = true;
+      }
+    }
   }
 }

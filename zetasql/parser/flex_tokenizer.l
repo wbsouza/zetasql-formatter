@@ -127,8 +127,6 @@ constexpr char ::zetasql::parser::ZetaSqlFlexTokenizer::kEofSentinelInput[];
    below.
 */
 
-bit_shift_op                <<|>>
-comparison_op               =|<=|>=|<|>|<>|!=
 decimal_digit               [0-9]
 decimal_digits              {decimal_digit}+
 opt_decimal_digits          {decimal_digit}*
@@ -347,6 +345,7 @@ add { return BisonParserImpl::token::KW_ADD; }
 aggregate { return BisonParserImpl::token::KW_AGGREGATE; }
 all { return BisonParserImpl::token::KW_ALL; }
 alter { return BisonParserImpl::token::KW_ALTER; }
+analyze { return BisonParserImpl::token::KW_ANALYZE; }
 and {
   if (YY_START == IN_BETWEEN) {
     // See IN_BETWEEN tokenizer mode description.
@@ -358,6 +357,7 @@ and {
   }
   return BisonParserImpl::token::KW_AND;
 }
+anonymization { return BisonParserImpl::token::KW_ANONYMIZATION; }
 any { return BisonParserImpl::token::KW_ANY; }
 array { return BisonParserImpl::token::KW_ARRAY; }
 as { return BisonParserImpl::token::KW_AS; }
@@ -383,6 +383,9 @@ cascade { return BisonParserImpl::token::KW_CASCADE; }
 case { return BisonParserImpl::token::KW_CASE; }
 cast { return BisonParserImpl::token::KW_CAST; }
 check { return BisonParserImpl::token::KW_CHECK; }
+clamped { return BisonParserImpl::token::KW_CLAMPED; }
+clone { return BisonParserImpl::token::KW_CLONE; }
+copy { return BisonParserImpl::token::KW_COPY; }
 cluster { return BisonParserImpl::token::KW_CLUSTER; }
 collate { return BisonParserImpl::token::KW_COLLATE; }
 column { return BisonParserImpl::token::KW_COLUMN; }
@@ -455,6 +458,7 @@ first { return BisonParserImpl::token::KW_FIRST; }
 following { return BisonParserImpl::token::KW_FOLLOWING; }
 for { return BisonParserImpl::token::KW_FOR; }
 foreign { return BisonParserImpl::token::KW_FOREIGN; }
+format { return BisonParserImpl::token::KW_FORMAT; }
 from { return BisonParserImpl::token::KW_FROM; }
 full { return BisonParserImpl::token::KW_FULL; }
 function { return BisonParserImpl::token::KW_FUNCTION; }
@@ -473,6 +477,7 @@ immediate { return BisonParserImpl::token::KW_IMMEDIATE; }
 immutable { return BisonParserImpl::token::KW_IMMUTABLE; }
 import { return BisonParserImpl::token::KW_IMPORT; }
 in { return BisonParserImpl::token::KW_IN; }
+include { return BisonParserImpl::token::KW_INCLUDE; }
 inout { return BisonParserImpl::token::KW_INOUT; }
 index { return BisonParserImpl::token::KW_INDEX; }
 inner { return BisonParserImpl::token::KW_INNER; }
@@ -512,18 +517,18 @@ no { return BisonParserImpl::token::KW_NO; }
 not { return BisonParserImpl::token::KW_NOT; }
  /* This returns a different token because returning KW_NOT would confuse the
     operator precedence parsing. Boolean NOT has a different precedence than
-    NOT BETWEEN/IN/LIKE. The final character at the end is intended to avoid
-    cases like "NOT Info.foo" being interpreted as having a NOT for IN. This
-    unfortunately doesn't match at EOF, so "NOT IN" at the very end of the file
-    will cause bad error messages. There is no situation where that is valid
-    syntax, so there will never be any rejections as a result.
+    NOT BETWEEN/IN/LIKE/DISTINCT. The final character at the end is intended to
+    avoid cases like "NOT Info.foo" being interpreted as having a NOT for IN.
+    This unfortunately doesn't match at EOF, so "NOT IN" at the very end of the
+    file will cause bad error messages. There is no situation where that is
+    valid syntax, so there will never be any rejections as a result.
  */
-not{whitespace}(between|in|like)[^A-Z_0-9] {
+not{whitespace}(between|in|like|distinct)[^A-Z_0-9] {
   SET_RETURN_PREFIX_LENGTH(3);
   if (mode_ == BisonParserMode::kTokenizer) {
     return BisonParserImpl::token::KW_NOT;
   }
-  return BisonParserImpl::token::KW_NOT_FOR_BETWEEN_IN_LIKE;
+  return BisonParserImpl::token::KW_NOT_SPECIAL;
 }
 null { return BisonParserImpl::token::KW_NULL; }
 nulls { return BisonParserImpl::token::KW_NULLS; }
@@ -549,12 +554,14 @@ private { return BisonParserImpl::token::KW_PRIVATE; }
 privileges { return BisonParserImpl::token::KW_PRIVILEGES; }
 proto { return BisonParserImpl::token::KW_PROTO; }
 public { return BisonParserImpl::token::KW_PUBLIC; }
+qualify { return BisonParserImpl::token::KW_QUALIFY; }
 raise { return BisonParserImpl::token::KW_RAISE; }
 range { return BisonParserImpl::token::KW_RANGE; }
 read { return BisonParserImpl::token::KW_READ; }
 recursive { return BisonParserImpl::token::KW_RECURSIVE; }
 references { return BisonParserImpl::token::KW_REFERENCES; }
 rename { return BisonParserImpl::token::KW_RENAME; }
+repeat { return BisonParserImpl::token::KW_REPEAT; }
 repeatable { return BisonParserImpl::token::KW_REPEATABLE; }
 replace { return BisonParserImpl::token::KW_REPLACE; }
 replace_fields { return BisonParserImpl::token::KW_REPLACE_FIELDS; }
@@ -571,6 +578,7 @@ rows { return BisonParserImpl::token::KW_ROWS; }
 run { return BisonParserImpl::token::KW_RUN; }
 safe_cast { return BisonParserImpl::token::KW_SAFE_CAST; }
 schema { return BisonParserImpl::token::KW_SCHEMA; }
+search { return BisonParserImpl::token::KW_SEARCH; }
 security { return BisonParserImpl::token::KW_SECURITY; }
 select { return BisonParserImpl::token::KW_SELECT; }
 set { return BisonParserImpl::token::KW_SET; }
@@ -578,6 +586,7 @@ show { return BisonParserImpl::token::KW_SHOW; }
 simple { return BisonParserImpl::token::KW_SIMPLE; }
 some { return BisonParserImpl::token::KW_SOME; }
 source { return BisonParserImpl::token::KW_SOURCE; }
+snapshot { return BisonParserImpl::token::KW_SNAPSHOT; }
 sql { return BisonParserImpl::token::KW_SQL; }
 stable { return BisonParserImpl::token::KW_STABLE; }
 start { return BisonParserImpl::token::KW_START; }
@@ -588,6 +597,8 @@ system { return BisonParserImpl::token::KW_SYSTEM; }
 system_time { return BisonParserImpl::token::KW_SYSTEM_TIME; }
 table { return BisonParserImpl::token::KW_TABLE; }
 tablesample { return BisonParserImpl::token::KW_TABLESAMPLE; }
+pivot { return BisonParserImpl::token::KW_PIVOT; }
+unpivot { return BisonParserImpl::token::KW_UNPIVOT; }
 target { return BisonParserImpl::token::KW_TARGET; }
 temp { return BisonParserImpl::token::KW_TEMP; }
 temporary { return BisonParserImpl::token::KW_TEMPORARY; }
@@ -605,6 +616,7 @@ unbounded { return BisonParserImpl::token::KW_UNBOUNDED; }
 union { return BisonParserImpl::token::KW_UNION; }
 unnest { return BisonParserImpl::token::KW_UNNEST; }
 unique { return BisonParserImpl::token::KW_UNIQUE; }
+until { return BisonParserImpl::token::KW_UNTIL; }
 update { return BisonParserImpl::token::KW_UPDATE; }
 using { return BisonParserImpl::token::KW_USING; }
 value { return BisonParserImpl::token::KW_VALUE; }
@@ -766,7 +778,7 @@ zone { return BisonParserImpl::token::KW_ZONE; }
   // If this triggers, then we pushed a non-INITIAL state on top of
   // STACK_BOTTOM. That should be impossible, because the only rules that are
   // active in state STACK_BOTTOM are the catch-all error rules.
-  DCHECK(YY_START != STACK_BOTTOM);
+  ZETASQL_DCHECK(YY_START != STACK_BOTTOM);
   if (YY_START != STACK_BOTTOM) {
     yy_pop_state();
   }

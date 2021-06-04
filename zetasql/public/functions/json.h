@@ -133,17 +133,60 @@ class JsonPathEvaluator {
   //   json: [1,2,3]
   //   value -> [1, 2, 3] (ARRAY, JSONPath is $ by default if not provided)
   //
+  //   json: [1, null, "foo"]
+  //   value -> [1, null, "\"foo\""]
+  //
   //   json: {"a":[{"b":"foo","c":1},{"b":"bar","c":2}],"d":"baz"}
   //   json_path: $.a
   //   value -> ["{\"b\":\"foo\",\"c\":1}","{\"b\":\"bar\",\"c\":2}"]
   //       (ARRAY, objects in the form of strings)
   //
-  // Error cases are the same as in JsonExtract function.
-  // Null cases are the same as in JsonExtract, except for the addition of:
+  // Error cases are the same as in Extract function.
+  // Null cases are the same as in Extract, except for the addition of:
   // * json_path does not correspond to an array in json.
   absl::Status ExtractArray(absl::string_view json,
                             std::vector<std::string>* value,
                             bool* is_null) const;
+
+  // Similar to the string version above, but for JSON types.
+  // Returns absl::nullopt to indicate that:
+  // * json_path does not match anything.
+  // * json_path uses an array index but the value is not an array, or the path
+  //   uses a name but the value is not an object.
+  // * json_path does not correspond to an array value in json.
+  absl::optional<std::vector<JSONValueConstRef>> ExtractArray(
+      JSONValueConstRef input) const;
+
+  // Similar to ExtractArray(), except requires 'json' to be an array of scalar
+  // value, and the strings in the array will be returned without quotes or
+  // escaping. An absl::nullopt in 'value' represents a SQL NULL.
+  //
+  // Example:
+  //   json: ["foo","bar","baz"]
+  //   json_path: $
+  //   value -> ["foo", "bar", "baz"] (ARRAY, unquoted strings)
+  //
+  //   json: [1,2,3]
+  //   value -> [1, 2, 3] (ARRAY, JSONPath is $ by default if not provided)
+  //
+  //   json: [1, null, "foo", "null"]
+  //   value -> [1, NULL, "foo", "null"]
+  //
+  // Error cases are the same as in ExtractArray function.
+  // Null cases are the same as in ExtractArray, except for the addition of:
+  // * json_path does not correspond to an array of scalar objects in json.
+  absl::Status ExtractStringArray(
+      absl::string_view json, std::vector<absl::optional<std::string>>* value,
+      bool* is_null) const;
+
+  // Similar to the string version above, but for JSON types.
+  // Returns absl::nullopt to indicate that:
+  // * json_path does not match anything.
+  // * json_path uses an array index but the value is not an array, or the path
+  //   uses a name but the value is not an object.
+  // * json_path does not correspond to an array of scalars in json.
+  absl::optional<std::vector<absl::optional<std::string>>> ExtractStringArray(
+      JSONValueConstRef input) const;
 
   // Enables the escaping of special characters for JSON_EXTRACT.
   //
@@ -175,6 +218,15 @@ class JsonPathEvaluator {
   bool escape_special_characters_ = false;
   std::function<void(absl::string_view)> escaping_needed_callback_;
 };
+
+// Converts a JSONPath token (unquoted and unescaped) into a SQL standard
+// JSONPath token (used by JSON_QUERY and JSON_VALUE).
+// Examples:
+// foo is converted to foo
+// a.b is converted to "a.b"
+// te"st' is converted to "te\"st'"
+std::string ConvertJSONPathTokenToSqlStandardMode(
+    absl::string_view json_path_token);
 
 // Converts a non SQL standard JSONPath (JSONPaths used by
 // JSON_EXTRACT for example) into a SQL standard JSONPath (used by JSON_QUERY

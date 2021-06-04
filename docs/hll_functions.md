@@ -39,21 +39,21 @@ interval (CI) of typical precisions:
 
 |   Precision  | Max. Sketch Size (KiB) | 65% CI | 95% CI | 99% CI |
 |--------------|------------------------|--------|--------|--------|
-| 10           | 1                      | ±1.63% | ±3.25% | ±6.50% |
-| 11           | 2                      | ±1.15% | ±2.30% | ±4.60% |
-| 12           | 4                      | ±0.81% | ±1.63% | ±3.25% |
-| 13           | 8                      | ±0.57% | ±1.15% | ±1.72% |
-| 14           | 16                     | ±0.41% | ±0.81% | ±1.22% |
-| 15 (default) | 32                     | ±0.29% | ±0.57% | ±0.86% |
-| 16           | 64                     | ±0.20% | ±0.41% | ±0.61% |
-| 17           | 128                    | ±0.14% | ±0.29% | ±0.43% |
-| 18           | 256                    | ±0.10% | ±0.20% | ±0.41% |
-| 19           | 512                    | ±0.07% | ±0.14% | ±0.29% |
-| 20           | 1024                   | ±0.05% | ±0.10% | ±0.20% |
-| 21           | 2048                   | ±0.04% | ±0.07% | ±0.14% |
-| 22           | 4096                   | ±0.03% | ±0.05% | ±0.10% |
-| 23           | 8192                   | ±0.02% | ±0.04% | ±0.07% |
-| 24           | 16384                  | ±0.01% | ±0.03% | ±0.05% |
+| 10           | 1                      | ±3.25% | ±6.50% | ±9.75% |
+| 11           | 2                      | ±2.30% | ±4.60% | ±6.89% |
+| 12           | 4                      | ±1.63% | ±3.25% | ±4.88% |
+| 13           | 8                      | ±1.15% | ±2.30% | ±3.45% |
+| 14           | 16                     | ±0.81% | ±1.63% | ±2.44% |
+| 15 (default) | 32                     | ±0.57% | ±1.15% | ±1.72% |
+| 16           | 64                     | ±0.41% | ±0.81% | ±1.22% |
+| 17           | 128                    | ±0.29% | ±0.57% | ±0.86% |
+| 18           | 256                    | ±0.20% | ±0.41% | ±0.61% |
+| 19           | 512                    | ±0.14% | ±0.29% | ±0.43% |
+| 20           | 1024                   | ±0.10% | ±0.20% | ±0.30% |
+| 21           | 2048                   | ±0.07% | ±0.14% | ±0.22% |
+| 22           | 4096                   | ±0.05% | ±0.10% | ±0.15% |
+| 23           | 8192                   | ±0.04% | ±0.07% | ±0.11% |
+| 24           | 16384                  | ±0.03% | ±0.05% | ±0.08% |
 
 If the input is NULL, this function returns NULL.
 
@@ -62,7 +62,7 @@ For more information, see
 
 **Supported input types**
 
-INT64, UINT64, NUMERIC, STRING, BYTES
+INT64, UINT64, NUMERIC, BIGNUMERIC, STRING, BYTES
 
 **Return type**
 
@@ -215,7 +215,8 @@ FROM (
 +------------+---------+-----------------+
 ```
 
-### About the HLL++ algorithm {: #about-hll-alg }
+### About the HLL++ algorithm 
+<a id="about-hll-alg"></a>
 
 The [HLL++ algorithm][hll-link-to-research-whitepaper]
 improves on the [HLL][hll-link-to-hyperloglog-wikipedia]
@@ -224,7 +225,8 @@ The HLL++ algorithm includes a 64-bit hash function, sparse
 representation to reduce memory requirements for small cardinality estimates,
 and empirical bias correction for small cardinality estimates.
 
-### About sketches {: #sketches-hll }
+### About sketches 
+<a id="sketches-hll"></a>
 
 A sketch is a summary of a large data stream. You can extract statistics
 from a sketch to estimate particular statistics of the original data, or
@@ -251,6 +253,6 @@ non-additive functions like `COUNT(DISTINCT)`.
 [hll-sketches]: #sketches-hll
 [hll-algorithm]: #about-hll-alg
 
-[approx-functions-reference]: https://github.com/google/zetasql/blob/master/docs/approximate_aggregate_functions
-[aggregate-functions-reference]: https://github.com/google/zetasql/blob/master/docs/aggregate_functions
+[approx-functions-reference]: https://github.com/google/zetasql/blob/master/docs/approximate_aggregate_functions.md
+[aggregate-functions-reference]: https://github.com/google/zetasql/blob/master/docs/aggregate_functions.md
 

@@ -61,7 +61,9 @@ void QueryExpression::ClearAllClauses() {
   order_by_hints_.clear();
   limit_.clear();
   offset_.clear();
+  anonymization_options_.clear();
   with_recursive_ = false;
+  pivot_.clear();
 }
 
 std::string QueryExpression::GetSQLQuery() const {
@@ -74,9 +76,12 @@ std::string QueryExpression::GetSQLQuery() const {
     absl::StrAppend(&sql, JoinListWithAliases(with_list_, ", "), " ");
   }
   if (!select_list_.empty()) {
-    DCHECK(set_op_type_.empty() && set_op_modifier_.empty() &&
+    ZETASQL_DCHECK(set_op_type_.empty() && set_op_modifier_.empty() &&
            set_op_scan_list_.empty());
     absl::StrAppend(&sql, "SELECT ",
+                    anonymization_options_.empty()
+                        ? ""
+                        : absl::StrCat(anonymization_options_, " "),
                     query_hints_.empty() ? "" : absl::StrCat(query_hints_, " "),
                     select_as_modifier_.empty()
                         ? ""
@@ -85,10 +90,10 @@ std::string QueryExpression::GetSQLQuery() const {
   }
 
   if (!set_op_scan_list_.empty()) {
-    DCHECK(!set_op_type_.empty());
-    DCHECK(!set_op_modifier_.empty());
-    DCHECK(select_list_.empty());
-    DCHECK(from_.empty() && where_.empty() && group_by_list_.empty());
+    ZETASQL_DCHECK(!set_op_type_.empty());
+    ZETASQL_DCHECK(!set_op_modifier_.empty());
+    ZETASQL_DCHECK(select_list_.empty());
+    ZETASQL_DCHECK(from_.empty() && where_.empty() && group_by_list_.empty());
     for (int i = 0; i < set_op_scan_list_.size(); ++i) {
       const auto& qe = set_op_scan_list_[i];
       if (i > 0) {
@@ -104,6 +109,10 @@ std::string QueryExpression::GetSQLQuery() const {
 
   if (!from_.empty()) {
     absl::StrAppend(&sql, " FROM ", from_);
+  }
+
+  if (!pivot_.empty()) {
+    absl::StrAppend(&sql, pivot_);
   }
 
   if (!where_.empty()) {
@@ -161,8 +170,8 @@ bool QueryExpression::CanFormSQLQuery() const {
 }
 
 void QueryExpression::Wrap(const std::string& alias) {
-  DCHECK(CanFormSQLQuery());
-  DCHECK(!alias.empty());
+  ZETASQL_DCHECK(CanFormSQLQuery());
+  ZETASQL_DCHECK(!alias.empty());
   const std::string sql = GetSQLQuery();
   ClearAllClauses();
   from_ = absl::StrCat("(", sql, ") AS ", alias);
@@ -186,7 +195,7 @@ bool QueryExpression::TrySetSelectClause(
     return false;
   }
   select_list_ = select_list;
-  DCHECK(query_hints_.empty());
+  ZETASQL_DCHECK(query_hints_.empty());
   query_hints_ = select_hints;
   return true;
 }
@@ -218,11 +227,11 @@ bool QueryExpression::TrySetSetOpScanList(
   if (!CanSetSetOpScanList()) {
     return false;
   }
-  DCHECK(set_op_scan_list != nullptr);
+  ZETASQL_DCHECK(set_op_scan_list != nullptr);
   set_op_scan_list_ = std::move(*set_op_scan_list);
   set_op_scan_list->clear();
-  DCHECK(set_op_type_.empty());
-  DCHECK(set_op_modifier_.empty());
+  ZETASQL_DCHECK(set_op_type_.empty());
+  ZETASQL_DCHECK(set_op_modifier_.empty());
   set_op_type_ = set_op_type;
   set_op_modifier_ = set_op_modifier;
   query_hints_ = query_hints;
@@ -237,7 +246,7 @@ bool QueryExpression::TrySetGroupByClause(
     return false;
   }
   group_by_list_ = group_by_list;
-  DCHECK(group_by_hints_.empty());
+  ZETASQL_DCHECK(group_by_hints_.empty());
   group_by_hints_ = group_by_hints;
   rollup_column_id_list_ = rollup_column_id_list;
   return true;
@@ -250,7 +259,7 @@ bool QueryExpression::TrySetOrderByClause(
     return false;
   }
   order_by_list_ = order_by_list;
-  DCHECK(order_by_hints_.empty());
+  ZETASQL_DCHECK(order_by_hints_.empty());
   order_by_hints_ = order_by_hints;
   return true;
 }
@@ -268,6 +277,23 @@ bool QueryExpression::TrySetOffsetClause(const std::string& offset) {
     return false;
   }
   offset_ = offset;
+  return true;
+}
+
+bool QueryExpression::TrySetWithAnonymizationClause(
+    const std::string& anonymization_options) {
+  if (!CanSetWithAnonymizationClause()) {
+    return false;
+  }
+  anonymization_options_ = anonymization_options;
+  return true;
+}
+
+bool QueryExpression::TrySetPivotClause(const std::string& pivot) {
+  if (!CanSetPivotClause()) {
+    return false;
+  }
+  pivot_ = pivot;
   return true;
 }
 
@@ -299,29 +325,34 @@ bool QueryExpression::CanSetLimitClause() const {
 }
 bool QueryExpression::CanSetOffsetClause() const { return !HasOffsetClause(); }
 
+bool QueryExpression::CanSetPivotClause() const { return !HasPivotClause(); }
+
 const std::vector<std::pair<std::string, std::string>>&
 QueryExpression::SelectList() const {
   if (!set_op_scan_list_.empty()) {
-    DCHECK(select_list_.empty());
+    ZETASQL_DCHECK(select_list_.empty());
     return set_op_scan_list_[0]->SelectList();
   }
 
   return select_list_;
 }
+bool QueryExpression::CanSetWithAnonymizationClause() const {
+  return !HasWithAnonymizationClause();
+}
 
 void QueryExpression::SetAliasForSelectColumn(int select_column_pos,
                                               const std::string& alias) {
   if (!set_op_scan_list_.empty()) {
-    DCHECK(select_list_.empty());
+    ZETASQL_DCHECK(select_list_.empty());
     set_op_scan_list_[0]->SetAliasForSelectColumn(select_column_pos, alias);
   } else {
-    DCHECK_LT(select_column_pos, select_list_.size());
+    ZETASQL_DCHECK_LT(select_column_pos, select_list_.size());
     select_list_[select_column_pos].second = alias;
   }
 }
 
 void QueryExpression::SetSelectAsModifier(const std::string& modifier) {
-  DCHECK(select_as_modifier_.empty());
+  ZETASQL_DCHECK(select_as_modifier_.empty());
   select_as_modifier_ = modifier;
 }
 

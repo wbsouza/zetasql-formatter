@@ -19,7 +19,9 @@
 
 #include <stddef.h>
 #include <string.h>
+
 #include <algorithm>
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <new>
@@ -31,7 +33,10 @@
 
 #include "zetasql/base/arena.h"
 #include "absl/base/attributes.h"
+#include "absl/base/const_init.h"
+#include <cstdint>
 #include "absl/base/thread_annotations.h"
+#include "absl/hash/hash.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
@@ -66,7 +71,10 @@ class IdString {
   // Create an empty string.
   IdString() : IdString(*kEmptyString) {}
 
-  // Create an IdString in the global IdStringPool.  Memory will never be freed.
+  // Create an IdString in the global IdStringPool.
+  //
+  // WARNING: Memory allocated this way will never be freed.
+  // Do NOT use for any allocations that are done on a per-query basis.
   static IdString MakeGlobal(absl::string_view str);
 
   void clear() { *this = *kEmptyString; }
@@ -112,7 +120,8 @@ class IdString {
     other.CheckAlive();
     if (value_ == other.value_) return true;
     if (size() != other.size()) return false;
-    const int64_t* str_words = reinterpret_cast<const int64_t*>(value_->str.data());
+    const int64_t* str_words =
+        reinterpret_cast<const int64_t*>(value_->str.data());
     const int64_t* other_str_words =
         reinterpret_cast<const int64_t*>(other.value_->str.data());
     return WordsEqual(str_words, other_str_words, value_->size_words);
@@ -122,7 +131,8 @@ class IdString {
     CheckAlive();
     other.CheckAlive();
     if (value_ == other.value_) return false;
-    const int64_t* str_words = reinterpret_cast<const int64_t*>(value_->str.data());
+    const int64_t* str_words =
+        reinterpret_cast<const int64_t*>(value_->str.data());
     const int64_t* other_str_words =
         reinterpret_cast<const int64_t*>(other.value_->str.data());
     int64_t min_size_words =
@@ -206,7 +216,7 @@ class IdString {
       // atomic value that can only be overwritten by an identical value.
       size_t h = hash_;
       if (h == 0) {
-        h = std::hash<std::string>()(std::string(str));
+        h = absl::Hash<absl::string_view>()(str);
         hash_ = h;
       }
       return h;
@@ -218,7 +228,7 @@ class IdString {
       // atomic value that can only be overwritten by an identical value.
       size_t h = hash_case_;
       if (h == 0) {
-        h = std::hash<std::string>()(std::string(str_lower));
+        h = absl::Hash<absl::string_view>()(str_lower);
         hash_case_ = h;
       }
       return h;
@@ -247,7 +257,8 @@ class IdString {
 
   // Returns true if the first num_words values pointed to by 'lhs' and 'rhs'
   // are equal.
-  static bool WordsEqual(const int64_t* lhs, const int64_t* rhs, int64_t num_words) {
+  static bool WordsEqual(const int64_t* lhs, const int64_t* rhs,
+                         int64_t num_words) {
     switch (num_words) {
       case 1:
         return lhs[0] == rhs[0];
@@ -410,8 +421,11 @@ class IdStringPool {
 #endif
   }
 
-  // Create an IdString in the global IdStringPool.  Memory will never be freed.
+  // Create an IdString in the global IdStringPool.
   // This function is thread safe.
+  //
+  // WARNING: Memory allocated this way will never be freed.
+  // Do NOT use for any allocations that are done on a per-query basis.
   static IdString MakeGlobal(absl::string_view str);
 
  private:
@@ -484,7 +498,7 @@ class IdStringPool {
 
 inline IdString IdStringPool::MakeGlobal(absl::string_view str) {
   static IdStringPool* global_pool = new IdStringPool;
-  static absl::Mutex global_pool_mutex;
+  ABSL_CONST_INIT static absl::Mutex global_pool_mutex(absl::kConstInit);
   absl::MutexLock lock(&global_pool_mutex);
   return global_pool->Make(str);
 }

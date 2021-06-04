@@ -25,8 +25,10 @@ option java_outer_classname = "ZetaSQLResolvedAST";
 
 option optimize_for = CODE_SIZE;
 
+import "zetasql/public/annotation.proto";
 import "zetasql/public/proto/type_annotation.proto";
 import "zetasql/public/type.proto";
+import "zetasql/public/type_parameters.proto";
 import "zetasql/proto/function.proto";
 import "zetasql/resolved_ast/serialization.proto";
 import "zetasql/resolved_ast/resolved_ast_enums.proto";

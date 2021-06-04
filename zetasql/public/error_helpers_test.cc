@@ -25,6 +25,7 @@
 #include "zetasql/base/enum_utils.h"
 #include "zetasql/common/errors.h"
 #include "zetasql/common/status_payload_utils.h"
+#include "zetasql/common/testing/proto_matchers.h"
 #include "zetasql/base/testing/status_matchers.h"
 #include "zetasql/proto/internal_error_location.pb.h"
 #include "zetasql/public/error_location.pb.h"
@@ -40,6 +41,8 @@
 
 namespace zetasql {
 
+using ::zetasql::testing::EqualsProto;
+using ::testing::ElementsAreArray;
 using ::testing::HasSubstr;
 using ::zetasql_base::testing::StatusIs;
 
@@ -156,7 +159,7 @@ TEST(ErrorHelpersTest, ErrorLocationHelpers) {
       internal::StatusToString(status2));
   EXPECT_TRUE(HasErrorLocation(status2));
   EXPECT_TRUE(GetErrorLocation(status2, &location));
-  EXPECT_EQ("line: 1 column: 2", location.ShortDebugString());
+  EXPECT_THAT(location, EqualsProto("line: 1 column: 2"));
   ClearErrorLocation(&status2);
   EXPECT_EQ("generic::unknown: Message2", internal::StatusToString(status2));
   // No payload, not an empty payload.
@@ -186,7 +189,7 @@ TEST(ErrorHelpersTest, ErrorLocationHelpers) {
 
   EXPECT_TRUE(HasErrorLocation(status3));
   EXPECT_TRUE(GetErrorLocation(status3, &location));
-  EXPECT_EQ("line: 3 column: 4", location.ShortDebugString());
+  EXPECT_THAT(location, EqualsProto("line: 3 column: 4"));
   ClearErrorLocation(&status3);
   EXPECT_EQ(
       "generic::invalid_argument: Message3 "
@@ -203,8 +206,8 @@ static void TestGetCaret(const std::string& query,
 }
 
 static ErrorLocation MakeErrorLocation(int line, int column) {
-  DCHECK_GE(line, 1) << "with line = " << line << ", column = " << column;
-  DCHECK_GE(column, 1) << "with line = " << line << ", column = " << column;
+  ZETASQL_DCHECK_GE(line, 1) << "with line = " << line << ", column = " << column;
+  ZETASQL_DCHECK_GE(column, 1) << "with line = " << line << ", column = " << column;
 
   ErrorLocation location;
   location.set_line(line);
@@ -275,7 +278,7 @@ TEST(ErrorHelpersTest, GetErrorStringWithCaret) {
       GetErrorStringWithCaret(str1, MakeErrorLocation(1, 0)),
       "Check failed: column >= 1");
   EXPECT_DEBUG_DEATH(GetErrorStringWithCaret(str1, MakeErrorLocation(4, 1)),
-                     "No line .* in .*");
+                     "Query had .* lines but line .* was requested");
   EXPECT_DEBUG_DEATH(
       GetErrorStringWithCaret(str1, MakeErrorLocation(1, 5)),
       "Check failed: location.column.. <= truncated_input->size");
@@ -291,13 +294,13 @@ TEST(ErrorHelpersTest, GetErrorStringWithCaret) {
     absl::StrAppend(&line, block.substr(0, block_size - 1), " ");
     block_size += 3;
   }
-  LOG(INFO) << "Made line '" << line << "' with length " << line.length();
+  ZETASQL_LOG(INFO) << "Made line '" << line << "' with length " << line.length();
   const int kMaxWidth = 56;
   std::vector<std::string> outputs;
   for (int i = 1; i < line.length() - 1; i += 7) {
     outputs.push_back(
         GetErrorStringWithCaret(line, MakeErrorLocation(1, i), kMaxWidth));
-    LOG(INFO) << "Error at column " << i << "\n" << outputs.back();
+    ZETASQL_LOG(INFO) << "Error at column " << i << "\n" << outputs.back();
 
     // Should be less than max_width chars before the newline.
     EXPECT_LE(outputs.back().find('\n'), kMaxWidth);
@@ -314,7 +317,7 @@ TEST(ErrorHelpersTest, GetErrorStringWithCaret) {
   // positions.  These look like substring of the full string of
   // length <= kMaxWidth that try to start at word boundary.
   // Some don't find an acceptable word boundary and just point at the middle.
-  EXPECT_THAT(outputs, testing::ElementsAreArray({
+  EXPECT_THAT(outputs, ElementsAreArray({
       "1_34 6_34567890 17_4567890123456 34_45678901234567890...\n"
       "^",
       "1_34 6_34567890 17_4567890123456 34_45678901234567890...\n"

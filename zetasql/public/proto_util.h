@@ -17,6 +17,7 @@
 #ifndef ZETASQL_PUBLIC_PROTO_UTIL_H_
 #define ZETASQL_PUBLIC_PROTO_UTIL_H_
 
+#include <cstdint>
 #include <vector>
 
 #include "google/protobuf/descriptor.h"
@@ -43,6 +44,9 @@ struct ProtoFieldDefaultOptions {
 
   // Whether the format annotations should be ignored.
   bool ignore_format_annotations = false;
+
+  // Whether to always use non-null values for map entry fields.
+  bool map_fields_always_nonnull = false;
 
   // Constructs a ProtoFieldDefaultOptions for a given field and language
   // settings.
@@ -238,6 +242,20 @@ absl::Status ProtoHasField(
 // buffer map if it is an ARRAY<PROTO> where the array element type is a
 // protocol buffer map entry descriptor.
 bool IsProtoMap(const Type* type);
+
+// A variant containing all the possible value types of a proto map key.
+using MapKeyVariant = absl::variant<bool, int64_t, uint64_t, std::string>;
+
+// Copies the elements of array_of_map_entry into the vector output. The first
+// element of each pair is the key, the second is the value. Note that
+// duplicate keys are not eliminated during this function call. key_type
+// or value_type may be null, in which case the Values of that element of each
+// pair will be invalid.
+//
+// REQUIRES: IsProtoMap(array_of_map_entry) is true.
+absl::Status ParseProtoMap(const Value& array_of_map_entry,
+                           const Type* key_type, const Type* value_type,
+                           std::vector<std::pair<Value, Value>>& output);
 
 }  // namespace zetasql
 

@@ -57,6 +57,8 @@ class ProtoType;
 class StructType;
 class Type;
 class TypeFactory;
+class TypeParameters;
+class TypeParameterValue;
 class Value;
 class ValueContent;
 class ValueProto;
@@ -97,9 +99,11 @@ class Type {
 
   bool IsTime() const { return kind_ == TYPE_TIME; }
   bool IsDatetime() const { return kind_ == TYPE_DATETIME; }
+  bool IsInterval() const { return kind_ == TYPE_INTERVAL; }
   bool IsNumericType() const { return kind_ == TYPE_NUMERIC; }
   bool IsBigNumericType() const { return kind_ == TYPE_BIGNUMERIC; }
   bool IsJsonType() const { return kind_ == TYPE_JSON; }
+  bool IsTokenListType() const { return kind_ == TYPE_TOKENLIST; }
 
   // DEPRECATED, use UsingFeatureV12CivilTimeType() instead.
   //
@@ -131,6 +135,7 @@ class Type {
 
   bool IsGeography() const { return kind_ == TYPE_GEOGRAPHY; }
   bool IsJson() const { return kind_ == TYPE_JSON; }
+  bool IsTokenList() const { return kind_ == TYPE_TOKENLIST; }
   bool IsEnum() const { return kind_ == TYPE_ENUM; }
   bool IsArray() const { return kind_ == TYPE_ARRAY; }
   bool IsStruct() const { return kind_ == TYPE_STRUCT; }
@@ -389,6 +394,13 @@ class Type {
   // messages.
   virtual std::string TypeName(ProductMode mode) const = 0;
 
+  // Same as above, but if <type_params> is not empty, then the type parameter
+  // values are included with the SQL name for this type. The output is
+  // reparseable as part of a query. If <type_params> is an invalid input for
+  // the given Type, then an error status will be returned.
+  virtual zetasql_base::StatusOr<std::string> TypeNameWithParameters(
+      const TypeParameters& type_params, ProductMode mode) const = 0;
+
   // Returns the full description of the type without truncation. This should
   // only be used for logging or tests and not for any user-facing messages. For
   // proto-based types, this will return PROTO<name> or ENUM<name>, which are
@@ -444,14 +456,18 @@ class Type {
 
   // Returns the type kind if 'type_name' is a simple type in 'mode', assuming
   // all language features are enabled. Returns TYPE_UNKNOWN otherwise.
-  // 'type_name' is case-insensitive.
-  static TypeKind GetTypeKindIfSimple(absl::string_view type_name,
-                                      ProductMode mode);
+  // 'type_name' is case-insensitive. Note that we return a simple type only if
+  // 'type_name' is its builtin type name rather than an engine-defined alias
+  // name for the type.
+  static TypeKind ResolveBuiltinTypeNameToKindIfSimple(
+      absl::string_view type_name, ProductMode mode);
   // Returns the type kind if 'type_name' is a simple type given
   // 'language_options', or TYPE_UNKNOWN otherwise.
-  // 'type_name' is case-insensitive.
-  static TypeKind GetTypeKindIfSimple(absl::string_view type_name,
-                                      const LanguageOptions& language_options);
+  // 'type_name' is case-insensitive. Note that we return a simple type only if
+  // 'type_name' is its builtin type name rather than an engine-defined alias
+  // name for the type.
+  static TypeKind ResolveBuiltinTypeNameToKindIfSimple(
+      absl::string_view type_name, const LanguageOptions& language_options);
 
   // Functions below this line are for internal use only.
 
@@ -476,6 +492,24 @@ class Type {
   // The nesting depth of the tree of types (via StructType and ArrayType) below
   // this type. For simple types this is 0.
   virtual int nesting_depth() const { return 0; }
+
+  // Performs common validation for parameterized types. Returns an empty
+  // TypeParameters class unless overridden. TypeParameters are resolved based
+  // on the input type and validated literals.
+  //
+  // <type_parameters_values> is the intermediate representation of type
+  // parameters as a vector of resolved TypeParameterValues.
+  // The output <TypeParameters> class is the final representation
+  // of type parameters in the ResolvedAST, storing the resolved type parameters
+  // as a TypeParametersProto.
+  virtual zetasql_base::StatusOr<TypeParameters> ValidateAndResolveTypeParameters(
+      const std::vector<TypeParameterValue>& type_parameter_values,
+      ProductMode mode) const;
+
+  // Validates resolved type parameters, used in validator.cc. Errors are
+  // returned as internal errors and are not intended to be user-visible.
+  virtual absl::Status ValidateResolvedTypeParameters(
+      const TypeParameters& type_parameters, ProductMode mode) const;
 
   // Controls for the building of the FileDescriptorSetMap.
   struct BuildFileDescriptorSetMapOptions {

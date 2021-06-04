@@ -22,6 +22,32 @@ in the function description:
   description), the default time zone, which is implementation defined, is used if a time
   zone is not specified.
 
+## Lambdas 
+<a id="lambdas"></a>
+
+**Syntax:**
+
+```sql
+(arg[, ...]) -> body_expression
+```
+
+```sql
+arg -> body_expression
+```
+
+**Description**
+
+For some functions, ZetaSQL supports lambdas as builtin function
+arguments. A lambda takes a list of arguments and an expression as the lambda
+body.
+
++   `arg`:
+    +   Name of the lambda argument is defined by the user.
+    +   No type is specified for the lambda argument. The type is inferred from
+        the context.
++   `body_expression`:
+    +   The lambda body can be any valid scalar expression.
+
 ## SAFE. prefix
 
 **Syntax:**
@@ -38,8 +64,7 @@ itself: it does not prevent errors that occur while evaluating argument
 expressions. The `SAFE.` prefix only prevents errors that occur because of the
 value of the function inputs, such as "value out of range" errors; other
 errors, such as internal or system errors, may still occur. If the function
-does not return an error, `SAFE.` has no effect on the output. If the function
-never returns an error, like `RAND`, then `SAFE.` has no effect.
+does not return an error, `SAFE.` has no effect on the output.
 
 [Operators][link-to-operators], such as `+` and `=`, do not support the `SAFE.`
 prefix. To prevent errors from a division
@@ -70,19 +95,23 @@ SELECT SAFE.SUBSTR('bar', 0, 2) AS safe_output;
 ```
 
 [link-to-SAFE_DIVIDE]: #safe_divide
-[link-to-SAFE_CAST]: #safe-casting
+[link-to-SAFE_CAST]: #safe_casting
 [link-to-operators]: #operators
 
 ## Conversion rules
 
 "Conversion" includes, but is not limited to, casting and coercion.
 
-+ Casting is explicit conversion and uses the `CAST()` function.
++ Casting is explicit conversion and uses the
+  [`CAST()`][con-rules-link-to-cast] function.
 + Coercion is implicit conversion, which ZetaSQL performs
   automatically under the conditions described below.
-+ There is a third group of conversion
-functions that have their own function
-  names, such as `UNIX_DATE()`.
+
+There are also conversions that have their own function names, such as
+`PARSE_DATE()`. To learn more about these functions, see
+[Conversion functions][con-rules-link-to-conversion-functions-other]
+
+### Comparison chart
 
 The table below summarizes all possible `CAST` and coercion possibilities for
 ZetaSQL data types. "Coercion To" applies to all *expressions* of a
@@ -103,73 +132,79 @@ and parameters can also be coerced. See [Literal Coercion][con-rules-link-to-lit
 
 <tr>
 <td>INT32</td>
-<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /><span>ENUM</span><br /></td>
-<td><span>DOUBLE</span><br /><span>INT64</span><br /><span>NUMERIC</span><br /></td>
+<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /><span>ENUM</span><br /></td>
+<td><span>INT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>DOUBLE</span><br /></td>
 </tr>
 
 <tr>
 <td>INT64</td>
-<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /><span>ENUM</span><br /></td>
-<td><span>DOUBLE</span><br /><span>NUMERIC</span><br /></td>
+<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /><span>ENUM</span><br /></td>
+<td><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>DOUBLE</span><br /></td>
 </tr>
 
 <tr>
 <td>UINT32</td>
-<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /><span>ENUM</span><br /></td>
-<td><span>INT64</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>DOUBLE</span><br /></td>
+<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /><span>ENUM</span><br /></td>
+<td><span>INT64</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>DOUBLE</span><br /></td>
 </tr>
 
 <tr>
 <td>UINT64</td>
-<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /><span>ENUM</span><br /></td>
-<td><span>DOUBLE</span><br /><span>NUMERIC</span><br /></td>
+<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /><span>ENUM</span><br /></td>
+<td><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>DOUBLE</span><br /></td>
 </tr>
 
 <tr>
 <td>NUMERIC</td>
-<td><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /></td>
+<td><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /></td>
+<td><span>BIGNUMERIC</span><br /><span>DOUBLE</span><br /></td>
+</tr>
+
+<tr>
+<td>BIGNUMERIC</td>
+<td><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /></td>
 <td><span>DOUBLE</span><br /></td>
 </tr>
 
 <tr>
 <td>FLOAT</td>
-<td><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /></td>
+<td><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /></td>
 <td><span>DOUBLE</span><br /></td>
 </tr>
 
 <tr>
 <td>DOUBLE</td>
-<td><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /></td>
+<td><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /></td>
 <td>&nbsp;</td>
 </tr>
 
 <tr>
 <td>BOOL</td>
-<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>STRING</span><br /><span>UINT32</span><br /><span>UINT64</span><br /></td>
+<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>STRING</span><br /></td>
 <td>&nbsp;</td>
 </tr>
 
 <tr>
 <td>STRING</td>
-<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /><span>BYTES</span><br /><span>DATE</span><br /><span>DATETIME</span><br /><span>TIME</span><br /><span>TIMESTAMP</span><br /><span>ENUM</span><br /><span>PROTO</span><br /></td>
+<td><span>BOOL</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>NUMERIC</span><br /><span>BIGNUMERIC</span><br /><span>FLOAT</span><br /><span>DOUBLE</span><br /><span>STRING</span><br /><span>BYTES</span><br /><span>DATE</span><br /><span>DATETIME</span><br /><span>TIME</span><br /><span>TIMESTAMP</span><br /><span>ENUM</span><br /><span>PROTO</span><br /></td>
 <td>&nbsp;</td>
 </tr>
 
 <tr>
 <td>BYTES</td>
-<td><span>BYTES</span><br /><span>PROTO</span><br /><span>STRING</span><br /></td>
+<td><span>STRING</span><br /><span>BYTES</span><br /><span>PROTO</span><br /></td>
 <td>&nbsp;</td>
 </tr>
 
 <tr>
 <td>DATE</td>
-<td><span>DATE</span><br /><span>DATETIME</span><br /><span>STRING</span><br /><span>TIMESTAMP</span><br /></td>
-<td>&nbsp;</td>
+<td><span>STRING</span><br /><span>DATE</span><br /><span>DATETIME</span><br /><span>TIMESTAMP</span><br /></td>
+<td><span>DATETIME</span><br /></td>
 </tr>
 
 <tr>
 <td>DATETIME</td>
-<td><span>DATE</span><br /><span>DATETIME</span><br /><span>STRING</span><br /><span>TIME</span><br /><span>TIMESTAMP</span><br /></td>
+<td><span>STRING</span><br /><span>DATE</span><br /><span>DATETIME</span><br /><span>TIME</span><br /><span>TIMESTAMP</span><br /></td>
 <td>&nbsp;</td>
 </tr>
 
@@ -181,7 +216,7 @@ and parameters can also be coerced. See [Literal Coercion][con-rules-link-to-lit
 
 <tr>
 <td>TIMESTAMP</td>
-<td><span>DATE</span><br /><span>DATETIME</span><br /><span>STRING</span><br /><span>TIME</span><br /><span>TIMESTAMP</span><br /></td>
+<td><span>STRING</span><br /><span>DATE</span><br /><span>DATETIME</span><br /><span>TIME</span><br /><span>TIMESTAMP</span><br /></td>
 <td>&nbsp;</td>
 </tr>
 
@@ -196,7 +231,7 @@ and parameters can also be coerced. See [Literal Coercion][con-rules-link-to-lit
 <td><span>
 ENUM
 (with the same ENUM name)
-</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>STRING</span><br /><span>UINT32</span><br /><span>UINT64</span><br /></td>
+</span><br /><span>INT32</span><br /><span>INT64</span><br /><span>UINT32</span><br /><span>UINT64</span><br /><span>STRING</span><br /></td>
 <td>ENUM
 (with the same ENUM name)</td>
 </tr>
@@ -212,7 +247,7 @@ ENUM
 <td><span>
 PROTO
 (with the same PROTO name)
-</span><br /><span>BYTES</span><br /><span>STRING</span><br /></td>
+</span><br /><span>STRING</span><br /><span>BYTES</span><br /></td>
 <td>PROTO
 (with the same PROTO name)</td>
 </tr>
@@ -222,404 +257,21 @@ PROTO
 
 ### Casting
 
-Syntax:
-
-```
-CAST(expr AS typename)
-```
-
-Cast syntax is used in a query to indicate that the result type of an
-expression should be converted to some other type.
-
-Example:
-
-```
-CAST(x=1 AS STRING)
-```
-
-This results in `"true"` if `x` is `1`, `"false"` for any other non-`NULL`
-value, and `NULL` if `x` is `NULL`.
-
-Casts between supported types that do not successfully map from the original
-value to the target domain produce runtime errors. For example, casting
-BYTES to STRING where the
-byte sequence is not valid UTF-8 results in a runtime error.
-
-Other examples include:
-
-+ Casting INT64 to INT32 where the value overflows INT32.
-+ Casting STRING to INT32 where the STRING contains non-digit characters.
-
-When casting an expression `x` of the following types, these rules apply:
-
-<table>
-<tr>
-<th>From</th>
-<th>To</th>
-<th>Rule(s) when casting <code>x</code></th>
-</tr>
-<tr>
-<td>Integer</td>
-<td>Floating Point</td>
-<td>Returns a close but potentially not exact
-Floating Point
-value.</td>
-</tr>
-<tr>
-<td>Integer</td>
-<td>BOOL</td>
-<td>Returns <code>FALSE</code> if <code>x</code> is <code>0</code>, <code>TRUE</code> otherwise.</td>
-</tr>
-<tr>
-<td>NUMERIC</td>
-<td>Floating Point</td>
-<td>NUMERIC will convert to the closest floating point number with a possible
-loss of precision.
-</td>
-</tr>
-<tr>
-<td>Floating Point</td>
-<td>Integer</td>
-<td>Returns the closest integer value.<br />
-Halfway cases such as 1.5 or -0.5 round away from zero.</td>
-</tr>
-<tr>
-<td>Floating Point</td>
-<td>STRING</td>
-<td>Returns an approximate string representation.<br />
-</td>
-</tr>
-<tr>
-<td>Floating Point</td>
-<td>NUMERIC</td>
-<td>If the floating point number has more than nine digits after the decimal
-  point, it will round
-  <a href="https://en.wikipedia.org/wiki/Rounding#Round_half_away_from_zero">
-  half away from zero</a>. Casting a <code>NaN</code>, <code>+inf</code> or
-  <code>-inf</code> will return an error. Casting a value outside the range of
-  <a href="data-types#numeric_type"><code>NUMERIC</code></a>
-  will return an overflow error.
-</td>
-</tr>
-<tr>
-<td>BOOL</td>
-<td>Integer</td>
-<td>Returns <code>1</code> if <code>x</code> is <code>TRUE</code>, <code>0</code> otherwise.</td>
-</tr>
-<tr>
-<td>BOOL</td>
-<td>STRING</td>
-<td>Returns <code>"true"</code> if <code>x</code> is <code>TRUE</code>, <code>"false"</code> otherwise.</td>
-</tr>
-<tr>
-<td>STRING</td>
-<td>Floating Point</td>
-<td>Returns <code>x</code> as a
-Floating Point
-value, interpreting it as having the same form as a valid
-Floating Point
-literal.<br />
-Also supports casts from <code>"inf"</code>, <code>"+inf"</code>, <code>"-inf"</code>, and <code>"nan"</code>.<br />
-Conversions are case-insensitive.
-</td>
-</tr>
-<tr>
-<td>STRING</td>
-<td>NUMERIC</td>
-<td>The numeric literal contained in the <code>STRING</code> must not exceed the
-maximum precision or range of the
-<a href="data-types#numeric_type"><code>NUMERIC</code></a>
-type, or an error will occur. If the number of digits
-after the decimal point exceeds nine, then the resulting <code>NUMERIC</code>
-value will round
-<a href="https://en.wikipedia.org/wiki/Rounding#Round_half_away_from_zero">half
-away from zero</a> to have nine digits after the decimal point.
-</td>
-</tr>
-<tr>
-<td>STRING</td>
-<td>BOOL</td>
-<td>Returns <code>TRUE</code> if <code>x</code> is <code>"true"</code> and
-<code>FALSE</code> if <code>x</code> is <code>"false"</code><br />
-All other values of <code>x</code> are invalid and throw an error instead of
-casting to BOOL.<br />
-STRINGs are case-insensitive when converting to BOOL.</td>
-</tr>
-<tr>
-<td>STRING</td>
-<td>BYTES</td>
-<td>STRINGs are cast to BYTES using UTF-8 encoding. For example, the STRING "&copy;",
-when cast to BYTES, would become a 2-byte sequence with the hex values C2 and
-A9.</td>
-</tr>
-
-<tr>
-<td>STRING</td>
-<td>PROTO</td>
-<td>Returns the PROTO that results from parsing from proto2 text format.<br />
-Throws an error if parsing fails, e.g. if not all required fields are set.
-</td>
-</tr>
-
-<tr>
-<td>BYTES</td>
-<td>STRING</td>
-<td>Returns <code>x</code> interpreted as a UTF-8 STRING.<br />
-For example, the BYTES literal
-<code>b'\xc2\xa9'</code>, when cast to STRING, is interpreted as UTF-8 and
-becomes the unicode character "&copy;".<br />
-An error occurs if <code>x</code> is not valid UTF-8.</td>
-</tr>
-
-<tr>
-<td>BYTES</td>
-<td>PROTO</td>
-<td>Returns the PROTO that results from parsing
-<code>x</code> from the proto2 wire format.<br />
-Throws an error if parsing fails, e.g. if not all required fields are set.
-</td>
-</tr>
-
-<tr>
-<td>ARRAY</td>
-<td>ARRAY</td>
-<td>The element types of the input
- <code>ARRAY</code> must be castable to the element
-  types of the target <code>ARRAY</code>.
-
-  For example, casting from type
-  <code>ARRAY&lt;INT64&gt;</code> to
-  <code>ARRAY&lt;DOUBLE&gt;</code> or
-  <code>ARRAY&lt;STRING&gt;</code> is valid;
-  casting from type <code>ARRAY&lt;INT64&gt;</code> to
-  <code>ARRAY&lt;BYTES&gt;</code> is not valid.
-</td>
-</tr>
-
-<tr>
-<td>ENUM</td>
-<td>STRING</td>
-<td>Returns the canonical ENUM value name of <code>x</code>.<br />
-If an ENUM value has multiple names (aliases),
-the canonical name/alias for that value is used.</td>
-</tr>
-<tr>
-<td>ENUM</td>
-<td>ENUM</td>
-<td>Must have the same ENUM name.</td>
-</tr>
-
-<tr>
-<td>STRUCT</td>
-<td>STRUCT</td>
-<td>Allowed if the following conditions are met:<br />
-<ol>
-<li>The two STRUCTs have the same number of fields.</li>
-<li>The original STRUCT field types can be explicitly cast to the corresponding
-target STRUCT field types (as defined by field order, not field name).</li>
-</ol>
-</td>
-</tr>
-
-<tr>
-<td>PROTO</td>
-<td>STRING</td>
-<td>Returns the proto2 text format representation of <code>x</code>.</td>
-</tr>
-<tr>
-<td>PROTO</td>
-<td>BYTES</td>
-<td>Returns the proto2 wire format BYTES of <code>x</code>.</td>
-</tr>
-<tr>
-<td>PROTO</td>
-<td>PROTO</td>
-<td>Must have the same PROTO name.</td>
-</tr>
-
-</table>
-
-#### Safe casting
-
+Most data types can be cast from one type to another with the `CAST` function.
 When using `CAST`, a query can fail if ZetaSQL is unable to perform
-the cast. For example, the following query generates an error:
-
-```
-SELECT CAST("apple" AS INT64) AS not_a_number;
-```
-
-If you want to protect your queries from these types of errors, you can use
-`SAFE_CAST`. `SAFE_CAST` is identical to `CAST`, except it returns NULL instead
-of raising an error.
-
-```
-SELECT SAFE_CAST("apple" AS INT64) AS not_a_number;
-
-+--------------+
-| not_a_number |
-+--------------+
-| NULL         |
-+--------------+
-```
-
-If you are casting from bytes to strings, you can also use the
-function, `SAFE_CONVERT_BYTES_TO_STRING`. Any invalid UTF-8 characters are
-replaced with the unicode replacement character, `U+FFFD`. See
-[SAFE_CONVERT_BYTES_TO_STRING][con-rules-link-to-safe-convert-bytes-to-string] for more
-information.
-
-#### Casting hex strings to integers
-
-If you are working with hex strings (`0x123`), you can cast those strings as
-integers:
-
-```sql
-SELECT '0x123' as hex_value, CAST('0x123' as INT64) as hex_to_int;
-
-+-----------+------------+
-| hex_value | hex_to_int |
-+-----------+------------+
-| 0x123     | 291        |
-+-----------+------------+
-
-SELECT '-0x123' as hex_value, CAST('-0x123' as INT64) as hex_to_int;
-
-+-----------+------------+
-| hex_value | hex_to_int |
-+-----------+------------+
-| -0x123    | -291       |
-+-----------+------------+
-```
-
-#### Casting time types
-
-ZetaSQL supports casting time types to/from strings as follows:
-
-```
-CAST(time_expression AS STRING)
-CAST(string_expression AS TIME)
-```
-
-Casting from a time type to a string is independent of time zone and is of the
-form `HH:MM:SS`.  When casting from string to time, the string must conform to
-the supported time literal format, and is independent of time zone. If the
-string expression is invalid or represents a time that is outside of the
-supported min/max range, then an error is produced.
-
-#### Casting date types
-
-ZetaSQL supports casting date types to/from strings as follows:
-
-```
-CAST(date_expression AS STRING)
-CAST(string_expression AS DATE)
-```
-
-Casting from a date type to a string is independent of time zone and is of the
-form `YYYY-MM-DD`.  When casting from string to date, the string must conform to
-the supported date literal format, and is independent of time zone. If the
-string expression is invalid or represents a date that is outside of the
-supported min/max range, then an error is produced.
-
-#### Casting datetime types
-
-ZetaSQL supports casting datetime types to/from strings as follows:
-
-```
-CAST(datetime_expression AS STRING)
-CAST(string_expression AS DATETIME)
-```
-
-Casting from a datetime type to a string is independent of time zone and is of
-the form `YYYY-MM-DD HH:MM:SS`.  When casting from string to datetime, the
-string must conform to the supported datetime literal format, and is independent
-of time zone. If the string expression is invalid or represents a datetime that
-is outside of the supported min/max range, then an error is produced.
-
-#### Casting timestamp types
-
-ZetaSQL supports casting timestamp types to/from strings as follows:
-
-```
-CAST(timestamp_expression AS STRING)
-CAST(string_expression AS TIMESTAMP)
-```
-
-When casting from timestamp types to string, the timestamp is interpreted using
-the default time zone, which is implementation defined. The number of subsecond digits
-produced depends on the number of trailing zeroes in the subsecond part: the
-CAST function will truncate zero, three, or six digits.
-
-When casting from string to a timestamp, `string_expression` must conform to
-the supported timestamp literal formats, or else a runtime error
-occurs.  The `string_expression` may itself contain a `time_zone`&mdash;see
-[time zones][con-rules-link-to-time-zones].
-If there is a time zone in the `string_expression`, that time zone is used for
-conversion, otherwise the default time zone, which is implementation defined, is used.
-If the string has fewer than six digits, then it is implicitly widened.
-
-An error is produced if the `string_expression` is invalid, has more than six
-subsecond digits (i.e. precision greater than microseconds), or represents a
-time outside of the supported timestamp range.
-
-#### Casting between date, datetime and timestamp types {: #casting-date-time-timestamp }
-
-ZetaSQL supports casting between date, datetime and timestamp types as shown in
-the [conversion rules table][conversion-rules-table].
-
-```
-CAST(date_expression AS TIMESTAMP)
-CAST(timestamp_expression AS DATE)
-```
-
-Casting from a date to a timestamp interprets `date_expression` as of midnight
-(start of the day) in the default time zone, which is implementation defined. Casting
-from a timestamp to date effectively truncates the timestamp as of the default
-time zone.
-
-```
-CAST(datetime_expression AS TIMESTAMP)
-CAST(timestamp_expression AS DATETIME)
-```
-
-Casting from a datetime to a timestamp interprets `datetime_expression` as of
-midnight (start of the day) in the default time zone, which is implementation defined.
-
-#### Bit casting
-
-ZetaSQL supports bit casting functions between signed and unsigned
-integers. A bit cast is a cast in which the order of bits is preserved instead
-of the value those bytes represent.
-
-```sql
-SELECT -1 as INT64_value, BIT_CAST_TO_UINT64(-1) as bit_cast_value;
-
-+-------------+----------------------+
-| INT64_value | bit_cast_value       |
-+-------------+----------------------+
-| -1          | 18446744073709551615 |
-+-------------+----------------------+
-```
-
-The following is a list of bit casting functions:
-
-+ <a id="bit_cast_to_uint64"></a>`BIT_CAST_TO_UINT64(int64_value)`
-+ `BIT_CAST_TO_UINT64(uint64_value)`
-+ <a id="bit_cast_to_int64"></a>`BIT_CAST_TO_INT64(int64_value)`
-+ `BIT_CAST_TO_INT64(uint64_value)`
-+ <a id="bit_cast_to_uint32"></a>`BIT_CAST_TO_UINT32(int32_value)`
-+ `BIT_CAST_TO_UINT32(uint32_value)`
-+ <a id="bit_cast_to_int32"></a>`BIT_CAST_TO_INT32(int32_value)`
-+ `BIT_CAST_TO_INT32(uint32_value)`
+the cast. If you want to protect your queries from these types of errors, you
+can use `SAFE_CAST`. To learn more about the rules for `CAST`, `SAFE_CAST` and
+other casting functions, see
+[Conversion functions][con-rules-link-to-conversion-functions].
 
 ### Coercion
 
-ZetaSQL coerces the result type of an expression to another type if
-needed to match function signatures.  For example, if function func() is defined
-to take a single argument of type INT64  and an
- expression is used as an argument that has a result type of
-DOUBLE, then the result of the expression will be
-coerced to INT64 type before func() is computed.
+ZetaSQL coerces the result type of an argument expression to another
+type if needed to match function signatures. For example, if function func() is
+defined to take a single argument of type DOUBLE and
+an expression is used as an argument that has a result type of
+INT64, then the result of the expression will be
+coerced to DOUBLE type before func() is computed.
 
 #### Literal coercion
 
@@ -637,7 +289,7 @@ ZetaSQL supports the following literal coercions:
 
 <tr>
 <td>Integer literal</td>
-<td><span> ENUM</span><br /><span> INT32</span><br /><span> UINT32</span><br /><span> UINT64</span><br /></td>
+<td><span> INT32</span><br /><span> UINT32</span><br /><span> UINT64</span><br /><span> ENUM</span><br /></td>
 <td>
 
 Integer literals will implicitly coerce to ENUM type when necessary, or can
@@ -660,7 +312,7 @@ be explicitly CAST to a specific ENUM type name.
 
 <tr>
 <td>STRING literal</td>
-<td><span> DATE</span><br /><span> DATETIME</span><br /><span> ENUM</span><br /><span> PROTO</span><br /><span> TIME</span><br /><span> TIMESTAMP</span><br /></td>
+<td><span> DATE</span><br /><span> DATETIME</span><br /><span> TIME</span><br /><span> TIMESTAMP</span><br /><span> ENUM</span><br /><span> PROTO</span><br /></td>
 <td>
 
 String literals will implicitly coerce to PROTO
@@ -716,7 +368,7 @@ ZetaSQL supports the following parameter coercions:
 
 <tr>
 <td>STRING parameter</td>
-<td><span> PROTO<span><br /></td>
+<td><span> PROTO</span><br /></td>
 </tr>
 
 <tr>
@@ -730,25 +382,19 @@ ZetaSQL supports the following parameter coercions:
 If the parameter value cannot be coerced successfully to the target type, an
 error is provided.
 
-### Additional conversion functions {: #additional_date_and_timestamp_conversion_functions }
-
-ZetaSQL provides the following additional conversion functions:
-
-+ [DATE functions][con-rules-link-to-date-functions]
-+ [DATETIME functions][con-rules-link-to-datetime-functions]
-+ [TIME functions][con-rules-link-to-time-functions]
-+ [TIMESTAMP functions][con-rules-link-to-timestamp-functions]
-
 [conversion-rules-table]: #conversion_rules
 [con-rules-link-to-literal-coercion]: #literal_coercion
 [con-rules-link-to-parameter-coercion]: #parameter_coercion
-[con-rules-link-to-time-zones]: https://github.com/google/zetasql/blob/master/docs/data-types#time_zones
+[con-rules-link-to-time-zones]: https://github.com/google/zetasql/blob/master/docs/data-types.md#time_zones
 
 [con-rules-link-to-safe-convert-bytes-to-string]: #safe_convert_bytes_to_string
 [con-rules-link-to-date-functions]: #date_functions
 [con-rules-link-to-datetime-functions]: #datetime_functions
 [con-rules-link-to-time-functions]: #time_functions
 [con-rules-link-to-timestamp-functions]: #timestamp_functions
+[con-rules-link-to-conversion-functions]: #conversion_functions
+[con-rules-link-to-cast]: #cast
+[con-rules-link-to-conversion-functions-other]: #other_conv_functions
 
 ## Aggregate functions
 
@@ -810,8 +456,8 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
@@ -870,8 +516,9 @@ The clauses are applied *in the following order*:
     `expression` is aggregated only once into the result.
 1.  `IGNORE NULLS` or `RESPECT NULLS`: If `IGNORE NULLS` is
     specified, the `NULL` values are excluded from the result. If
-    `RESPECT NULLS` or if neither is specified, the `NULL` values are included
-    in the result.
+    `RESPECT NULLS` is specified, the `NULL` values are included in the
+    result. If
+    neither is specified, the `NULL` values are included in the result.
 1.  `HAVING MAX` or `HAVING MIN`: Restricts the set of rows that the
     function aggregates by a maximum or minimum value. See
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
@@ -893,8 +540,8 @@ The clauses are applied *in the following order*:
     The limit `n` must be a constant INT64.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
@@ -1032,8 +679,8 @@ The clauses are applied *in the following order*:
     The limit `n` must be a constant INT64.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
@@ -1130,14 +777,23 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
-+ NUMERIC if
-  the input type is NUMERIC.
-+ DOUBLE
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
 
 **Examples**
 
@@ -1208,8 +864,8 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
@@ -1254,8 +910,8 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
@@ -1300,8 +956,8 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
@@ -1359,7 +1015,9 @@ COUNT([DISTINCT] expression [HAVING {MAX | MIN} expression2])  [OVER (...)]
 
 **Supported Argument Types**
 
-`expression` can be any data type.
+`expression` can be any data type. If
+`DISTINCT` is present, `expression` can only be a data type that is
+[groupable][agg-data-type-properties].
 
 **Optional Clauses**
 
@@ -1374,8 +1032,8 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Types**
 
@@ -1458,8 +1116,8 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Types**
 
@@ -1524,8 +1182,8 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Types**
 
@@ -1568,8 +1226,8 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Types**
 
@@ -1613,8 +1271,8 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Types**
 
@@ -1675,8 +1333,8 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Types**
 
@@ -1762,8 +1420,8 @@ The clauses are applied *in the following order*:
     The limit `n` must be a constant INT64.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Types**
 
@@ -1884,18 +1542,25 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Types**
 
-+ Returns INT64 if the input is a signed integer.
-+ Returns UINT64 if the input is an unsigned integer.
-+ Returns
-  NUMERIC if the input type is
-  NUMERIC.
-+ Returns DOUBLE if the input is a floating point
-value.
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
+
+Special cases:
 
 Returns `NULL` if the input contains only `NULL`s.
 
@@ -1988,7 +1653,8 @@ FROM UNNEST([]) AS x;
 
 ### Common clauses
 
-#### HAVING MAX and HAVING MIN clause {: #max_min_clause }
+#### HAVING MAX and HAVING MIN clause 
+<a id="max_min_clause"></a>
 
 Most aggregate functions support two optional clauses called `HAVING MAX` and
 `HAVING MIN`, which restricts the set of rows that a function aggregates to
@@ -2062,6 +1728,8 @@ this result:
 +---------+
 ```
 
+[agg-data-type-properties]: https://github.com/google/zetasql/blob/master/docs/data-types.md#data-type-properties
+
 ## Statistical aggregate functions
 
 ZetaSQL supports the following statistical aggregate functions.
@@ -2079,13 +1747,15 @@ is the dependent variable and the second number is the independent variable.
 The return result is between `-1` and `1`. A result of `0` indicates no
 correlation.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any input pairs that contain one or more NULL values. If
 there are fewer than two input pairs without NULL values, this function returns
 NULL.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -2098,12 +1768,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### COVAR_POP
 ```
@@ -2117,13 +1787,15 @@ a set of number pairs. The first number is the dependent variable; the second
 number is the independent variable. The return result is between `-Inf` and
 `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any input pairs that contain one or more NULL values. If
 there is no input pair without NULL values, this function returns NULL. If there
 is exactly one input pair without NULL values, this function returns 0.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -2136,12 +1808,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### COVAR_SAMP
 ```
@@ -2155,13 +1827,15 @@ set of number pairs. The first number is the dependent variable; the second
 number is the independent variable. The return result is between `-Inf` and
 `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any input pairs that contain one or more NULL values. If
 there are fewer than two input pairs without NULL values, this function returns
 NULL.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -2174,12 +1848,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### STDDEV_POP
 ```
@@ -2191,14 +1865,16 @@ STDDEV_POP([DISTINCT] expression [HAVING {MAX | MIN} expression2])  [OVER (...)]
 Returns the population (biased) standard deviation of the values. The return
 result is between `0` and `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any NULL inputs. If all inputs are ignored, this function
 returns NULL.
 
 If this function receives a single non-NULL input, it returns `0`.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -2213,12 +1889,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### STDDEV_SAMP
 ```
@@ -2230,12 +1906,14 @@ STDDEV_SAMP([DISTINCT] expression [HAVING {MAX | MIN} expression2])  [OVER (...)
 Returns the sample (unbiased) standard deviation of the values. The return
 result is between `0` and `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any NULL inputs. If there are fewer than two non-NULL
 inputs, this function returns NULL.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -2250,12 +1928,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### STDDEV
 ```
@@ -2276,14 +1954,16 @@ VAR_POP([DISTINCT] expression [HAVING {MAX | MIN} expression2])  [OVER (...)]
 Returns the population (biased) variance of the values. The return result is
 between `0` and `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any NULL inputs. If all inputs are ignored, this function
 returns NULL.
 
 If this function receives a single non-NULL input, it returns `0`.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -2298,12 +1978,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### VAR_SAMP
 ```
@@ -2315,12 +1995,14 @@ VAR_SAMP([DISTINCT] expression [HAVING {MAX | MIN} expression2])  [OVER (...)]
 Returns the sample (unbiased) variance of the values. The return result is
 between `0` and `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any NULL inputs. If there are fewer than two non-NULL
 inputs, this function returns NULL.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -2335,12 +2017,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### VARIANCE
 ```
@@ -2396,8 +2078,8 @@ Any data type **except**:
 `PROTO`
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
@@ -2446,15 +2128,16 @@ The clauses are applied *in the following order*:
     `expression` is aggregated only once into the result.
 1.  `IGNORE NULLS` or `RESPECT NULLS`: If `IGNORE NULLS` is
     specified, the `NULL` values are excluded from the result. If
-    `RESPECT NULLS` or if neither is specified, the `NULL` values are included
-    in the result.
+    `RESPECT NULLS` is specified, the `NULL` values are included in the
+    result. If neither is specified, the `NULL`
+    values are excluded from the result.
 1.  `HAVING MAX` or `HAVING MIN`: Restricts the set of rows that the
     function aggregates by a maximum or minimum value. See
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
@@ -2545,8 +2228,8 @@ specifies the number of elements returned.
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
@@ -2611,6 +2294,10 @@ If the `weight` input is negative or `NaN`, this function returns an error.
 
 <li>UINT64</li>
 
+<li>NUMERIC</li>
+
+<li>BIGNUMERIC</li>
+
 <li>DOUBLE</li>
 </ul>
 
@@ -2623,8 +2310,8 @@ If the `weight` input is negative or `NaN`, this function returns an error.
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Returned Data Types**
 
@@ -2736,21 +2423,21 @@ interval (CI) of typical precisions:
 
 |   Precision  | Max. Sketch Size (KiB) | 65% CI | 95% CI | 99% CI |
 |--------------|------------------------|--------|--------|--------|
-| 10           | 1                      | ±1.63% | ±3.25% | ±6.50% |
-| 11           | 2                      | ±1.15% | ±2.30% | ±4.60% |
-| 12           | 4                      | ±0.81% | ±1.63% | ±3.25% |
-| 13           | 8                      | ±0.57% | ±1.15% | ±1.72% |
-| 14           | 16                     | ±0.41% | ±0.81% | ±1.22% |
-| 15 (default) | 32                     | ±0.29% | ±0.57% | ±0.86% |
-| 16           | 64                     | ±0.20% | ±0.41% | ±0.61% |
-| 17           | 128                    | ±0.14% | ±0.29% | ±0.43% |
-| 18           | 256                    | ±0.10% | ±0.20% | ±0.41% |
-| 19           | 512                    | ±0.07% | ±0.14% | ±0.29% |
-| 20           | 1024                   | ±0.05% | ±0.10% | ±0.20% |
-| 21           | 2048                   | ±0.04% | ±0.07% | ±0.14% |
-| 22           | 4096                   | ±0.03% | ±0.05% | ±0.10% |
-| 23           | 8192                   | ±0.02% | ±0.04% | ±0.07% |
-| 24           | 16384                  | ±0.01% | ±0.03% | ±0.05% |
+| 10           | 1                      | ±3.25% | ±6.50% | ±9.75% |
+| 11           | 2                      | ±2.30% | ±4.60% | ±6.89% |
+| 12           | 4                      | ±1.63% | ±3.25% | ±4.88% |
+| 13           | 8                      | ±1.15% | ±2.30% | ±3.45% |
+| 14           | 16                     | ±0.81% | ±1.63% | ±2.44% |
+| 15 (default) | 32                     | ±0.57% | ±1.15% | ±1.72% |
+| 16           | 64                     | ±0.41% | ±0.81% | ±1.22% |
+| 17           | 128                    | ±0.29% | ±0.57% | ±0.86% |
+| 18           | 256                    | ±0.20% | ±0.41% | ±0.61% |
+| 19           | 512                    | ±0.14% | ±0.29% | ±0.43% |
+| 20           | 1024                   | ±0.10% | ±0.20% | ±0.30% |
+| 21           | 2048                   | ±0.07% | ±0.14% | ±0.22% |
+| 22           | 4096                   | ±0.05% | ±0.10% | ±0.15% |
+| 23           | 8192                   | ±0.04% | ±0.07% | ±0.11% |
+| 24           | 16384                  | ±0.03% | ±0.05% | ±0.08% |
 
 If the input is NULL, this function returns NULL.
 
@@ -2759,7 +2446,7 @@ For more information, see
 
 **Supported input types**
 
-INT64, UINT64, NUMERIC, STRING, BYTES
+INT64, UINT64, NUMERIC, BIGNUMERIC, STRING, BYTES
 
 **Return type**
 
@@ -2912,7 +2599,8 @@ FROM (
 +------------+---------+-----------------+
 ```
 
-### About the HLL++ algorithm {: #about-hll-alg }
+### About the HLL++ algorithm 
+<a id="about-hll-alg"></a>
 
 The [HLL++ algorithm][hll-link-to-research-whitepaper]
 improves on the [HLL][hll-link-to-hyperloglog-wikipedia]
@@ -2921,7 +2609,8 @@ The HLL++ algorithm includes a 64-bit hash function, sparse
 representation to reduce memory requirements for small cardinality estimates,
 and empirical bias correction for small cardinality estimates.
 
-### About sketches {: #sketches-hll }
+### About sketches 
+<a id="sketches-hll"></a>
 
 A sketch is a summary of a large data stream. You can extract statistics
 from a sketch to estimate particular statistics of the original data, or
@@ -3022,8 +2711,8 @@ that allows you to retrieve values whose ranks are within
 + `precision`: `INT64`
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Types**
 
@@ -3046,8 +2735,8 @@ Like [`KLL_QUANTILES.INIT_INT64`](#kll-quantilesinit-int64), but accepts
 + `precision`: `INT64`
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Types**
 
@@ -3074,8 +2763,8 @@ Like [`KLL_QUANTILES.INIT_INT64`](#kll-quantilesinit-int64), but accepts
 + `precision`: `INT64`
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Types**
 
@@ -3208,8 +2897,8 @@ Takes KLL16 sketches as `BYTES`, initialized on data
 of type `INT64`.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Types**
 
@@ -3232,8 +2921,8 @@ Takes KLL16 sketches as `BYTES`, initialized on data
 of type `UINT64`.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Types**
 
@@ -3260,8 +2949,8 @@ Takes KLL16 sketches as `BYTES`, initialized on data
 of type `DOUBLE`.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Types**
 
@@ -3326,8 +3015,8 @@ percentile of the merged sketch.
 + `phi` is a `DOUBLE` between 0 and 1.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Types**
 
@@ -3351,8 +3040,8 @@ accepts `input` of type `UINT64`.
 + `phi` is a `DOUBLE` between 0 and 1.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Types**
 
@@ -3380,8 +3069,8 @@ accepts `input` of type `DOUBLE`.
 + `phi` is a `DOUBLE` between 0 and 1.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Types**
 
@@ -3570,7 +3259,8 @@ but accepts sketches initialized on data of type of type
 
 `DOUBLE`
 
-### About quantiles {: #about-kll-quantiles }
+### About quantiles 
+<a id="about-kll-quantiles"></a>
 
 [Quantiles][quantiles] can be defined in two ways. First, for a positive integer *q*,
 *q-quantiles* are a set of values that partition an input set into *q* subsets
@@ -3604,12 +3294,14 @@ To extract individual Φ-quantiles, use the following functions, where Φ is the
 + `KLL_QUANTILES.EXTRACT_POINT_UINT64`
 + `KLL_QUANTILES.EXTRACT_POINT_DOUBLE`
 
-### About the KLL algorithm {: #about-kll-alg }
+### About the KLL algorithm 
+<a id="about-kll-alg"></a>
 
 The [KLL16 algorithm][link-to-kll-paper] improves on the [MP80 algorithm][mp80]
 by using variable-size buffers to reduce memory use for large data sets.
 
-### About sketches {: #sketches-kll }
+### About sketches 
+<a id="sketches-kll"></a>
 
 A sketch is a summary of a large data stream. You can extract statistics
 from a sketch to estimate particular statistics of the original data, or
@@ -3632,7 +3324,7 @@ non-additive functions like `COUNT(DISTINCT)`.
 [quantiles]: https://en.wikipedia.org/wiki/Quantile
 [link-to-kll-paper]: https://arxiv.org/pdf/1603.05346v2.pdf
 [mp80]: https://polylogblog.files.wordpress.com/2009/08/80munro-median.pdf
-[sort-order]: https://github.com/google/zetasql/blob/master/docs/data-types#comparison_operator_examples
+[sort-order]: https://github.com/google/zetasql/blob/master/docs/data-types.md#comparison_operator_examples
 [kll-sketches]: #sketches-kll
 [kll-algorithm]: #about-kll-alg
 [kll-quantiles]: #about-kll-quantiles
@@ -3737,12 +3429,144 @@ non-deterministic.
 
 INT64
 
-[analytic-function-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[numbering-function-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts#numbering_function_concepts
+[analytic-function-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[numbering-function-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md#numbering_function_concepts
 
 ## Bit functions
 
 ZetaSQL supports the following bit functions.
+
+### BIT_CAST_TO_INT32
+
+```sql
+BIT_CAST_TO_INT32(value)
+```
+
+**Description**
+
+ZetaSQL supports bit casting to INT32. A bit
+cast is a cast in which the order of bits is preserved instead of the value
+those bytes represent.
+
+The `value` parameter can represent:
+
++ `INT32`
++ `UINT32`
+
+**Return Data Type**
+
+INT32
+
+**Examples**
+
+```sql
+SELECT BIT_CAST_TO_UINT32(-1) as UINT32_value, BIT_CAST_TO_INT32(BIT_CAST_TO_UINT32(-1)) as bit_cast_value;
+
++---------------+----------------------+
+| UINT32_value  | bit_cast_value       |
++---------------+----------------------+
+| 4294967295    | -1                   |
++---------------+----------------------+
+```
+
+### BIT_CAST_TO_INT64
+
+```sql
+BIT_CAST_TO_INT64(value)
+```
+
+**Description**
+
+ZetaSQL supports bit casting to INT64. A bit
+cast is a cast in which the order of bits is preserved instead of the value
+those bytes represent.
+
+The `value` parameter can represent:
+
++ `INT64`
++ `UINT64`
+
+**Return Data Type**
+
+INT64
+
+**Example**
+
+```sql
+SELECT BIT_CAST_TO_UINT64(-1) as UINT64_value, BIT_CAST_TO_INT64(BIT_CAST_TO_UINT64(-1)) as bit_cast_value;
+
++-----------------------+----------------------+
+| UINT64_value          | bit_cast_value       |
++-----------------------+----------------------+
+| 18446744073709551615  | -1                   |
++-----------------------+----------------------+
+```
+
+### BIT_CAST_TO_UINT32
+
+```sql
+BIT_CAST_TO_UINT32(value)
+```
+
+**Description**
+
+ZetaSQL supports bit casting to UINT32. A bit
+cast is a cast in which the order of bits is preserved instead of the value
+those bytes represent.
+
+The `value` parameter can represent:
+
++ `INT32`
++ `UINT32`
+
+**Return Data Type**
+
+UINT32
+
+**Examples**
+
+```sql
+SELECT -1 as UINT32_value, BIT_CAST_TO_UINT32(-1) as bit_cast_value;
+
++--------------+----------------------+
+| UINT32_value | bit_cast_value       |
++--------------+----------------------+
+| -1           | -4294967295          |
++--------------+----------------------+
+```
+
+### BIT_CAST_TO_UINT64
+
+```sql
+BIT_CAST_TO_UINT64(value)
+```
+
+**Description**
+
+ZetaSQL supports bit casting to UINT64. A bit
+cast is a cast in which the order of bits is preserved instead of the value
+those bytes represent.
+
+The `value` parameter can represent:
+
++ `INT64`
++ `UINT64`
+
+**Return Data Type**
+
+UINT64
+
+**Example**
+
+```sql
+SELECT -1 as INT64_value, BIT_CAST_TO_UINT64(-1) as bit_cast_value;
+
++--------------+----------------------+
+| INT64_value  | bit_cast_value       |
++--------------+----------------------+
+| -1           | 18446744073709551615 |
++--------------+----------------------+
+```
 
 ### BIT_COUNT
 ```
@@ -3786,6 +3610,3290 @@ FROM UNNEST([
 +-------+--------+---------------------------------------------+--------+
 ```
 
+## Conversion functions
+
+ZetaSQL supports the following conversion functions. These data type
+conversions are explicit, but some conversions can happen implicitly. You can
+learn more about implicit and explicit conversion [here][conversion-rules].
+
+### CAST overview 
+<a id="cast"></a>
+
+<pre class="lang-sql prettyprint">
+<code>CAST(expression AS typename [<a href="#formatting_syntax">format_clause</a>])</code>
+</pre>
+
+**Description**
+
+Cast syntax is used in a query to indicate that the result type of an
+expression should be converted to some other type.
+
+When using `CAST`, a query can fail if ZetaSQL is unable to perform
+the cast. If you want to protect your queries from these types of errors, you
+can use [SAFE_CAST][con-func-safecast].
+
+Casts between supported types that do not successfully map from the original
+value to the target domain produce runtime errors. For example, casting
+BYTES to STRING where the byte sequence is not valid UTF-8 results in a runtime
+error.
+
+Other examples include:
+
++ Casting INT64 to INT32 where the value overflows INT32.
++ Casting STRING to INT32 where the STRING contains non-digit characters.
+
+Some casts can include a [format clause][formatting-syntax], which provides
+instructions for how to conduct the
+cast. For example, you could
+instruct a cast to convert a sequence of bytes to a BASE64-encoded string
+instead of a UTF-8-encoded string.
+
+The structure of the format clause is unique to each type of cast and more
+information is available in the section for that cast.
+
+**Examples**
+
+The following query results in `"true"` if `x` is `1`, `"false"` for any other
+non-`NULL` value, and `NULL` if `x` is `NULL`.
+
+```sql
+CAST(x=1 AS STRING)
+```
+
+### CAST AS ARRAY
+
+```sql
+CAST(expression AS ARRAY<element_type>)
+```
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to ARRAY. The `expression`
+parameter can represent an expression for these data types:
+
++ `ARRAY`
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>ARRAY</td>
+    <td>ARRAY</td>
+    <td>
+      
+      The element types of the input
+      <code>ARRAY</code> must be castable to the
+      element types of the target <code>ARRAY</code>.
+      For example, casting from type
+      <code>ARRAY&lt;INT64&gt;</code> to
+      <code>ARRAY&lt;DOUBLE&gt;</code> or
+      <code>ARRAY&lt;STRING&gt;</code> is valid;
+      casting from type <code>ARRAY&lt;INT64&gt;</code>
+      to <code>ARRAY&lt;BYTES&gt;</code> is not valid.
+      
+    </td>
+  </tr>
+</table>
+
+### CAST AS BIGNUMERIC
+
+```sql
+CAST(expression AS BIGNUMERIC)
+```
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to BIGNUMERIC. The
+`expression` parameter can represent an expression for these data types:
+
++ `INT32`
++ `UINT32`
++ `INT64`
++ `UINT64`
++ `FLOAT`
++ `DOUBLE`
++ `NUMERIC`
++ `BIGNUMERIC`
++ `STRING`
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>Floating Point</td>
+    <td>BIGNUMERIC</td>
+    <td>
+      The floating point number will round
+      <a href="https://en.wikipedia.org/wiki/Rounding#Round_half_away_from_zero">
+      half away from zero</a>. Casting a <code>NaN</code>, <code>+inf</code> or
+      <code>-inf</code> will return an error. Casting a value outside the range
+      of
+      
+      <a href="data-types#bignumeric_type"><code>BIGNUMERIC</code></a>
+      
+      will return an overflow error.
+    </td>
+  </tr>
+  <tr>
+    <td>STRING</td>
+    <td>BIGNUMERIC</td>
+    <td>
+      The numeric literal contained in the <code>STRING</code> must not exceed
+      the maximum precision or range of the
+      
+      <a href="data-types#bignumeric_type"><code>BIGNUMERIC</code></a>
+      
+      type, or an error will occur. If the number of digits
+      after the decimal point exceeds 38, then the resulting
+      <code>BIGNUMERIC</code> value will round
+      <a href="https://en.wikipedia.org/wiki/Rounding#Round_half_away_from_zero">
+      half away from zero</a> to have 38 digits after the decimal point.
+    </td>
+  </tr>
+</table>
+
+### CAST AS BOOL
+
+```sql
+CAST(expression AS BOOL)
+```
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to BOOL. The
+`expression` parameter can represent an expression for these data types:
+
++ `INT32`
++ `UINT32`
++ `INT64`
++ `UINT64`
++ `BOOL`
++ `STRING`
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>Integer</td>
+    <td>BOOL</td>
+    <td>
+      Returns <code>FALSE</code> if <code>x</code> is <code>0</code>,
+      <code>TRUE</code> otherwise.
+    </td>
+  </tr>
+  <tr>
+    <td>STRING</td>
+    <td>BOOL</td>
+    <td>
+      Returns <code>TRUE</code> if <code>x</code> is <code>"true"</code> and
+      <code>FALSE</code> if <code>x</code> is <code>"false"</code><br />
+      All other values of <code>x</code> are invalid and throw an error instead
+      of casting to BOOL.<br />
+      STRINGs are case-insensitive when converting
+      to BOOL.
+    </td>
+  </tr>
+</table>
+
+### CAST AS BYTES
+
+<pre class="lang-sql prettyprint">
+<code>CAST(expression AS BYTES [<a href="#formatting_syntax">format_clause</a>])</code>
+</pre>
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to BYTES. The
+`expression` parameter can represent an expression for these data types:
+
++ `BYTES`
++ `STRING`
++ `PROTO`
+
+**Format clause**
+
+When an expression of one type is cast to another type, you can use the
+[format clause][formatting-syntax] to provide instructions for how to conduct
+the cast. You can use the format clause in this section if `expression` is a
+`STRING`.
+
++ [Format string as bytes][format-string-as-bytes]
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>STRING</td>
+    <td>BYTES</td>
+    <td>
+      STRINGs are cast to
+      BYTES using UTF-8 encoding. For example,
+      the STRING "&copy;", when cast to
+      BYTES, would become a 2-byte sequence with the
+      hex values C2 and A9.
+    </td>
+  </tr>
+  
+  <tr>
+    <td>PROTO</td>
+    <td>BYTES</td>
+    <td>
+      Returns the proto2 wire format BYTES
+      of <code>x</code>.
+    </td>
+  </tr>
+  
+</table>
+
+### CAST AS DATE
+
+<pre class="lang-sql prettyprint">
+<code>CAST(expression AS DATE [<a href="#formatting_syntax">format_clause</a>])</code>
+</pre>
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to DATE. The `expression`
+parameter can represent an expression for these data types:
+
++ `STRING`
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Format clause**
+
+When an expression of one type is cast to another type, you can use the
+[format clause][formatting-syntax] to provide instructions for how to conduct
+the cast. You can use the format clause in this section if `expression` is a
+`STRING`.
+
++ [Format string as date and time][format-string-as-date-time]
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>STRING</td>
+    <td>DATE</td>
+    <td>
+      When casting from string to date, the string must conform to
+      the supported date literal format, and is independent of time zone. If the
+      string expression is invalid or represents a date that is outside of the
+      supported min/max range, then an error is produced.
+    </td>
+  </tr>
+  
+  <tr>
+    <td>TIMESTAMP</td>
+    <td>DATE</td>
+    <td>
+      Casting from a timestamp to date effectively truncates the timestamp as
+      of the default time zone.
+    </td>
+  </tr>
+  
+</table>
+
+### CAST AS DATETIME
+
+<pre class="lang-sql prettyprint">
+<code>CAST(expression AS DATETIME [<a href="#formatting_syntax">format_clause</a>])</code>
+</pre>
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to DATETIME. The
+`expression` parameter can represent an expression for these data types:
+
++ `STRING`
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Format clause**
+
+When an expression of one type is cast to another type, you can use the
+[format clause][formatting-syntax] to provide instructions for how to conduct
+the cast. You can use the format clause in this section if `expression` is a
+`STRING`.
+
++ [Format string as date and time][format-string-as-date-time]
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>STRING</td>
+    <td>DATETIME</td>
+    <td>
+      When casting from string to datetime, the string must conform to the
+      supported datetime literal format, and is independent of time zone. If
+      the string expression is invalid or represents a datetime that is outside
+      of the supported min/max range, then an error is produced.
+    </td>
+  </tr>
+  
+  <tr>
+    <td>TIMESTAMP</td>
+    <td>DATETIME</td>
+    <td>
+      Casting from a timestamp to datetime effectively truncates the timestamp
+      as of the default time zone.
+    </td>
+  </tr>
+  
+</table>
+
+### CAST AS ENUM
+
+```sql
+CAST(expression AS ENUM)
+```
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to ENUM. The `expression`
+parameter can represent an expression for these data types:
+
++ `INT32`
++ `UINT32`
++ `INT64`
++ `UINT64`
++ `STRING`
++ `ENUM`
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>ENUM</td>
+    <td>ENUM</td>
+    <td>Must have the same ENUM name.</td>
+  </tr>
+</table>
+
+### CAST AS Floating Point 
+<a id="cast_as_floating_point"></a>
+
+```sql
+CAST(expression AS DOUBLE)
+```
+
+```sql
+CAST(expression AS FLOAT)
+```
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to floating point types.
+The `expression` parameter can represent an expression for these data types:
+
++ `INT32`
++ `UINT32`
++ `INT64`
++ `UINT64`
++ `FLOAT`
++ `DOUBLE`
++ `NUMERIC`
++ `BIGNUMERIC`
++ `STRING`
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>Integer</td>
+    <td>Floating Point</td>
+    <td>
+      Returns a close but potentially not exact floating point value.
+    </td>
+  </tr>
+  
+  <tr>
+    <td>NUMERIC</td>
+    <td>Floating Point</td>
+    <td>
+      NUMERIC will convert to the closest floating point number with a possible
+      loss of precision.
+    </td>
+  </tr>
+  
+  
+  <tr>
+    <td>BIGNUMERIC</td>
+    <td>Floating Point</td>
+    <td>
+      BIGNUMERIC will convert to the closest floating point number with a
+      possible loss of precision.
+    </td>
+  </tr>
+  
+  <tr>
+    <td>STRING</td>
+    <td>Floating Point</td>
+    <td>
+      Returns <code>x</code> as a floating point value, interpreting it as
+      having the same form as a valid floating point literal.
+      Also supports casts from <code>"[+,-]inf"</code> to
+      <code>[,-]Infinity</code>,
+      <code>"[+,-]infinity"</code> to <code>[,-]Infinity</code>, and
+      <code>"[+,-]nan"</code> to <code>NaN</code>.
+      Conversions are case-insensitive.
+    </td>
+  </tr>
+</table>
+
+### CAST AS Integer 
+<a id="cast_as_integer"></a>
+
+```sql
+CAST(expression AS INT32)
+```
+
+```sql
+CAST(expression AS UINT32)
+```
+
+```sql
+CAST(expression AS INT64)
+```
+
+```sql
+CAST(expression AS UINT64)
+```
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to integer types.
+The `expression` parameter can represent an expression for these data types:
+
++ `INT32`
++ `UINT32`
++ `INT64`
++ `UINT64`
++ `FLOAT`
++ `DOUBLE`
++ `NUMERIC`
++ `BIGNUMERIC`
++ `ENUM`
++ `BOOL`
++ `STRING`
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  
+  <tr>
+    <td>
+      Floating Point
+    </td>
+    <td>
+      Integer
+    </td>
+    <td>
+      Returns the closest integer value.<br />
+      Halfway cases such as 1.5 or -0.5 round away from zero.
+    </td>
+  </tr>
+  <tr>
+    <td>BOOL</td>
+    <td>Integer</td>
+    <td>
+      Returns <code>1</code> if <code>x</code> is <code>TRUE</code>,
+      <code>0</code> otherwise.
+    </td>
+  </tr>
+  
+  <tr>
+    <td>STRING</td>
+    <td>Integer</td>
+    <td>
+      A hex string can be cast to an integer. For example,
+      <code>0x123</code> to <code>291</code> or <code>-0x123</code> to
+      <code>-291</code>.
+    </td>
+  </tr>
+  
+</table>
+
+**Examples**
+
+If you are working with hex strings (`0x123`), you can cast those strings as
+integers:
+
+```sql
+SELECT '0x123' as hex_value, CAST('0x123' as INT64) as hex_to_int;
+
++-----------+------------+
+| hex_value | hex_to_int |
++-----------+------------+
+| 0x123     | 291        |
++-----------+------------+
+```
+
+```sql
+SELECT '-0x123' as hex_value, CAST('-0x123' as INT64) as hex_to_int;
+
++-----------+------------+
+| hex_value | hex_to_int |
++-----------+------------+
+| -0x123    | -291       |
++-----------+------------+
+```
+
+### CAST AS NUMERIC
+
+```sql
+CAST(expression AS NUMERIC)
+```
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to NUMERIC. The
+`expression` parameter can represent an expression for these data types:
+
++ `INT32`
++ `UINT32`
++ `INT64`
++ `UINT64`
++ `FLOAT`
++ `DOUBLE`
++ `NUMERIC`
++ `BIGNUMERIC`
++ `STRING`
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>Floating Point</td>
+    <td>NUMERIC</td>
+    <td>
+      The floating point number will round
+      <a href="https://en.wikipedia.org/wiki/Rounding#Round_half_away_from_zero">
+      half away from zero</a>. Casting a <code>NaN</code>, <code>+inf</code> or
+      <code>-inf</code> will return an error. Casting a value outside the range
+      of
+      <a href="data-types#numeric_type"><code>NUMERIC</code></a>
+      
+      will return an overflow error.
+    </td>
+  </tr>
+  <tr>
+    <td>STRING</td>
+    <td>NUMERIC</td>
+    <td>
+      The numeric literal contained in the <code>STRING</code> must not exceed
+      the maximum precision or range of the
+      <a href="data-types#numeric_type"><code>NUMERIC</code></a>
+      
+      type, or an error will occur. If the number of digits
+      after the decimal point exceeds nine, then the resulting
+      <code>NUMERIC</code> value will round
+      <a href="https://en.wikipedia.org/wiki/Rounding#Round_half_away_from_zero">
+      half away from zero</a> to have nine digits after the decimal point.
+    </td>
+  </tr>
+</table>
+
+### CAST AS PROTO
+
+```sql
+CAST(expression AS PROTO)
+```
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to PROTO. The `expression`
+parameter can represent an expression for these data types:
+
++ `STRING`
++ `BYTES`
++ `PROTO`
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>STRING</td>
+    <td>PROTO</td>
+    <td>
+      Returns the PROTO that results from parsing
+      from proto2 text format.<br />
+      Throws an error if parsing fails, e.g. if not all required fields are set.
+    </td>
+  </tr>
+  <tr>
+    <td>BYTES</td>
+    <td>PROTO</td>
+    <td>
+      Returns the PROTO that results from parsing
+      <code>x</code> from the proto2 wire format.<br />
+      Throws an error if parsing fails, e.g. if not all required fields are set.
+    </td>
+  </tr>
+  <tr>
+    <td>PROTO</td>
+    <td>PROTO</td>
+    <td>Must have the same PROTO name.</td>
+  </tr>
+</table>
+
+### CAST AS STRING 
+<a id="cast_as_string"></a>
+
+<pre class="lang-sql prettyprint">
+<code>CAST(expression AS STRING [<a href="#formatting_syntax">format_clause</a> [AT TIME ZONE timezone_expr]])</code>
+</pre>
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to STRING. The
+`expression` parameter can represent an expression for these data types:
+
++ `INT32`
++ `UINT32`
++ `INT64`
++ `UINT64`
++ `FLOAT`
++ `DOUBLE`
++ `NUMERIC`
++ `BIGNUMERIC`
++ `ENUM`
++ `BOOL`
++ `BYTES`
++ `PROTO`
++ `TIME`
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
++ `STRING`
+
+**Format clause**
+
+When an expression of one type is cast to another type, you can use the
+format clause to provide instructions for how to conduct the cast.
+You can use the format clause in this section if `expression` is one of these
+data types:
+
++ `BYTES`
++ `TIME`
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
+
+The format clause for `STRING` has an additional optional clause called
+`AT TIME ZONE timezone_expr`, which you can use to specify a specific time zone
+to use during formatting of a `TIMESTAMP`. If this optional clause is not
+included when formatting a `TIMESTAMP`, your current time zone is used.
+
+For more information, see the following topics:
+
++ [Format bytes as string][format-bytes-as-string]
++ [Format date and time as string][format-date-time-as-string]
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>Floating Point</td>
+    <td>STRING</td>
+    <td>Returns an approximate string representation.<br />
+    </td>
+  </tr>
+  <tr>
+    <td>BOOL</td>
+    <td>STRING</td>
+    <td>
+      Returns <code>"true"</code> if <code>x</code> is <code>TRUE</code>,
+      <code>"false"</code> otherwise.</td>
+  </tr>
+  <tr>
+    <td>BYTES</td>
+    <td>STRING</td>
+    <td>
+      Returns <code>x</code> interpreted as a UTF-8 STRING.<br />
+      For example, the BYTES literal
+      <code>b'\xc2\xa9'</code>, when cast to STRING,
+      is interpreted as UTF-8 and becomes the unicode character "&copy;".<br />
+      An error occurs if <code>x</code> is not valid UTF-8.</td>
+  </tr>
+  
+  <tr>
+    <td>ENUM</td>
+    <td>STRING</td>
+    <td>
+      Returns the canonical ENUM value name of
+      <code>x</code>.<br />
+      If an ENUM value has multiple names (aliases),
+      the canonical name/alias for that value is used.</td>
+  </tr>
+  
+  
+  <tr>
+    <td>PROTO</td>
+    <td>STRING</td>
+    <td>Returns the proto2 text format representation of <code>x</code>.</td>
+  </tr>
+  
+  
+  <tr>
+    <td>TIME</td>
+    <td>STRING</td>
+    <td>
+      Casting from a time type to a string is independent of time zone and
+      is of the form <code>HH:MM:SS</code>.
+    </td>
+  </tr>
+  
+  
+  <tr>
+    <td>DATE</td>
+    <td>STRING</td>
+    <td>
+      Casting from a date type to a string is independent of time zone and is
+      of the form <code>YYYY-MM-DD</code>.
+    </td>
+  </tr>
+  
+  
+  <tr>
+    <td>DATETIME</td>
+    <td>STRING</td>
+    <td>
+      Casting from a datetime type to a string is independent of time zone and
+      is of the form <code>YYYY-MM-DD HH:MM:SS</code>.
+    </td>
+  </tr>
+  
+  
+  <tr>
+    <td>TIMESTAMP</td>
+    <td>STRING</td>
+    <td>
+      When casting from timestamp types to string, the timestamp is interpreted
+      using the default time zone, which is implementation defined. The number of
+      subsecond digits produced depends on the number of trailing zeroes in the
+      subsecond part: the CAST function will truncate zero, three, or six
+      digits.
+    </td>
+  </tr>
+  
+</table>
+
+**Examples**
+
+```sql
+SELECT CAST(CURRENT_DATE() AS STRING) AS current_date
+
++---------------+
+| current_date  |
++---------------+
+| 2021-03-09    |
++---------------+
+```
+
+```sql
+SELECT CAST(CURRENT_DATE() AS STRING FORMAT 'DAY') AS current_day
+
++-------------+
+| current_day |
++-------------+
+| MONDAY      |
++-------------+
+```
+
+```sql
+SELECT CAST(
+  TIMESTAMP '2008-12-25 00:00:00+00:00'
+  AS STRING FORMAT 'YYYY-MM-DD HH24:MI:SS TZH:TZM') AS date_time_to_string
+
+-- Results depend upon where this query was executed.
++------------------------------+
+| date_time_to_string          |
++------------------------------+
+| 2008-12-24 16:00:00 -08:00   |
++------------------------------+
+```
+
+```sql
+SELECT CAST(
+  TIMESTAMP '2008-12-25 00:00:00+00:00'
+  AS STRING FORMAT 'YYYY-MM-DD HH24:MI:SS TZH:TZM'
+  AT TIME ZONE 'Asia/Kolkata') AS date_time_to_string
+
+-- Because the time zone is specified, the result is always the same.
++------------------------------+
+| date_time_to_string          |
++------------------------------+
+| 2008-12-25 05:30:00 +05:30   |
++------------------------------+
+```
+
+### CAST AS STRUCT
+
+```sql
+CAST(expression AS STRUCT)
+```
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to STRUCT. The `expression`
+parameter can represent an expression for these data types:
+
++ `STRUCT`
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>STRUCT</td>
+    <td>STRUCT</td>
+    <td>
+      Allowed if the following conditions are met:<br />
+      <ol>
+        <li>
+          The two STRUCTs have the same number of
+          fields.
+        </li>
+        <li>
+          The original STRUCT field types can be
+          explicitly cast to the corresponding target
+          STRUCT field types (as defined by field
+          order, not field name).
+        </li>
+      </ol>
+    </td>
+  </tr>
+</table>
+
+### CAST AS TIME
+
+<pre class="lang-sql prettyprint">
+<code>CAST(expression AS TIME [<a href="#formatting_syntax">format_clause</a>])</code>
+</pre>
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to TIME. The `expression`
+parameter can represent an expression for these data types:
+
++ `STRING`
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Format clause**
+
+When an expression of one type is cast to another type, you can use the
+[format clause][formatting-syntax] to provide instructions for how to conduct
+the cast. You can use the format clause in this section if `expression` is a
+`STRING`.
+
++ [Format string as date and time][format-string-as-date-time]
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>STRING</td>
+    <td>TIME</td>
+    <td>
+      When casting from string to time, the string must conform to
+      the supported time literal format, and is independent of time zone. If the
+      string expression is invalid or represents a time that is outside of the
+      supported min/max range, then an error is produced.
+    </td>
+  </tr>
+</table>
+
+### CAST AS TIMESTAMP
+
+<pre class="lang-sql prettyprint">
+<code>CAST(expression AS TIMESTAMP [<a href="#formatting_syntax">format_clause</a> [AT TIME ZONE timezone_expr]])</code>
+</pre>
+
+**Description**
+
+ZetaSQL supports [casting][con-func-cast] to TIMESTAMP. The
+`expression` parameter can represent an expression for these data types:
+
++ `STRING`
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Format clause**
+
+When an expression of one type is cast to another type, you can use the
+[format clause][formatting-syntax] to provide instructions for how to conduct
+the cast. You can use the format clause in this section if `expression` is a
+`STRING`.
+
++ [Format string as date and time][format-string-as-date-time]
+
+The format clause for `TIMESTAMP` has an additional optional clause called
+`AT TIME ZONE timezone_expr`, which you can use to specify a specific time zone
+to use during formatting. If this optional clause is not included, your
+current time zone is used.
+
+**Conversion rules**
+
+<table>
+  <tr>
+    <th>From</th>
+    <th>To</th>
+    <th>Rule(s) when casting <code>x</code></th>
+  </tr>
+  <tr>
+    <td>STRING</td>
+    <td>TIMESTAMP</td>
+    <td>
+      When casting from string to a timestamp, <code>string_expression</code>
+      must conform to the supported timestamp literal formats, or else a runtime
+      error occurs. The <code>string_expression</code> may itself contain a
+      time zone.
+      <br />
+      If there is a time zone in the <code>string_expression</code>, that
+      time zone is used for conversion, otherwise the default time zone,
+      which is implementation defined, is used. If the string has fewer than six digits,
+      then it is implicitly widened.
+      <br />
+      An error is produced if the <code>string_expression</code> is invalid,
+      has more than six subsecond digits (i.e. precision greater than
+      microseconds), or represents a time outside of the supported timestamp
+      range.
+    </td>
+  </tr>
+  
+  <tr>
+    <td>DATE</td>
+    <td>TIMESTAMP</td>
+    <td>
+      Casting from a date to a timestamp interprets <code>date_expression</code>
+      as of midnight (start of the day) in the default time zone,
+      which is implementation defined.
+    </td>
+  </tr>
+  
+  
+  <tr>
+    <td>DATETIME</td>
+    <td>TIMESTAMP</td>
+    <td>
+      Casting from a datetime to a timestamp interprets
+      <code>datetime_expression</code> as of midnight (start of the day) in the
+      default time zone, which is implementation defined.
+    </td>
+  </tr>
+  
+</table>
+
+**Examples**
+
+The following example casts a string-formatted timestamp as a timestamp:
+
+```sql
+SELECT CAST("2020-06-02 17:00:53.110+00:00" AS TIMESTAMP) AS as_timestamp
+
+-- Results depend upon where this query was executed.
++----------------------------+
+| as_timestamp               |
++----------------------------+
+| 2020-06-03 00:00:53.110+00 |
++----------------------------+
+```
+
+The following examples cast a string-formatted date and time as a timestamp.
+These examples return the same output as the previous example.
+
+```sql
+SELECT CAST("06/02/2020 17:00:53.110" AS TIMESTAMP FORMAT 'MM/DD/YYYY HH:MI:SS' AT TIME ZONE 'America/Los_Angeles') AS as_timestamp
+```
+
+```sql
+SELECT CAST("06/02/2020 17:00:53.110" AS TIMESTAMP FORMAT 'MM/DD/YYYY HH:MI:SS' AT TIME ZONE '00') AS as_timestamp
+```
+
+```sql
+SELECT CAST('06/02/2020 17:00:53.110 +00' AS TIMESTAMP FORMAT 'YYYY-MM-DD HH:MI:SS TZH') AS as_timestamp
+```
+
+### SAFE_CAST 
+<a id="safe_casting"></a>
+
+<pre class="lang-sql prettyprint">
+<code>SAFE_CAST(expression AS typename [<a href="#formatting_syntax">format_clause</a>])</code>
+</pre>
+
+**Description**
+
+When using `CAST`, a query can fail if ZetaSQL is unable to perform
+the cast. For example, the following query generates an error:
+
+```sql
+SELECT CAST("apple" AS INT64) AS not_a_number;
+```
+
+If you want to protect your queries from these types of errors, you can use
+`SAFE_CAST`. `SAFE_CAST` is identical to `CAST`, except it returns `NULL`
+instead of raising an error.
+
+```sql
+SELECT SAFE_CAST("apple" AS INT64) AS not_a_number;
+
++--------------+
+| not_a_number |
++--------------+
+| NULL         |
++--------------+
+```
+
+If you are casting from bytes to strings, you can also use the
+function, `SAFE_CONVERT_BYTES_TO_STRING`. Any invalid UTF-8 characters are
+replaced with the unicode replacement character, `U+FFFD`. See
+[SAFE_CONVERT_BYTES_TO_STRING][SC_BTS] for more
+information.
+
+### Other conversion functions 
+<a id="other_conv_functions"></a>
+
+You can learn more about these conversion functions elsewhere in the
+documentation:
+
+Conversion function                    | From               | To
+-------                                | --------           | -------
+[ARRAY_TO_STRING][ARRAY_STRING]        | ARRAY              | STRING
+[BIT_CAST_TO_INT32][BIT_I32]           | UINT32             | INT32
+[BIT_CAST_TO_INT64][BIT_I64]           | UINT64             | INT64
+[BIT_CAST_TO_UINT32][BIT_U32]          | INT32              | UINT32
+[BIT_CAST_TO_UINT64][BIT_U64]          | INT64              | UINT64
+[DATE][T_DATE]                         | Various data types | DATE
+[DATETIME][T_DATETIME]                 | Various data types | DATETIME
+[FROM_BASE32][F_B32]                   | STRING             | BYTEs
+[FROM_BASE64][F_B64]                   | STRING             | BYTES
+[FROM_HEX][F_HEX]                      | STRING             | BYTES
+[FROM_PROTO][F_PROTO]                  | PROTO value        | Most data types
+[PARSE_DATE][P_DATE]                   | STRING             | DATE
+[PARSE_DATETIME][P_DATETIME]           | STRING             | DATETIME
+[PARSE_TIME][P_TIME]                   | STRING             | TIME
+[PARSE_TIMESTAMP][P_TIMESTAMP]         | STRING             | TIMESTAMP
+[SAFE_CONVERT_BYTES_TO_STRING][SC_BTS] | BYTES              | STRING
+[STRING][STRING_TIMESTAMP]             | TIMESTAMP          | STRING
+[TIME][T_TIME]                         | Various data types | TIME
+[TIMESTAMP][T_TIMESTAMP]               | Various data types | TIMESTAMP
+[TO_BASE32][T_B32]                     | BYTES              | STRING
+[TO_BASE64][T_B64]                     | BYTES              | STRING
+[TO_HEX][T_HEX]                        | BYTES              | STRING
+[TO_PROTO][T_PROTO]                    | Most data types    | PROTO value
+
+## Format clause for CAST 
+<a id="formatting_syntax"></a>
+
+```sql
+format_clause:
+  FORMAT format_model
+
+format_model:
+  format_string_expression
+```
+
+The format clause can be used in some `CAST` functions. You use a format clause
+to provide instructions for how to conduct a
+cast. For example, you could
+instruct a cast to convert a sequence of bytes to a BASE64-encoded string
+instead of a UTF-8-encoded string.
+
+The format clause includes a format model. The format model can contain
+format elements combined together as a format string.
+
+### Format bytes as string 
+<a id="format_bytes_as_string"></a>
+
+```sql
+CAST(bytes_expression AS STRING FORMAT format_string_expression)
+```
+
+You can cast a sequence of bytes to a string with a format element in the
+format string. If the bytes cannot be formatted with a
+format element, an error is returned. If the sequence of bytes is `NULL`, the
+result is `NULL`. Format elements are case-insensitive.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>HEX</td>
+      <td>
+        Converts a sequence of bytes into a hexadecimal string.
+      </td>
+      <td>
+        Input: b'\x00\x01\xEF\xFF'<br />
+        Output: 0001efff
+      </td>
+    </tr>
+    <tr>
+      <td>
+        BASEX
+      </td>
+      <td>
+        Converts a sequence of bytes into a
+        <a href="#about_basex_encoding">BASEX</a> encoded string.
+        X represents one of these numbers: 2, 8, 16, 32, 64.
+      </td>
+      <td>
+        Input as BASE8: b'\x02\x11\x3B'<br />
+        Output: 00410473
+      </td>
+    </tr>
+    <tr>
+      <td>BASE64M</td>
+      <td>
+        Converts a sequence of bytes into a
+        <a href="#about_basex_encoding">BASE64</a>-encoded string based on
+        <a href="https://tools.ietf.org/html/rfc2045#section-6.8">rfc 2045</a>
+        for MIME. Generates a newline character ("\n") every 76 characters.
+      </td>
+      <td>
+        Input: b'\xde\xad\xbe\xef'<br />
+        Output: 3q2+7w==
+      </td>
+    </tr>
+    <tr>
+      <td>ASCII</td>
+      <td>
+        Converts a sequence of bytes that are ASCII values to a string. If the
+        input contains bytes that are not a valid ASCII encoding, an error
+        is returned.
+      </td>
+      <td>
+        Input: b'\x48\x65\x6c\x6c\x6f'<br />
+        Output: Hello
+      </td>
+    </tr>
+    <tr>
+      <td>UTF-8</td>
+      <td>
+        Converts a sequence of bytes that are UTF-8 values to a string.
+        If the input contains bytes that are not a valid UTF-8 encoding,
+        an error is returned.
+      </td>
+      <td>
+        Input: b'\x24'<br />
+        Output: $
+      </td>
+    </tr>
+    <tr>
+      <td>UTF8</td>
+      <td>
+        Same behavior as UTF-8.
+      </td>
+      <td>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+`STRING`
+
+**Example**
+
+```sql
+SELECT CAST(b'\x48\x65\x6c\x6c\x6f' AS STRING FORMAT 'ASCII') AS bytes_to_string;
+
++-----------------+
+| bytes_to_string |
++-----------------+
+| Hello           |
++-----------------+
+```
+
+### Format string as bytes 
+<a id="format_string_as_bytes"></a>
+
+```sql
+CAST(string_expression AS BYTES FORMAT format_string_expression)
+```
+
+You can cast a string to bytes with a format element in the
+format string. If the string cannot be formatted with the
+format element, an error is returned. Format elements are case-insensitive.
+
+In the string expression, whitespace characters, such as `\n`, are ignored
+if the `BASE64` or `BASE64M` format element is used.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>HEX</td>
+      <td>
+        Converts a hexadecimal-encoded string to bytes. If the input
+        contains characters that are not part of the HEX encoding alphabet
+        (0~9, case-insensitive a~f), an error is returned.
+      </td>
+      <td>
+        Input: '0001efff'<br />
+        Output: b'\x00\x01\xEF\xFF'
+      </td>
+    </tr>
+    <tr>
+      <td>
+        BASEX
+      </td>
+      <td>
+        Converts a <a href="#about_basex_encoding">BASEX</a>-encoded string to
+        bytes.  X represents one of these numbers: 2, 8, 16, 32, 64. An error
+        is returned if the input contains characters that are not part of the
+        BASEX encoding alphabet, except whitespace characters if the
+        format element is BASE64.
+      </td>
+      <td>
+        Input as BASE8: '00410473'<br />
+        Output: b'\x02\x11\x3B'
+      </td>
+    </tr>
+    <tr>
+      <td>BASE64M</td>
+      <td>
+        Converts a <a href="#about_basex_encoding">BASE64</a>-encoded string to
+        bytes. If the input contains characters that are not whitespace and not
+        part of the BASE64 encoding alphabet defined at
+        <a href="https://tools.ietf.org/html/rfc2045#section-6.8">rfc 2045</a>,
+        an error is returned. BASE64M and BASE64 decoding have the same
+        behavior.
+      </td>
+      <td>
+        Input: '3q2+7w=='<br />
+        Output: b'\xde\xad\xbe\xef'
+      </td>
+    </tr>
+    <tr>
+      <td>ASCII</td>
+      <td>
+        Converts a string with only ASCII characters to bytes. If the input
+        contains characters that are not ASCII characters, an error is
+        returned.
+      </td>
+      <td>
+        Input: 'Hello'<br />
+        Output: b'\x48\x65\x6c\x6c\x6f'
+      </td>
+    </tr>
+    <tr>
+      <td>UTF-8</td>
+      <td>
+        Converts a string to a sequence of UTF-8 bytes.
+      </td>
+      <td>
+        Input: '$'<br />
+        Output: b'\x24'
+      </td>
+    </tr>
+    <tr>
+      <td>UTF8</td>
+      <td>
+        Same behavior as UTF-8.
+      </td>
+      <td>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+`BYTES`
+
+**Example**
+
+```sql
+SELECT CAST('Hello' AS BYTES FORMAT 'ASCII') AS string_to_bytes
+
++-------------------------+
+| string_to_bytes         |
++-------------------------+
+| b'\x48\x65\x6c\x6c\x6f' |
++-------------------------+
+```
+
+### Format date and time as string 
+<a id="format_date_time_as_string"></a>
+
+You can format these date and time parts as a string:
+
++ [Format year part as string][format-year-as-string]
++ [Format month part as string][format-month-as-string]
++ [Format day part as string][format-day-as-string]
++ [Format hour part as string][format-hour-as-string]
++ [Format minute part as string][format-minute-as-string]
++ [Format second part as string][format-second-as-string]
++ [Format meridian indicator as string][format-meridian-as-string]
++ [Format time zone as string][format-tz-as-string]
++ [Format literal as string][format-literal-as-string]
+
+Case matching is supported when you format some date or time parts as a string
+and the output contains letters. To learn more,
+see [Case matching][case-matching-date-time].
+
+#### Case matching 
+<a id="case_matching_date_time"></a>
+
+When the output of some format element contains letters, the letter cases of
+the output is matched with the letter cases of the format element,
+meaning the words in the output are capitalized according to how the
+format element is capitalized. This is called case matching. The rules are:
+
++ If the first two letters of the element are both upper case, the words in
+  the output are capitalized. For example `DAY` = `THURSDAY`.
++ If the first letter of the element is upper case, and the second letter is
+  lowercase, the first letter of each word in the output is capitalized and
+  other letters are lowercase. For example `Day` = `Thursday`.
++ If the first letter of the element is lowercase, then all letters in the
+  output are lowercase. For example, `day` = `thursday`.
+
+#### Format year part as string 
+<a id="format_year_as_string"></a>
+
+```sql
+CAST(expression AS STRING FORMAT format_string_expression)
+```
+
+Casts a data type that contains the year part to a string. Includes
+format elements, which provide instructions for how to conduct the cast.
+
++ `expression`: This expression contains the data type with the year
+  that you need to format.
++ `format_string_expression`: A string which contains format elements, including
+  the year format element.
+
+These data types include a year part:
+
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
+
+If `expression` or `format_string_expression` is `NULL` the return value is
+`NULL`. If `format_string_expression` is an empty string, the output is an
+empty string. An error is generated if a value that is not a supported
+format element appears in `format_string_expression` or `expression` does not
+contain a value specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>YYYY</td>
+      <td>Year, 4 or more digits.</td>
+      <td>
+        Input: DATE '2018-01-30'<br />
+        Output: 2018
+        <hr />
+        Input: DATE '76-01-30'<br />
+        Output: 0076
+        <hr />
+        Input: DATE '10000-01-30'<br />
+        Output: 10000
+      </td>
+    </tr>
+    <tr>
+      <td>YYY</td>
+      <td>Year, last 3 digits only.</td>
+      <td>
+        Input: DATE '2018-01-30'<br />
+        Output: 018
+        <hr />
+        Input: DATE '98-01-30'<br />
+        Output: 098
+      </td>
+    </tr>
+    <tr>
+      <td>YY</td>
+      <td>Year, last 2 digits only.</td>
+      <td>
+        Input: DATE '2018-01-30'<br />
+        Output: 18
+        <hr />
+        Input: DATE '8-01-30'<br />
+        Output: 08
+      </td>
+    </tr>
+    <tr>
+      <td>Y</td>
+      <td>Year, last digit only.</td>
+      <td>
+        Input: DATE '2018-01-30'<br />
+        Output: 8
+      </td>
+    </tr>
+    <tr>
+      <td>RRRR</td>
+      <td>Same behavior as YYYY.</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>RR</td>
+      <td>Same behavior as YY.</td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+`STRING`
+
+**Example**
+
+```sql
+SELECT CAST(DATE '2018-01-30' AS STRING FORMAT 'YYYY') AS date_time_to_string;
+
++---------------------+
+| date_time_to_string |
++---------------------+
+| 2018                |
++---------------------+
+```
+
+#### Format month part as string 
+<a id="format_month_as_string"></a>
+
+```sql
+CAST(expression AS STRING FORMAT format_string_expression)
+```
+
+Casts a data type that contains the month part to a string. Includes
+format elements, which provide instructions for how to conduct the cast.
+
++ `expression`: This expression contains the data type with the month
+  that you need to format.
++ `format_string_expression`: A string which contains format elements, including
+  the month format element.
+
+These data types include a month part:
+
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
+
+If `expression` or `format_string_expression` is `NULL` the return value is
+`NULL`. If `format_string_expression` is an empty string, the output is an
+empty string. An error is generated if a value that is not a supported
+format element appears in `format_string_expression` or `expression` does not
+contain a value specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>MM</td>
+      <td>Month, 2 digits.</td>
+      <td>
+        Input: DATE '2018-01-30'<br />
+        Output: 01
+      </td>
+    </tr>
+    <tr>
+      <td>MON</td>
+      <td>
+        Abbreviated, 3-character name of the month. The abbreviated month names
+        for locale en-US are: JAN, FEB, MAR, APR, MAY, JUN, JUL, AUG, SEP, OCT,
+        NOV, DEC. <a href="#case_matching_date_time">Case matching</a> is
+        supported.
+      </td>
+      <td>
+        Input: DATE '2018-01-30'<br />
+        Output: JAN
+      </td>
+    </tr>
+    <tr>
+      <td>MONTH</td>
+      <td>
+        Name of the month.
+        <a href="#case_matching_date_time">Case matching</a> is supported.
+      </td>
+      <td>
+        Input: DATE '2018-01-30'<br />
+        Output: JANUARY
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+`STRING`
+
+**Example**
+
+```sql
+SELECT CAST(DATE '2018-01-30' AS STRING FORMAT 'MONTH') AS date_time_to_string;
+
++---------------------+
+| date_time_to_string |
++---------------------+
+| JANUARY             |
++---------------------+
+```
+
+#### Format day part as string 
+<a id="format_day_as_string"></a>
+
+```sql
+CAST(expression AS STRING FORMAT format_string_expression)
+```
+
+Casts a data type that contains the day part to a string. Includes
+format elements, which provide instructions for how to conduct the cast.
+
++ `expression`: This expression contains the data type with the day
+  that you need to format.
++ `format_string_expression`: A string which contains format elements, including
+  the day format element.
+
+These data types include a day part:
+
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
+
+If `expression` or `format_string_expression` is `NULL` the return value is
+`NULL`. If `format_string_expression` is an empty string, the output is an
+empty string. An error is generated if a value that is not a supported
+format element appears in `format_string_expression` or `expression` does not
+contain a value specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>DAY</td>
+      <td>
+        Name of the day of the week, localized. Spaces are padded on the right
+        side to make the output size exactly 9.
+        <a href="#case_matching_date_time">Case matching</a> is supported.
+      </td>
+      <td>
+        Input: DATE '2020-12-31'<br />
+        Output: THURSDAY
+      </td>
+    </tr>
+    <tr>
+      <td>DY</td>
+      <td>
+        Abbreviated, 3-character name of the weekday, localized.
+        The abbreviated weekday names for locale en-US are: MON, TUE, WED, THU,
+        FRI, SAT, SUN.
+        <a href="#case_matching_date_time">Case matching</a> is supported.
+      </td>
+      <td>
+        Input: DATE '2020-12-31'<br />
+        Output: THU
+      </td>
+    </tr>
+    <tr>
+      <td>D</td>
+      <td>Day of the week (1 to 7), starting with Sunday as 1.</td>
+      <td>
+        Input: DATE '2020-12-31'<br />
+        Output: 4
+      </td>
+    </tr>
+    <tr>
+      <td>DD</td>
+      <td>2-digit day of the month.</td>
+      <td>
+        Input: DATE '2018-12-02'<br />
+        Output: 02
+      </td>
+    </tr>
+    <tr>
+      <td>DDD</td>
+      <td>3-digit day of the year.</td>
+      <td>
+        Input: DATE '2018-02-03'<br />
+        Output: 034
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+`STRING`
+
+**Example**
+
+```sql
+SELECT CAST(DATE '2018-02-15' AS STRING FORMAT 'DD') AS date_time_to_string;
+
++---------------------+
+| date_time_to_string |
++---------------------+
+| 15                  |
++---------------------+
+```
+
+#### Format hour part as string 
+<a id="format_hour_as_string"></a>
+
+```sql
+CAST(expression AS STRING FORMAT format_string_expression)
+```
+
+Casts a data type that contains the hour part to a string. Includes
+format elements, which provide instructions for how to conduct the cast.
+
++ `expression`: This expression contains the data type with the hour
+  that you need to format.
++ `format_string_expression`: A string which contains format elements, including
+  the hour format element.
+
+These data types include a hour part:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+If `expression` or `format_string_expression` is `NULL` the return value is
+`NULL`. If `format_string_expression` is an empty string, the output is an
+empty string. An error is generated if a value that is not a supported
+format element appears in `format_string_expression` or `expression` does not
+contain a value specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>HH</td>
+      <td>Hour of the day, 12-hour clock, 2 digits.</td>
+      <td>
+        Input: TIME '21:30:00'<br />
+        Output: 09
+      </td>
+    </tr>
+    <tr>
+      <td>HH12</td>
+      <td>
+        Hour of the day, 12-hour clock.
+      </td>
+      <td>
+        Input: TIME '21:30:00'<br />
+        Output: 09
+      </td>
+    </tr>
+    <tr>
+      <td>HH24</td>
+      <td>
+        Hour of the day, 24-hour clock, 2 digits.
+      </td>
+      <td>
+        Input: TIME '21:30:00'<br />
+        Output: 21
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+`STRING`
+
+**Examples**
+
+```sql
+SELECT CAST(TIME '21:30:00' AS STRING FORMAT 'HH24') AS date_time_to_string;
+
++---------------------+
+| date_time_to_string |
++---------------------+
+| 21                  |
++---------------------+
+```
+
+```sql
+SELECT CAST(TIME '21:30:00' AS STRING FORMAT 'HH12') AS date_time_to_string;
+
++---------------------+
+| date_time_to_string |
++---------------------+
+| 09                  |
++---------------------+
+```
+
+#### Format minute part as string 
+<a id="format_minute_as_string"></a>
+
+```sql
+CAST(expression AS STRING FORMAT format_string_expression)
+```
+
+Casts a data type that contains the minute part to a string. Includes
+format elements, which provide instructions for how to conduct the cast.
+
++ `expression`: This expression contains the data type with the minute
+  that you need to format.
++ `format_string_expression`: A string which contains format elements, including
+  the minute format element.
+
+These data types include a minute part:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+If `expression` or `format_string_expression` is `NULL` the return value is
+`NULL`. If `format_string_expression` is an empty string, the output is an
+empty string. An error is generated if a value that is not a supported
+format element appears in `format_string_expression` or `expression` does not
+contain a value specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>MI</td>
+      <td>Minute, 2 digits.</td>
+      <td>
+        Input: TIME '01:02:03'<br />
+        Output: 02
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+`STRING`
+
+**Example**
+
+```sql
+SELECT CAST(TIME '21:30:00' AS STRING FORMAT 'MI') AS date_time_to_string;
+
++---------------------+
+| date_time_to_string |
++---------------------+
+| 30                  |
++---------------------+
+```
+
+#### Format second part as string 
+<a id="format_second_as_string"></a>
+
+```sql
+CAST(expression AS STRING FORMAT format_string_expression)
+```
+
+Casts a data type that contains the second part to a string. Includes
+format elements, which provide instructions for how to conduct the cast.
+
++ `expression`: This expression contains the data type with the second
+  that you need to format.
++ `format_string_expression`: A string which contains format elements, including
+  the second format element.
+
+These data types include a second part:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+If `expression` or `format_string_expression` is `NULL` the return value is
+`NULL`. If `format_string_expression` is an empty string, the output is an
+empty string. An error is generated if a value that is not a supported
+format element appears in `format_string_expression` or `expression` does not
+contain a value specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>SS</td>
+      <td>Seconds of the minute, 2 digits.</td>
+      <td>
+        Input: TIME '01:02:03'<br />
+        Output: 03
+      </td>
+    </tr>
+    <tr>
+      <td>SSSSS</td>
+      <td>Seconds of the day, 5 digits.</td>
+      <td>
+        Input: TIME '01:02:03'<br />
+        Output: 03723
+      </td>
+    </tr>
+    <tr>
+      <td>FFn</td>
+      <td>
+        Fractional part of the second, <code>n</code> digits long.
+        Replace <code>n</code> with a value from 1 to 9. For example, FF5.
+        The fractional part of the second is rounded
+        to fit the size of the output.
+      </td>
+      <td>
+        Input for FF1: TIME '01:05:07.16'<br />
+        Output: 1
+        <hr />
+        Input for FF2: TIME '01:05:07.16'<br />
+        Output: 16
+        <hr />
+        Input for FF3: TIME '01:05:07.16'<br />
+        Output: 016
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+`STRING`
+
+**Examples**
+
+```sql
+SELECT CAST(TIME '21:30:25.16' AS STRING FORMAT 'SS') AS date_time_to_string;
+
++---------------------+
+| date_time_to_string |
++---------------------+
+| 25                  |
++---------------------+
+```
+
+```sql
+SELECT CAST(TIME '21:30:25.16' AS STRING FORMAT 'FF2') AS date_time_to_string;
+
++---------------------+
+| date_time_to_string |
++---------------------+
+| 16                  |
++---------------------+
+```
+
+#### Format meridian indicator part as string 
+<a id="format_meridian_as_string"></a>
+
+```sql
+CAST(expression AS STRING FORMAT format_string_expression)
+```
+
+Casts a data type that contains the meridian indicator part to a string. Includes
+format elements, which provide instructions for how to conduct the cast.
+
++ `expression`: This expression contains the data type with the meridian indicator
+  that you need to format.
++ `format_string_expression`: A string which contains format elements, including
+  the meridian indicator format element.
+
+These data types include a meridian indicator part:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+If `expression` or `format_string_expression` is `NULL` the return value is
+`NULL`. If `format_string_expression` is an empty string, the output is an
+empty string. An error is generated if a value that is not a supported
+format element appears in `format_string_expression` or `expression` does not
+contain a value specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>A.M.</td>
+      <td>
+        A.M. if the time is less than 12, otherwise P.M.
+        The letter case of the output is determined by the first letter case
+        of the format element.
+      </td>
+      <td>
+        Input for A.M.: TIME '01:02:03'<br />
+        Output: A.M.
+        <hr />
+        Input for A.M.: TIME '16:02:03'<br />
+        Output: P.M.
+        <hr />
+        Input for a.m.: TIME '01:02:03'<br />
+        Output: a.m.
+        <hr />
+        Input for a.M.: TIME '01:02:03'<br />
+        Output: a.m.
+      </td>
+    </tr>
+    <tr>
+      <td>AM</td>
+      <td>
+        AM if the time is less than 12, otherwise PM.
+        The letter case of the output is determined by the first letter case
+        of the format element.
+      </td>
+      <td>
+        Input for AM: TIME '01:02:03'<br />
+        Output: AM
+        <hr />
+        Input for AM: TIME '16:02:03'<br />
+        Output: PM
+        <hr />
+        Input for am: TIME '01:02:03'<br />
+        Output: am
+        <hr />
+        Input for aM: TIME '01:02:03'<br />
+        Output: am
+      </td>
+    </tr>
+    <tr>
+      <td>P.M.</td>
+      <td>Output is the same as A.M. format element.</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>PM</td>
+      <td>Output is the same as AM format element.</td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+`STRING`
+
+**Examples**
+
+```sql
+SELECT CAST(TIME '21:30:00' AS STRING FORMAT 'AM') AS date_time_to_string;
+SELECT CAST(TIME '21:30:00' AS STRING FORMAT 'PM') AS date_time_to_string;
+
++---------------------+
+| date_time_to_string |
++---------------------+
+| PM                  |
++---------------------+
+```
+
+```sql
+SELECT CAST(TIME '01:30:00' AS STRING FORMAT 'AM') AS date_time_to_string;
+SELECT CAST(TIME '01:30:00' AS STRING FORMAT 'PM') AS date_time_to_string;
+
++---------------------+
+| date_time_to_string |
++---------------------+
+| AM                  |
++---------------------+
+```
+
+#### Format time zone part as string 
+<a id="format_tz_as_string"></a>
+
+```sql
+CAST(expression AS STRING FORMAT format_string_expression)
+```
+
+Casts a data type that contains the time zone part to a string. Includes
+format elements, which provide instructions for how to conduct the cast.
+
++ `expression`: This expression contains the data type with the time zone
+  that you need to format.
++ `format_string_expression`: A string which contains format elements, including
+  the time zone format element.
+
+These data types include a time zone part:
+
++ `DATE`
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+If `expression` or `format_string_expression` is `NULL` the return value is
+`NULL`. If `format_string_expression` is an empty string, the output is an
+empty string. An error is generated if a value that is not a supported
+format element appears in `format_string_expression` or `expression` does not
+contain a value specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>TZH</td>
+      <td>
+        Hour offset for a time zone. This includes the <code>+/-</code> sign and
+        2-digit hour.
+      </td>
+      <td>
+        Inputstamp: TIMESTAMP '2008-12-25 05:30:00+00'
+        Output: −08
+      </td>
+    </tr>
+    <tr>
+      <td>TZM</td>
+      <td>
+        Minute offset for a time zone. This includes only the 2-digit minute.
+      </td>
+      <td>
+        Inputstamp: TIMESTAMP '2008-12-25 05:30:00+00'
+        Output: 00
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+`STRING`
+
+**Examples**
+
+```sql
+SELECT CAST(TIMESTAMP '2008-12-25 00:00:00+00:00' AS STRING FORMAT 'TZH') AS date_time_to_string;
+
+-- Results depend upon where this query was executed.
++---------------------+
+| date_time_to_string |
++---------------------+
+| -08                 |
++---------------------+
+```
+
+```sql
+SELECT CAST(TIMESTAMP '2008-12-25 00:00:00+00:00' AS STRING FORMAT 'TZH' AT TIME ZONE 'Asia/Kolkata')
+AS date_time_to_string;
+
+-- Because the time zone is specified, the result is always the same.
++---------------------+
+| date_time_to_string |
++---------------------+
+| +05                 |
++---------------------+
+```
+
+```sql
+SELECT CAST(TIMESTAMP '2008-12-25 00:00:00+00:00' AS STRING FORMAT 'TZM') AS date_time_to_string;
+
+-- Results depend upon where this query was executed.
++---------------------+
+| date_time_to_string |
++---------------------+
+| 00                  |
++---------------------+
+```
+
+```sql
+SELECT CAST(TIMESTAMP '2008-12-25 00:00:00+00:00' AS STRING FORMAT 'TZM' AT TIME ZONE 'Asia/Kolkata')
+AS date_time_to_string;
+
+-- Because the time zone is specified, the result is always the same.
++---------------------+
+| date_time_to_string |
++---------------------+
+| 30                  |
++---------------------+
+```
+
+#### Format literal as string 
+<a id="format_literal_as_string"></a>
+
+```sql
+CAST(expression AS STRING FORMAT format_string_expression)
+```
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>-</td>
+      <td>Output is the same as the input.</td>
+      <td>-</td>
+    </tr>
+    <tr>
+      <td>.</td>
+      <td>Output is the same as the input.</td>
+      <td>.</td>
+    </tr>
+    <tr>
+      <td>/</td>
+      <td>Output is the same as the input.</td>
+      <td>/</td>
+    </tr>
+    <tr>
+      <td>,</td>
+      <td>Output is the same as the input.</td>
+      <td>,</td>
+    </tr>
+    <tr>
+      <td>'</td>
+      <td>Output is the same as the input.</td>
+      <td>'</td>
+    </tr>
+    <tr>
+      <td>;</td>
+      <td>Output is the same as the input.</td>
+      <td>;</td>
+    </tr>
+    <tr>
+      <td>:</td>
+      <td>Output is the same as the input.</td>
+      <td>:</td>
+    </tr>
+    <tr>
+      <td>Whitespace</td>
+      <td>
+        Output is the same as the input.
+        Whitespace means the space character, ASCII 32. It does not mean
+        other types of space like tab or new line. Any whitespace character
+        that is not the ASCII 32 character in the format model generates
+        an error.
+      </td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>"text"</td>
+      <td>
+        Output is the value within the double quotes. To preserve a double
+        quote or backslash character, use the <code>\"</code> or <code>\\</code>
+        escape sequence. Other escape sequences are not supported.
+      </td>
+      <td>
+        Input: "abc"<br />
+        Output: abc
+        <hr />
+        Input: "a\"b\\c"<br />
+        Output: a"b\c
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+### Format string as date and time 
+<a id="format_string_as_datetime"></a>
+
+You can format a string with these date and time parts:
+
++ [Format string as year part][format-string-as-year]
++ [Format string as month part][format-string-as-month]
++ [Format string as day part][format-string-as-day]
++ [Format string as hour part][format-string-as-hour]
++ [Format string as minute part][format-string-as-minute]
++ [Format string as second part][format-string-as-second]
++ [Format string as meridian indicator part][format-string-as-meridian]
++ [Format string as time zone part][format-string-as-tz]
++ [Format string as literal part][format-string-as-literal]
+
+When formatting a string with date and time parts, you must follow the
+[format model rules][format-model-rules-date-time].
+
+#### Format model rules 
+<a id="format_model_rules_date_time"></a>
+
+When casting a string to date and time parts, you must ensure the _format model_
+is valid. The format model represents the elements passed into
+`CAST(string_expression AS type FORMAT format_string_expression)` as the
+`format_string_expression` and is validated according to the following
+rules:
+
++ It contains at most one of each of the following parts:
+  meridian indicator, year, month, day, hour.
++ A non-literal, non-whitespace format element cannot appear more than once.
++ If it contains the day of year format element, `DDD`,  then it cannot contain
+  the month.
++ If it contains the 24-hour format element, `HH24`,  then it cannot contain the
+  12-hour format element or a meridian indicator.
++ If it contains the 12-hour format element, `HH12` or `HH`,  then it must also
+  contain a meridian indicator.
++ If it contains a meridian indicator, then it must also contain a 12-hour
+  format element.
++ If it contains the second of the day format element, `SSSSS`,  then it cannot
+  contain any of the following: hour, minute, second, or meridian indicator.
++ It cannot contain a format element such that the value it sets does not exist
+  in the target type. For example, an hour format element such as `HH24` cannot
+  appear in a string you are casting as a `DATE`.
+
+#### Format string as year part 
+<a id="format_string_as_year"></a>
+
+```sql
+CAST(string_expression AS type FORMAT format_string_expression)
+```
+
+Casts a string-formatted year to a data type that contains
+the year part. Includes format elements, which provide instructions for how
+to conduct the cast.
+
++ `string_expression`: This expression contains the string with the year
+  that you need to format.
++ `type`: The data type to which you are casting. Must include the year
+  part.
++ `format_string_expression`: A string which contains format elements, including
+  the year format element. The formats elements in this string are
+  defined collectively as the format model, which must follow
+  [these rules][format-model-rules-date-time].
+
+These data types include a year part:
+
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
+
+If the `YEAR` part is missing from `string_expression` and the return type
+includes this part, `YEAR` is set to the current year.
+
+An error is generated if a value that is not a supported format element appears
+in `format_string_expression` or `string_expression` does not contain a value
+specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>YYYY</td>
+      <td>
+        If it is delimited, matches 1 to 5 digits. If it is not delimited,
+        matches 4 digits. Sets the year part to the matched number.
+      </td>
+      <td>
+        Input for MM-DD-YYYY: '03-12-2018'<br />
+        Output as DATE: 2018-12-03
+        <hr />
+        Input for YYYY-MMDD: '10000-1203'<br />
+        Output as DATE: 10000-12-03
+        <hr />
+        Input for YYYY: '18'<br />
+        Output as DATE: 2018-03-01 (Assume current date is March 23, 2021)
+      </td>
+    </tr>
+    <tr>
+      <td>YYY</td>
+      <td>
+        Matches 3 digits. Sets the last 3 digits of the year part to the
+        matched number.
+      </td>
+      <td>
+        Input for YYY-MM-DD: '018-12-03'<br />
+        Output as DATE: 2018-12-03
+        <hr />
+        Input for YYY-MM-DD: '038-12-03'<br />
+        Output as DATE: 2038-12-03
+      </td>
+    </tr>
+    <tr>
+      <td>YY</td>
+      <td>
+        Matches 2 digits. Sets the last 2 digits of the year part to the
+        matched number.
+      </td>
+      <td>
+        Input for YY-MM-DD: '18-12-03'<br />
+        Output as DATE: 2018-12-03
+        <hr />
+        Input for YY-MM-DD: '38-12-03'<br />
+        Output as DATE: 2038-12-03
+      </td>
+    </tr>
+    <tr>
+      <td>Y</td>
+      <td>
+        Matches 1 digit. Sets the last digit of the year part to the matched
+        number.
+      </td>
+      <td>
+        Input for Y-MM-DD: '8-12-03'<br />
+        Output as DATE: 2008-12-03
+      </td>
+    </tr>
+    <tr>
+      <td>Y,YYY</td>
+      <td>
+        Matches the pattern of 1 to 2 digits, comma, then exactly 3 digits.
+        Sets the year part to the matched number.
+      </td>
+      <td>
+        Input for Y,YYY-MM-DD: '2,018-12-03'<br />
+        Output as DATE: 2008-12-03
+      </td>
+    </tr>
+    <tr>
+    <tr>
+      <td>RRRR</td>
+      <td>Same behavior as YYYY.</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>RR</td>
+      <td>
+        <p>
+          Matches 2 digits.
+        </p>
+        <p>
+          If the 2 digits entered are between 00 and 49 and the
+          last 2 digits of the current year are between 00 and 49, the
+          returned year has the same first 2 digits as the current year.
+          If the last 2 digits of the current year are between 50 and 99,
+          the first 2 digits of the returned year is 1 greater than the first 2
+          digits of the current year.
+        </p>
+        <p>
+          If the 2 digits entered are between 50 and 99 and the
+          last 2 digits of the current year are between 00 and 49, the first
+          2 digits of the returned year are 1 less than the first 2 digits of
+          the current year. If the last 2 digits of the current year are
+          between 50 and 99, the returned year has the same first 2 digits
+          as the current year.
+        </p>
+      </td>
+      <td>
+        Input for RR-MM-DD: '18-12-03'<br />
+        Output as DATE: 2018-12-03 (executed in the year 2021)
+        Output as DATE: 2118-12-03 (executed in the year 2050)
+        <hr />
+        Input for RR-MM-DD: '50-12-03'<br />
+        Output as DATE: 2050-12-03 (executed in the year 2021)
+        Output as DATE: 2050-12-03 (executed in the year 2050)
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+The data type to which the string was cast. This can be:
+
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Examples**
+
+```sql
+SELECT CAST('18-12-03' AS DATE FORMAT 'YY-MM-DD') AS string_to_date_time
+
++---------------------+
+| string_to_date_time |
++---------------------+
+| 2018-02-03          |
++---------------------+
+```
+
+#### Format string as month part 
+<a id="format_string_as_month"></a>
+
+```sql
+CAST(string_expression AS type FORMAT format_string_expression)
+```
+
+Casts a string-formatted month to a data type that contains
+the month part. Includes format elements, which provide instructions for how
+to conduct the cast.
+
++ `string_expression`: This expression contains the string with the month
+  that you need to format.
++ `type`: The data type to which you are casting. Must include the month
+  part.
++ `format_string_expression`: A string which contains format elements, including
+  the month format element. The formats elements in this string are
+  defined collectively as the format model, which must follow
+  [these rules][format-model-rules-date-time].
+
+These data types include a month part:
+
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
+
+If the `MONTH` part is missing from `string_expression` and the return type
+includes this part, `MONTH` is set to the current month.
+
+An error is generated if a value that is not a supported format element appears
+in `format_string_expression` or `string_expression` does not contain a value
+specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>MM</td>
+      <td>
+        Matches 2 digits. Sets the month part to the matched number.
+      </td>
+      <td>
+        Input for MM-DD-YYYY: '03-12-2018'<br />
+        Output as DATE: 2018-12-03
+      </td>
+    </tr>
+    <tr>
+      <td>MON</td>
+      <td>
+        Matches 3 letters. Sets the month part to the matched string interpreted
+        as the abbreviated name of the month.
+      </td>
+      <td>
+        Input for MON DD, YYYY: 'DEC 03, 2018'<br />
+        Output as DATE: 2018-12-03
+      </td>
+    </tr>
+    <tr>
+      <td>MONTH</td>
+      <td>
+        Matches 9 letters. Sets the month part to the matched string interpreted
+        as the name of the month.
+      </td>
+      <td>
+        Input for MONTH DD, YYYY: 'DECEMBER 03, 2018'<br />
+        Output as DATE: 2018-12-03
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+The data type to which the string was cast. This can be:
+
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Examples**
+
+```sql
+SELECT CAST('DEC 03, 2018' AS DATE FORMAT 'MON DD, YYYY') AS string_to_date_time
+
++---------------------+
+| string_to_date_time |
++---------------------+
+| 2018-12-03          |
++---------------------+
+```
+
+#### Format string as day part 
+<a id="format_string_as_day"></a>
+
+```sql
+CAST(string_expression AS type FORMAT format_string_expression)
+```
+
+Casts a string-formatted day to a data type that contains
+the day part. Includes format elements, which provide instructions for how
+to conduct the cast.
+
++ `string_expression`: This expression contains the string with the day
+  that you need to format.
++ `type`: The data type to which you are casting. Must include the day
+  part.
++ `format_string_expression`: A string which contains format elements, including
+  the day format element. The formats elements in this string are
+  defined collectively as the format model, which must follow
+  [these rules][format-model-rules-date-time].
+
+These data types include a day part:
+
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
+
+If the `DAY` part is missing from `string_expression` and the return type
+includes this part, `DAY` is set to `1`.
+
+An error is generated if a value that is not a supported format element appears
+in `format_string_expression` or `string_expression` does not contain a value
+specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>DD</td>
+      <td>Matches 2 digits. Sets the day part to the matched number.</td>
+      <td>
+        Input for MONTH DD, YYYY: 'DECEMBER 03, 2018'<br />
+        Output as DATE: 2018-12-03
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+The data type to which the string was cast. This can be:
+
++ `DATE`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Examples**
+
+```sql
+SELECT CAST('DECEMBER 03, 2018' AS DATE FORMAT 'MONTH DD, YYYY') AS string_to_date_time
+
++---------------------+
+| string_to_date_time |
++---------------------+
+| 2018-12-03          |
++---------------------+
+```
+
+#### Format string as hour part 
+<a id="format_string_as_hour"></a>
+
+```sql
+CAST(string_expression AS type FORMAT format_string_expression)
+```
+
+Casts a string-formatted hour to a data type that contains
+the hour part. Includes format elements, which provide instructions for how
+to conduct the cast.
+
++ `string_expression`: This expression contains the string with the hour
+  that you need to format.
++ `type`: The data type to which you are casting. Must include the hour
+  part.
++ `format_string_expression`: A string which contains format elements, including
+  the hour format element. The formats elements in this string are
+  defined collectively as the format model, which must follow
+  [these rules][format-model-rules-date-time].
+
+These data types include a hour part:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+If the `HOUR` part is missing from `string_expression` and the return type
+includes this part, `HOUR` is set to `0`.
+
+An error is generated if a value that is not a supported format element appears
+in `format_string_expression` or `string_expression` does not contain a value
+specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>HH</td>
+      <td>
+        Matches 2 digits. If the matched number <code>n</code> is <code>12</code>,
+        sets <code>temp = 0</code>; otherwise, sets <code>temp = n</code>. If
+        the matched value of the A.M./P.M. format element is P.M., sets
+        <code>temp = n + 12</code>. Sets the hour part to <code>temp</code>.
+        A meridian indicator must be present in the format model, when
+        HH is present.
+      </td>
+      <td>
+        Input for HH:MI P.M.: '03:30 P.M.'<br />
+        Output as TIME: 15:30:00
+      </td>
+    </tr>
+    <tr>
+      <td>HH12</td>
+      <td>
+        Same behavior as HH.
+      </td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>HH24</td>
+      <td>
+        Matches 2 digits. Sets the hour part to the matched number.
+      </td>
+      <td>
+        Input for HH24:MI: '15:30'<br />
+        Output as TIME: 15:30:00
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+The data type to which the string was cast. This can be:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Examples**
+
+```sql
+SELECT CAST('15:30' AS TIME FORMAT 'HH24:MI') AS string_to_date_time
+
++---------------------+
+| string_to_date_time |
++---------------------+
+| 15:30:00            |
++---------------------+
+```
+
+#### Format string as minute part 
+<a id="format_string_as_minute"></a>
+
+```sql
+CAST(string_expression AS type FORMAT format_string_expression)
+```
+
+Casts a string-formatted minute to a data type that contains
+the minute part. Includes format elements, which provide instructions for how
+to conduct the cast.
+
++ `string_expression`: This expression contains the string with the minute
+  that you need to format.
++ `type`: The data type to which you are casting. Must include the minute
+  part.
++ `format_string_expression`: A string which contains format elements, including
+  the minute format element. The formats elements in this string are
+  defined collectively as the format model, which must follow
+  [these rules][format-model-rules-date-time].
+
+These data types include a minute part:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+If the `MINUTE` part is missing from `string_expression` and the return type
+includes this part, `MINUTE` is set to `0`.
+
+An error is generated if a value that is not a supported format element appears
+in `format_string_expression` or `string_expression` does not contain a value
+specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>MI</td>
+      <td>
+        Matches 2 digits. Sets the minute part to the matched number.
+      </td>
+      <td>
+        Input for HH:MI P.M.: '03:30 P.M.'<br />
+        Output as TIME: 15:30:00
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+The data type to which the string was cast. This can be:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Examples**
+
+```sql
+SELECT CAST('03:30 P.M.' AS TIME FORMAT 'HH:MI P.M.') AS string_to_date_time
+
++---------------------+
+| string_to_date_time |
++---------------------+
+| 15:30:00            |
++---------------------+
+```
+
+#### Format string as second part 
+<a id="format_string_as_second"></a>
+
+```sql
+CAST(string_expression AS type FORMAT format_string_expression)
+```
+
+Casts a string-formatted second to a data type that contains
+the second part. Includes format elements, which provide instructions for how
+to conduct the cast.
+
++ `string_expression`: This expression contains the string with the second
+  that you need to format.
++ `type`: The data type to which you are casting. Must include the second
+  part.
++ `format_string_expression`: A string which contains format elements, including
+  the second format element. The formats elements in this string are
+  defined collectively as the format model, which must follow
+  [these rules][format-model-rules-date-time].
+
+These data types include a second part:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+If the `SECOND` part is missing from `string_expression` and the return type
+includes this part, `SECOND` is set to `0`.
+
+An error is generated if a value that is not a supported format element appears
+in `format_string_expression` or `string_expression` does not contain a value
+specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>SS</td>
+      <td>
+        Matches 2 digits. Sets the second part to the matched number.
+      </td>
+      <td>
+        Input for HH:MI:SS P.M.: '03:30:02 P.M.'<br />
+        Output as TIME: 15:30:02
+      </td>
+    </tr>
+    <tr>
+      <td>SSSSS</td>
+      <td>
+        Matches 5 digits. Sets the hour, minute and second parts by interpreting
+        the matched number as the number of seconds past midnight.
+      </td>
+      <td>
+        Input for SSSSS: '03723'<br />
+        Output as TIME: 01:02:03
+      </td>
+    </tr>
+    <tr>
+      <td>FFn</td>
+      <td>
+        Matches <code>n</code> digits, where <code>n</code> is the number
+        following FF in the format element. Sets the fractional part of the
+        second part to the matched number.
+      </td>
+      <td>
+        Input for HH24:MI:SS.FF1: '01:05:07.16'<br />
+        Output as TIME: 01:05:07.2
+        <hr />
+        Input for HH24:MI:SS.FF2: '01:05:07.16'<br />
+        Output as TIME: 01:05:07.16
+        <hr />
+        Input for HH24:MI:SS.FF3: 'FF3: 01:05:07.16'<br />
+        Output as TIME: 01:05:07.160
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+The data type to which the string was cast. This can be:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Examples**
+
+```sql
+SELECT CAST('01:05:07.16' AS TIME FORMAT 'HH24:MI:SS.FF1') AS string_to_date_time
+
++---------------------+
+| string_to_date_time |
++---------------------+
+| 01:05:07.2          |
++---------------------+
+```
+
+#### Format string as meridian indicator part 
+<a id="format_string_as_meridian"></a>
+
+```sql
+CAST(string_expression AS type FORMAT format_string_expression)
+```
+
+Casts a string-formatted meridian indicator to a data type that contains
+the meridian indicator part. Includes format elements, which provide instructions for how
+to conduct the cast.
+
++ `string_expression`: This expression contains the string with the meridian indicator
+  that you need to format.
++ `type`: The data type to which you are casting. Must include the meridian indicator
+  part.
++ `format_string_expression`: A string which contains format elements, including
+  the meridian indicator format element. The formats elements in this string are
+  defined collectively as the format model, which must follow
+  [these rules][format-model-rules-date-time].
+
+These data types include a meridian indicator part:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+An error is generated if a value that is not a supported format element appears
+in `format_string_expression` or `string_expression` does not contain a value
+specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>A.M. or P.M.</td>
+      <td>
+        Matches using the regular expression <code>'(A|P)\.M\.'</code>.
+      </td>
+      <td>
+        Input for HH:MI A.M.: '03:30 A.M.'<br />
+        Output as TIME: 03:30:00
+        <hr />
+        Input for HH:MI P.M.: '03:30 P.M.'<br />
+        Output as TIME: 15:30:00
+        <hr />
+        Input for HH:MI P.M.: '03:30 A.M.'<br />
+        Output as TIME: 03:30:00
+        <hr />
+        Input for HH:MI A.M.: '03:30 P.M.'<br />
+        Output as TIME: 15:30:00
+        <hr />
+        Input for HH:MI a.m.: '03:30 a.m.'<br />
+        Output as TIME: 03:30:00
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+The data type to which the string was cast. This can be:
+
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Examples**
+
+```sql
+SELECT CAST('03:30 P.M.' AS TIME FORMAT 'HH:MI A.M.') AS string_to_date_time
+
++---------------------+
+| string_to_date_time |
++---------------------+
+| 15:30:00            |
++---------------------+
+```
+
+#### Format string as time zone part 
+<a id="format_string_as_tz"></a>
+
+```sql
+CAST(string_expression AS type FORMAT format_string_expression)
+```
+
+Casts a string-formatted time zone to a data type that contains
+the time zone part. Includes format elements, which provide instructions for how
+to conduct the cast.
+
++ `string_expression`: This expression contains the string with the time zone
+  that you need to format.
++ `type`: The data type to which you are casting. Must include the time zone
+  part.
++ `format_string_expression`: A string which contains format elements, including
+  the time zone format element. The formats elements in this string are
+  defined collectively as the format model, which must follow
+  [these rules][format-model-rules-date-time].
+
+These data types include a time zone part:
+
++ `DATE`
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+An error is generated if a value that is not a supported format element appears
+in `format_string_expression` or `string_expression` does not contain a value
+specified by a format element.
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>TZH</td>
+      <td>
+        Matches using the regular expression <code>'(\+|\-| )[0-9]{2}'</code>.
+        Sets the time zone and hour parts to the matched sign and number.
+        Sets the time zone sign to be the first letter of the matched string.
+        The number 2 means matching up to 2 digits for non-exact matching, and
+        exactly 2 digits for exact matching.
+      </td>
+      <td>
+        Input for YYYY-MM-DD HH:MI:SSTZH: '2008-12-25 05:30:00-08'<br />
+        Output as TIMESTAMP: 2008-12-25 05:30:00-08
+      </td>
+    </tr>
+    <tr>
+      <td>TZM</td>
+      <td>
+        Matches 2 digits. Let <code>n</code> be the matched number. If the
+        time zone sign is the minus sign, sets the time zone minute part to
+        <code>-n</code>. Otherwise, sets the time zone minute part to
+        <code>n</code>.
+      </td>
+      <td>
+        Input for YYYY-MM-DD HH:MI:SSTZH: '2008-12-25 05:30:00+05.30'<br />
+        Output as TIMESTAMP: 2008-12-25 05:30:00+05.30
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Return type**
+
+The data type to which the string was cast. This can be:
+
++ `DATE`
++ `TIME`
++ `DATETIME`
++ `TIMESTAMP`
+
+**Examples**
+
+```sql
+SELECT CAST('2020.06.03 00:00:53+00' AS TIMESTAMP FORMAT 'YYYY.MM.DD HH:MI:SSTZH') AS string_to_date_time
+
++----------------------------+
+| as_timestamp               |
++----------------------------+
+| 2020-06-03 00:00:53.110+00 |
++----------------------------+
+```
+
+#### Format string as literal 
+<a id="format_string_as_literal"></a>
+
+```sql
+CAST(string_expression AS data_type FORMAT format_string_expression)
+```
+
+<table>
+  <thead>
+    <tr>
+      <th width='100px'>Format element</th>
+      <th width='400px'>Returns</th>
+      <th>Example</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>-</td>
+      <td>Output is the same as the input.</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>.</td>
+      <td>Output is the same as the input.</td>
+      <td>.</td>
+    </tr>
+    <tr>
+      <td>/</td>
+      <td>Output is the same as the input.</td>
+      <td>/</td>
+    </tr>
+    <tr>
+      <td>,</td>
+      <td>Output is the same as the input.</td>
+      <td>,</td>
+    </tr>
+    <tr>
+      <td>'</td>
+      <td>Output is the same as the input.</td>
+      <td>'</td>
+    </tr>
+    <tr>
+      <td>;</td>
+      <td>Output is the same as the input.</td>
+      <td>;</td>
+    </tr>
+    <tr>
+      <td>:</td>
+      <td>Output is the same as the input.</td>
+      <td>:</td>
+    </tr>
+    <tr>
+      <td>Whitespace</td>
+      <td>
+        A consecutive sequence of one or more spaces in the format model
+        is matched with one or more consecutive Unicode whitespace characters
+        in the input. Space means the ASCII 32 space character.
+        It does not mean the general whitespace such as a tab or new line.
+        Any whitespace character that is not the ASCII 32 character in the
+        format model generates an error.
+      </td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>"text"</td>
+      <td>
+        Output generated by the format element in formatting, using this
+        regular expression, with <code>s</code> representing the string input:
+        <code>regex.escape(s)</code>.
+      </td>
+      <td>
+        Input: "abc"<br />
+        Output: abc
+        <hr />
+        Input: "a\"b\\c"<br />
+        Output: a"b\c
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+### About BASE encoding 
+<a id="about_basex_encoding"></a>
+
+BASE encoding translates binary data in string format into a radix-X
+representation.
+
+If X is 2, 8, or 16, Arabic numerals 0–9 and the Latin letters
+a–z are used in the encoded string. So for example, BASE16/Hexadecimal encoding
+results contain 0~9 and a~f).
+
+If X is 32 or 64, the default character tables are defined in
+[rfc 4648][rfc-4648]. When you decode a BASE string where X is 2, 8, or 16,
+the Latin letters in the input string are case-insensitive. For example, both
+"3a" and "3A" are valid input strings for BASE16/Hexadecimal decoding, and
+will output the same result.
+
+[formatting-syntax]: #formatting_syntax
+[rfc-4648]: https://tools.ietf.org/html/rfc4648#section-3.3
+[about-basex-encoding]: #about_basex_encoding
+[format-string-as-bytes]: #format_string_as_bytes
+[format-bytes-as-string]: #format_bytes_as_string
+[format-date-time-as-string]: #format_date_time_as_string
+[case-matching-date-time]: #case_matching_date_time
+[format-year-as-string]: #format_year_as_string
+[format-month-as-string]: #format_month_as_string
+[format-day-as-string]: #format_day_as_string
+[format-hour-as-string]: #format_hour_as_string
+[format-minute-as-string]: #format_minute_as_string
+[format-second-as-string]: #format_second_as_string
+[format-meridian-as-string]: #format_meridian_as_string
+[format-tz-as-string]: #format_tz_as_string
+[format-literal-as-string]: #format_literal_as_string
+[format-string-as-date-time]: #format_string_as_datetime
+[format-model-rules-date-time]: #format_model_rules_date_time
+[format-string-as-year]: #format_string_as_year
+[format-string-as-month]: #format_string_as_month
+[format-string-as-day]: #format_string_as_day
+[format-string-as-hour]: #format_string_as_hour
+[format-string-as-minute]: #format_string_as_minute
+[format-string-as-second]: #format_string_as_second
+[format-string-as-meridian]: #format_string_as_meridian
+[format-string-as-tz]: #format_string_as_tz
+[format-string-as-literal]: #format_string_as_literal
+[con-func-cast]: #cast
+[con-func-safecast]: #safe_casting
+[conversion-rules]: https://github.com/google/zetasql/blob/master/docs/conversion_rules.md
+
+[conversion-rules]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#conversion_rules
+[ARRAY_STRING]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#array_to_string
+[BIT_I32]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#bit_cast_to_int32
+[BIT_U32]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#bit_cast_to_uint32
+[BIT_I64]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#bit_cast_to_int64
+[BIT_U64]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#bit_cast_to_uint64
+[F_B32]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#from_base32
+[F_B64]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#from_base64
+[F_HEX]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#from_hex
+[F_PROTO]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#from_proto
+[P_DATE]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#parse_date
+[P_DATETIME]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#parse_datetime
+[P_TIME]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#parse_time
+[P_TIMESTAMP]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#parse_timestamp
+[SC_BTS]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#safe_convert_bytes_to_string
+[STRING_TIMESTAMP]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#string
+[T_B32]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#to_base32
+[T_B64]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#to_base64
+[T_HEX]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#to_hex
+[T_PROTO]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#to_proto
+[T_DATE]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#date
+[T_DATETIME]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#datetime
+[T_TIMESTAMP]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#timestamp
+[T_TIME]: https://github.com/google/zetasql/blob/master/docs/functions-and-operators.md#time
+
 ## Mathematical functions
 
 All mathematical functions have the following behaviors:
@@ -3803,8 +6911,49 @@ ABS(X)
 
 Computes absolute value. Returns an error if the argument is an integer and the
 output value cannot be represented as the same type; this happens only for the
-largest negative input value, which has no positive representation. Returns
-`+inf` for a `+/-inf` argument.
+largest negative input value, which has no positive representation.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>ABS(X)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+      <td>25</td>
+      <td>25</td>
+    </tr>
+    <tr>
+      <td>-25</td>
+      <td>25</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">INT32</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">UINT32</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">FLOAT</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
 
 ### SIGN
 
@@ -3814,10 +6963,51 @@ SIGN(X)
 
 **Description**
 
-Returns -1, 0, or +1 for negative, zero and positive arguments respectively. For
-floating point arguments, this function does not distinguish between positive
-and negative zero.   Returns`NaN`for a`NaN`
-argument.
+Returns `-1`, `0`, or `+1` for negative, zero and positive arguments
+respectively. For floating point arguments, this function does not distinguish
+between positive and negative zero.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>SIGN(X)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+      <td>25</td>
+      <td>+1</td>
+    </tr>
+    <tr>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td>-25</td>
+      <td>-1</td>
+    </tr>
+    <tr>
+      <td>NaN</td>
+      <td>NaN</td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">INT32</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">UINT32</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">FLOAT</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
 
 ### IS_INF
 
@@ -3829,7 +7019,28 @@ IS_INF(X)
 
 Returns `TRUE` if the value is positive or negative infinity.
 
-Returns `NULL` for `NULL` inputs.
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>IS_INF(X)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>TRUE</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>TRUE</code></td>
+    </tr>
+    <tr>
+      <td>25</td>
+      <td><code>FALSE</code></td>
+    </tr>
+  </tbody>
+</table>
 
 ### IS_NAN
 
@@ -3841,7 +7052,24 @@ IS_NAN(X)
 
 Returns `TRUE` if the value is a `NaN` value.
 
-Returns `NULL` for` NULL` inputs.
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>IS_NAN(X)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>TRUE</code></td>
+    </tr>
+    <tr>
+      <td>25</td>
+      <td><code>FALSE</code></td>
+    </tr>
+  </tbody>
+</table>
 
 ### IEEE_DIVIDE
 
@@ -3854,57 +7082,64 @@ IEEE_DIVIDE(X, Y)
 Divides X by Y; this function never fails. Returns
 `DOUBLE` unless
 both X and Y are `FLOAT`, in which case it returns
-FLOAT. Unlike the division operator (/),
+`FLOAT`. Unlike the division operator (/),
 this function does not generate errors for division by zero or overflow.</p>
 
-Special cases:
-
-+   If the result overflows, returns `+/-inf`.
-+   If Y=0 and X=0, returns `NaN`.
-+   If Y=0 and X!=0, returns `+/-inf`.
-+   If X = `+/-inf` and Y = `+/-inf`, returns `NaN`.
-
-The behavior of `IEEE_DIVIDE` is further illustrated in the table below.
-
-#### Special cases for `IEEE_DIVIDE`
-
-The following table lists special cases for `IEEE_DIVIDE`.
-
 <table>
-<thead>
-<tr>
-<th>Numerator Data Type (X)</th>
-<th>Denominator Data Type (Y)</th>
-<th>Result Value</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Anything except 0</td>
-<td>0</td>
-<td><code>+/-inf</code></td>
-</tr>
-<tr>
-<td>0</td>
-<td>0</td>
-<td><code>NaN</code></td>
-</tr>
-<tr>
-<td>0</td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-</tr>
-<tr>
-<td><code>NaN</code></td>
-<td>0</td>
-<td><code>NaN</code></td>
-</tr>
-<tr>
-<td><code>+/-inf</code></td>
-<td><code>+/-inf</code></td>
-<td><code>NaN</code></td>
-</tr>
-</tbody>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>Y</th>
+      <th>IEEE_DIVIDE(X, Y)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>20.0</td>
+      <td>4.0</td>
+      <td>5.0</td>
+    </tr>
+    <tr>
+      <td>0.0</td>
+      <td>25.0</td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>25.0</td>
+      <td>0.0</td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td>-25.0</td>
+      <td>0.0</td>
+      <td><code>-inf</code></td>
+    </tr>
+    <tr>
+      <td>0.0</td>
+      <td>0.0</td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td>0.0</td>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td>0.0</td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>-inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
 </table>
 
 ### RAND
@@ -3915,8 +7150,8 @@ RAND()
 
 **Description**
 
-Generates a pseudo-random value of type DOUBLE in the
-range of [0, 1), inclusive of 0 and exclusive of 1.
+Generates a pseudo-random value of type `DOUBLE` in
+the range of [0, 1), inclusive of 0 and exclusive of 1.
 
 ### SQRT
 
@@ -3928,7 +7163,43 @@ SQRT(X)
 
 Computes the square root of X. Generates an error if X is less than 0.
 
-Returns `+inf` if X is `+inf`.
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>SQRT(X)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+      <td><code>25.0</code></td>
+      <td><code>5.0</code></td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>X &lt; 0</code></td>
+      <td>Error</td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
 
 ### POW
 
@@ -3939,13 +7210,119 @@ POW(X, Y)
 **Description**
 
 Returns the value of X raised to the power of Y. If the result underflows and is
-not representable, then the function returns a  value of zero. Returns an error
-if one of the following is true:
+not representable, then the function returns a  value of zero.
 
-+ X is a finite value less than 0 and Y is a non-integer
-+ X is 0 and Y is a finite value less than 0
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>Y</th>
+      <th>POW(X, Y)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2.0</td>
+      <td>3.0</td>
+      <td>8.0</td>
+    </tr>
+    <tr>
+      <td>1.0</td>
+      <td>Any value including <code>NaN</code></td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>Any value including <code>NaN</code></td>
+      <td>0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>-1.0</td>
+      <td><code>+inf</code></td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>-1.0</td>
+      <td><code>-inf</code></td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td>ABS(X) &lt; 1</td>
+      <td><code>-inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td>ABS(X) &gt; 1</td>
+      <td><code>-inf</code></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>ABS(X) &lt; 1</td>
+      <td><code>+inf</code></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>ABS(X) &gt; 1</td>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td>Y &lt; 0</td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td>Y &gt; 0</td>
+      <td><code>-inf</code> if Y is an odd integer, <code>+inf</code> otherwise</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td>Y &lt; 0</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td>Y &gt; 0</td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td>Finite value &lt; 0</td>
+      <td>Non-integer</td>
+      <td>Error</td>
+    </tr>
+    <tr>
+      <td>0</td>
+      <td>Finite value &lt; 0</td>
+      <td>Error</td>
+    </tr>
+  </tbody>
+</table>
 
-The behavior of `POW()` is further illustrated in the table below.
+**Return Data Type**
+
+The return data type is determined by the argument types with the following
+table.
+
+<table style="font-size:small">
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>INT32</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>INT64</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>UINT32</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>UINT64</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>FLOAT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>DOUBLE</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
 
 ### POWER
 
@@ -3955,78 +7332,7 @@ POWER(X, Y)
 
 **Description**
 
-Synonym of `POW()`.
-
-#### Special cases for `POW(X, Y)` and `POWER(X, Y)`
-
-The following are special cases for `POW(X, Y)` and `POWER(X, Y)`.
-
-<table>
-<thead>
-<tr>
-<th>X</th>
-<th>Y</th>
-<th>POW(X, Y) or POWER(X, Y)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>1.0</td>
-<td>Any value including <code>NaN</code></td>
-<td>1.0</td>
-</tr>
-<tr>
-<td>any including <code>NaN</code></td>
-<td>0</td>
-<td>1.0</td>
-</tr>
-<tr>
-<td>-1.0</td>
-<td><code>+/-inf</code></td>
-<td>1.0</td>
-</tr>
-<tr>
-<td>ABS(X) &lt; 1</td>
-<td><code>-inf</code></td>
-<td><code>+inf</code></td>
-</tr>
-<tr>
-<td>ABS(X) &gt; 1</td>
-<td><code>-inf</code></td>
-<td>0</td>
-</tr>
-<tr>
-<td>ABS(X) &lt; 1</td>
-<td><code>+inf</code></td>
-<td>0</td>
-</tr>
-<tr>
-<td>ABS(X) &gt; 1</td>
-<td><code>+inf</code></td>
-<td><code>+inf</code></td>
-</tr>
-<tr>
-<td><code>-inf</code></td>
-<td>Y &lt; 0</td>
-<td>0</td>
-</tr>
-<tr>
-<td><code>-inf</code></td>
-<td>Y &gt; 0</td>
-<td><code>-inf</code> if Y is an odd integer, <code>+inf</code> otherwise</td>
-</tr>
-<tr>
-<td><code>+inf</code></td>
-<td>Y &lt; 0</td>
-<td>0</td>
-</tr>
-<tr>
-<td><code>+inf</code></td>
-<td>Y &gt; 0</td>
-<td><code>+inf</code></td>
-</tr>
-</tbody>
-</table>
+Synonym of [`POW(X, Y)`](#pow).
 
 ### EXP
 
@@ -4038,7 +7344,45 @@ EXP(X)
 
 Computes *e* to the power of X, also called the natural exponential function. If
 the result underflows, this function returns a zero. Generates an error if the
-result overflows. If X is `+/-inf`, then this function returns `+inf` or 0.
+result overflows.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>EXP(X)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+      <td>0.0</td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td>0.0</td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
 
 ### LN
 
@@ -4049,7 +7393,45 @@ LN(X)
 **Description**
 
 Computes the natural logarithm of X. Generates an error if X is less than or
-equal to zero. If X is `+inf`, then this function returns `+inf`.
+equal to zero.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>LN(X)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+      <td>1.0</td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>X &lt; 0</code></td>
+      <td>Error</td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
 
 ### LOG
 
@@ -4059,47 +7441,81 @@ LOG(X [, Y])
 
 **Description**
 
-If only X is present, `LOG` is a synonym of `LN`. If Y is also present, `LOG`
-computes the logarithm of X to base Y. Generates an error in these cases:
-
-+ X is less than or equal to zero
-+ Y is 1.0
-+ Y is less than or equal to zero.
-
-The behavior of `LOG(X, Y)` is further illustrated in the table below.
-
-#### Special cases for `LOG(X, Y)` {: #special_log }
+If only X is present, `LOG` is a synonym of `LN`. If Y is also present,
+`LOG` computes the logarithm of X to base Y.
 
 <table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>Y</th>
+      <th>LOG(X, Y)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>100.0</td>
+      <td>10.0</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td>Any value</td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td>Any value</td>
+      <td><code>+inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td>0.0 &lt; Y &lt; 1.0</td>
+      <td><code>-inf</code></td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td>Y &gt; 1.0</td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td>X &lt;= 0</td>
+      <td>Any value</td>
+      <td>Error</td>
+    </tr>
+    <tr>
+      <td>Any value</td>
+      <td>Y &lt;= 0</td>
+      <td>Error</td>
+    </tr>
+    <tr>
+      <td>Any value</td>
+      <td>1.0</td>
+      <td>Error</td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table style="font-size:small">
+
 <thead>
 <tr>
-<th>X</th>
-<th>Y</th>
-<th>LOG(X, Y)</th>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
 </tr>
 </thead>
 <tbody>
-<tr>
-<td><code>-inf</code></td>
-<td>Any value</td>
-<td><code>NaN</code></td>
-</tr>
-<tr>
-<td>Any value</td>
-<td><code>+inf</code></td>
-<td><code>NaN</code></td>
-</tr>
-<tr>
-<td><code>+inf</code></td>
-<td>0.0 Y &lt; 1.0</td>
-<td><code>-inf</code></td>
-</tr>
-<tr>
-<td><code>+inf</code></td>
-<td>Y &gt; 1.0</td>
-<td><code>+inf</code></td>
-</tr>
+<tr><th>INT32</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>INT64</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>UINT32</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>UINT64</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>FLOAT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>DOUBLE</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
 </tbody>
+
 </table>
 
 ### LOG10
@@ -4112,6 +7528,48 @@ LOG10(X)
 
 Similar to `LOG`, but computes logarithm to base 10.
 
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>LOG10(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>100.0</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td>X &lt;= 0</td>
+      <td>Error</td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
+
 ### GREATEST
 
 ```
@@ -4120,9 +7578,27 @@ GREATEST(X1,...,XN)
 
 **Description**
 
-Returns <code>NULL</code> if any of the inputs is <code>NULL</code>. Otherwise,
-returns <code>NaN</code> if any of the inputs is <code>NaN</code>. Otherwise,
-returns the largest value among X1,...,XN according to the &lt; comparison.
+Returns the largest value among X1,...,XN according to the &lt; comparison.
+If any parts of X1,...,XN are `NULL`, the return value is `NULL`.
+
+<table>
+  <thead>
+    <tr>
+      <th>X1,...,XN</th>
+      <th>GREATEST(X1,...,XN)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+      <td>3,5,1</td>
+      <td>5</td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Types**
+
+Data type of the input values.
 
 ### LEAST
 
@@ -4132,9 +7608,27 @@ LEAST(X1,...,XN)
 
 **Description**
 
-Returns `NULL` if any of the inputs is `NULL`. Returns `NaN` if any of the
-inputs is `NaN`. Otherwise, returns the smallest value among X1,...,XN
-according to the &gt; comparison.
+Returns the smallest value among X1,...,XN according to the &gt; comparison.
+If any parts of X1,...,XN are `NULL`, the return value is `NULL`.
+
+<table>
+  <thead>
+    <tr>
+      <th>X1,...,XN</th>
+      <th>LEAST(X1,...,XN)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+      <td>3,5,1</td>
+      <td>1</td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Types**
+
+Data type of the input values.
 
 ### DIV
 
@@ -4145,9 +7639,56 @@ DIV(X, Y)
 **Description**
 
 Returns the result of integer division of X by Y. Division by zero returns
-an error. Division by -1 may overflow.   See
-[Result types for `DIV(X, Y)` and `MOD(X, Y)`][mod-div-results] for possible
-result types.
+an error. Division by -1 may overflow.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>Y</th>
+      <th>DIV(X, Y)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>20</td>
+      <td>4</td>
+      <td>5</td>
+    </tr>
+    <tr>
+      <td>0</td>
+      <td>20</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td>20</td>
+      <td>0</td>
+      <td>Error</td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+The return data type is determined by the argument types with the following
+table.
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>INT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+<tr><th>INT64</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+<tr><th>UINT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+<tr><th>UINT64</th><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+<tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+<tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+</tbody>
+
+</table>
 
 ### SAFE_DIVIDE
 
@@ -4157,8 +7698,14 @@ SAFE_DIVIDE(X, Y)
 
 **Description**
 
-Equivalent to the division operator (<code>/</code>), but returns
+Equivalent to the division operator (<code>X / Y</code>), but returns
 <code>NULL</code> if an error occurs, such as a division by zero error.
+
+<table><thead><tr><th>X</th><th>Y</th><th>SAFE_DIVIDE(X, Y)</th></tr></thead><tbody><tr><td>20</td><td>4</td><td>5</td></tr><tr><td>0</td><td>20</td><td><code>0</code></td></tr><tr><td>20</td><td>0</td><td><code>NULL</code></td></tr></tbody></table>
+
+**Return Data Type**
+
+<table style="font-size:small"><thead><tr><th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th></tr></thead><tbody><tr><th>INT32</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>INT64</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>UINT32</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>UINT64</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>FLOAT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>DOUBLE</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr></tbody></table>
 
 ### SAFE_MULTIPLY
 
@@ -4171,6 +7718,12 @@ SAFE_MULTIPLY(X, Y)
 Equivalent to the multiplication operator (<code>*</code>), but returns
 <code>NULL</code> if overflow occurs.
 
+<table><thead><tr><th>X</th><th>Y</th><th>SAFE_MULTIPLY(X, Y)</th></tr></thead><tbody><tr><td>20</td><td>4</td><td>80</td></tr></tbody></table>
+
+**Return Data Type**
+
+<table style="font-size:small"><thead><tr><th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th></tr></thead><tbody><tr><th>INT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>INT64</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>UINT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>UINT64</th><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>FLOAT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>DOUBLE</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr></tbody></table>
+
 ### SAFE_NEGATE
 
 ```
@@ -4181,6 +7734,12 @@ SAFE_NEGATE(X)
 
 Equivalent to the unary minus operator (<code>-</code>), but returns
 <code>NULL</code> if overflow occurs.
+
+<table><thead><tr><th>X</th><th>SAFE_NEGATE(X)</th></tr></thead><tbody><tr><td>+1</td><td>-1</td></tr><tr><td>-1</td><td>+1</td></tr><tr><td>0</td><td>0</td></tr></tbody></table>
+
+**Return Data Type**
+
+<table><thead><tr><th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th></tr></thead><tbody><tr><th>OUTPUT</th><td style="vertical-align:middle">INT32</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">FLOAT</td><td style="vertical-align:middle">DOUBLE</td></tr></tbody></table>
 
 ### SAFE_ADD
 
@@ -4193,6 +7752,12 @@ SAFE_ADD(X, Y)
 Equivalent to the addition operator (<code>+</code>), but returns
 <code>NULL</code> if overflow occurs.
 
+<table><thead><tr><th>X</th><th>Y</th><th>SAFE_ADD(X, Y)</th></tr></thead><tbody><tr><td>5</td><td>4</td><td>9</td></tr></tbody></table>
+
+**Return Data Type**
+
+<table style="font-size:small"><thead><tr><th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th></tr></thead><tbody><tr><th>INT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>INT64</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>UINT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>UINT64</th><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>FLOAT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>DOUBLE</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr></tbody></table>
+
 ### SAFE_SUBTRACT
 
 ```
@@ -4201,8 +7766,15 @@ SAFE_SUBTRACT(X, Y)
 
 **Description**
 
+Returns the result of Y subtracted from X.
 Equivalent to the subtraction operator (<code>-</code>), but returns
 <code>NULL</code> if overflow occurs.
+
+<table><thead><tr><th>X</th><th>Y</th><th>SAFE_SUBTRACT(X, Y)</th></tr></thead><tbody><tr><td>5</td><td>4</td><td>1</td></tr></tbody></table>
+
+**Return Data Type**
+
+<table style="font-size:small"><thead><tr><th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th></tr></thead><tbody><tr><th>INT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>INT64</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>UINT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>UINT64</th><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>FLOAT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr><tr><th>DOUBLE</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr></tbody></table>
 
 ### MOD
 
@@ -4213,20 +7785,52 @@ MOD(X, Y)
 **Description**
 
 Modulo function: returns the remainder of the division of X by Y. Returned
-value has the same sign as X. An error is generated if Y is 0. See
-[Result types for `DIV(X, Y)` and `MOD(X, Y)`][mod-div-results] for possible
-result types.
-
-#### Result types for `DIV(X, Y)` and `MOD(X, Y)` {: #mod_div_results }
+value has the same sign as X. An error is generated if Y is 0.
 
 <table>
-<thead>
-<tr><th>&nbsp;</th><th>DOUBLE</th><th>INT32</th><th>INT64</th><th>NUMERIC</th><th>UINT32</th><th>UINT64</th></tr>
-</thead>
-<tbody><tr><td>DOUBLE</td><td>DOUBLE</td><td>ERROR</td><td>ERROR</td><td>DOUBLE</td><td>UINT64</td><td>UINT64</td></tr><tr><td>INT32</td><td>DOUBLE</td><td>INT64</td><td>INT64</td><td>NUMERIC</td><td>INT64</td><td>ERROR</td></tr><tr><td>INT64</td><td>DOUBLE</td><td>INT64</td><td>INT64</td><td>NUMERIC</td><td>INT64</td><td>ERROR</td></tr><tr><td>NUMERIC</td><td>DOUBLE</td><td>ERROR</td><td>NUMERIC</td><td>NUMERIC</td><td>UINT64</td><td>UINT64</td></tr><tr><td>UINT32</td><td>DOUBLE</td><td>INT64</td><td>INT64</td><td>NUMERIC</td><td>UINT64</td><td>UINT64</td></tr><tr><td>UINT64</td><td>DOUBLE</td><td>ERROR</td><td>ERROR</td><td>NUMERIC</td><td>UINT64</td><td>UINT64</td></tr></tbody>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>Y</th>
+      <th>MOD(X, Y)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>25</td>
+      <td>12</td>
+      <td>1</td>
+    </tr>
+    <tr>
+      <td>25</td>
+      <td>0</td>
+      <td>Error</td>
+    </tr>
 </table>
 
-### ROUND {: #rounding_functions }
+**Return Data Type**
+
+The return data type is determined by the argument types with the following
+table.
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>INT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+<tr><th>INT64</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+<tr><th>UINT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+<tr><th>UINT64</th><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+<tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+<tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td></tr>
+</tbody>
+
+</table>
+
+### ROUND
 
 ```
 ROUND(X [, N])
@@ -4238,6 +7842,76 @@ If only X is present, `ROUND` rounds X to the nearest integer. If N is present,
 `ROUND` rounds X to N decimal places after the decimal point. If N is negative,
 `ROUND` will round off digits to the left of the decimal point. Rounds halfway
 cases away from zero. Generates an error if overflow occurs.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>ROUND(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2.0</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>2.3</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>2.8</td>
+      <td>3.0</td>
+    </tr>
+    <tr>
+      <td>2.5</td>
+      <td>3.0</td>
+    </tr>
+    <tr>
+      <td>-2.3</td>
+      <td>-2.0</td>
+    </tr>
+    <tr>
+      <td>-2.8</td>
+      <td>-3.0</td>
+    </tr>
+    <tr>
+      <td>-2.5</td>
+      <td>-3.0</td>
+    </tr>
+    <tr>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>-inf</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
 
 ### TRUNC
 
@@ -4251,6 +7925,76 @@ If only X is present, `TRUNC` rounds X to the nearest integer whose absolute
 value is not greater than the absolute value of X. If N is also present, `TRUNC`
 behaves like `ROUND(X, N)`, but always rounds towards zero and never overflows.
 
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>TRUNC(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2.0</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>2.3</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>2.8</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>2.5</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>-2.3</td>
+      <td>-2.0</td>
+    </tr>
+    <tr>
+      <td>-2.8</td>
+      <td>-2.0</td>
+    </tr>
+    <tr>
+      <td>-2.5</td>
+      <td>-2.0</td>
+    </tr>
+    <tr>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>-inf</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
+
 ### CEIL
 
 ```
@@ -4259,8 +8003,77 @@ CEIL(X)
 
 **Description**
 
-Returns the smallest integral value (with DOUBLE
-type) that is not less than X.
+Returns the smallest integral value that is not less than X.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>CEIL(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2.0</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>2.3</td>
+      <td>3.0</td>
+    </tr>
+    <tr>
+      <td>2.8</td>
+      <td>3.0</td>
+    </tr>
+    <tr>
+      <td>2.5</td>
+      <td>3.0</td>
+    </tr>
+    <tr>
+      <td>-2.3</td>
+      <td>-2.0</td>
+    </tr>
+    <tr>
+      <td>-2.8</td>
+      <td>-2.0</td>
+    </tr>
+    <tr>
+      <td>-2.5</td>
+      <td>-2.0</td>
+    </tr>
+    <tr>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>-inf</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
 
 ### CEILING
 
@@ -4280,97 +8093,79 @@ FLOOR(X)
 
 **Description**
 
-Returns the largest integral value (with DOUBLE
-type) that is not greater than X.
-
-#### Example rounding function behavior
-Example behavior of ZetaSQL rounding functions:
+Returns the largest integral value that is not greater than X.
 
 <table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>FLOOR(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2.0</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>2.3</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>2.8</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>2.5</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <td>-2.3</td>
+      <td>-3.0</td>
+    </tr>
+    <tr>
+      <td>-2.8</td>
+      <td>-3.0</td>
+    </tr>
+    <tr>
+      <td>-2.5</td>
+      <td>-3.0</td>
+    </tr>
+    <tr>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>-inf</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
+
+**Return Data Type**
+
+<table>
+
 <thead>
 <tr>
-<th>Input "X"</th>
-<th>ROUND(X)</th>
-<th>TRUNC(X)</th>
-<th>CEIL(X)</th>
-<th>FLOOR(X)</th>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
 </tr>
 </thead>
 <tbody>
-<tr>
-<td>2.0</td>
-<td>2.0</td>
-<td>2.0</td>
-<td>2.0</td>
-<td>2.0</td>
-</tr>
-<tr>
-<td>2.3</td>
-<td>2.0</td>
-<td>2.0</td>
-<td>3.0</td>
-<td>2.0</td>
-</tr>
-<tr>
-<td>2.8</td>
-<td>3.0</td>
-<td>2.0</td>
-<td>3.0</td>
-<td>2.0</td>
-</tr>
-<tr>
-<td>2.5</td>
-<td>3.0</td>
-<td>2.0</td>
-<td>3.0</td>
-<td>2.0</td>
-</tr>
-<tr>
-<td>-2.3</td>
-<td>-2.0</td>
-<td>-2.0</td>
-<td>-2.0</td>
-<td>-3.0</td>
-</tr>
-<tr>
-<td>-2.8</td>
-<td>-3.0</td>
-<td>-2.0</td>
-<td>-2.0</td>
-<td>-3.0</td>
-</tr>
-<tr>
-<td>-2.5</td>
-<td>-3.0</td>
-<td>-2.0</td>
-<td>-2.0</td>
-<td>-3.0</td>
-</tr>
-<tr>
-<td>0</td>
-<td>0</td>
-<td>0</td>
-<td>0</td>
-<td>0</td>
-</tr>
-<tr>
-<td><code>+/-inf</code></td>
-<td><code>+/-inf</code></td>
-<td><code>+/-inf</code></td>
-<td><code>+/-inf</code></td>
-<td><code>+/-inf</code></td>
-</tr>
-<tr>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-</tr>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
 </tbody>
+
 </table>
 
-### COS {: #trigonometric_and_hyperbolic_functions }
+### COS
 
 ```
 COS(X)
@@ -4379,6 +8174,29 @@ COS(X)
 **Description**
 
 Computes the cosine of X where X is specified in radians. Never fails.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>COS(X)</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
 
 ### COSH
 
@@ -4390,6 +8208,29 @@ COSH(X)
 
 Computes the hyperbolic cosine of X where X is specified in radians.
 Generates an error if overflow occurs.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>COSH(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
 
 ### ACOS
 
@@ -4403,6 +8244,37 @@ Computes the principal value of the inverse cosine of X. The return value is in
 the range [0,&pi;]. Generates an error if X is a value outside of the
 range [-1, 1].
 
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>ACOS(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td>X &lt; -1</td>
+      <td>Error</td>
+    </tr>
+    <tr>
+      <td>X &gt; 1</td>
+      <td>Error</td>
+    </tr>
+  </tbody>
+</table>
+
 ### ACOSH
 
 ```
@@ -4414,6 +8286,33 @@ ACOSH(X)
 Computes the inverse hyperbolic cosine of X. Generates an error if X is a value
 less than 1.
 
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>ACOSH(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td>X &lt; 1</td>
+      <td>Error</td>
+    </tr>
+  </tbody>
+</table>
+
 ### SIN
 
 ```
@@ -4423,6 +8322,29 @@ SIN(X)
 **Description**
 
 Computes the sine of X where X is specified in radians. Never fails.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>SIN(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
 
 ### SINH
 
@@ -4434,6 +8356,29 @@ SINH(X)
 
 Computes the hyperbolic sine of X where X is specified in radians. Generates
 an error if overflow occurs.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>SINH(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>-inf</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
 
 ### ASIN
 
@@ -4447,6 +8392,37 @@ Computes the principal value of the inverse sine of X. The return value is in
 the range [-&pi;/2,&pi;/2]. Generates an error if X is outside of
 the range [-1, 1].
 
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>ASIN(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td>X &lt; -1</td>
+      <td>Error</td>
+    </tr>
+    <tr>
+      <td>X &gt; 1</td>
+      <td>Error</td>
+    </tr>
+  </tbody>
+</table>
+
 ### ASINH
 
 ```
@@ -4456,6 +8432,29 @@ ASINH(X)
 **Description**
 
 Computes the inverse hyperbolic sine of X. Does not fail.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>ASINH(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>-inf</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
 
 ### TAN
 
@@ -4468,6 +8467,29 @@ TAN(X)
 Computes the tangent of X where X is specified in radians. Generates an error if
 overflow occurs.
 
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>TAN(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
+
 ### TANH
 
 ```
@@ -4478,6 +8500,29 @@ TANH(X)
 
 Computes the hyperbolic tangent of X where X is specified in radians. Does not
 fail.
+
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>TANH(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td>1.0</td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td>-1.0</td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
 
 ### ATAN
 
@@ -4490,6 +8535,29 @@ ATAN(X)
 Computes the principal value of the inverse tangent of X. The return value is
 in the range [-&pi;/2,&pi;/2]. Does not fail.
 
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>ATAN(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td>&pi;/2</td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td>-&pi;/2</td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+  </tbody>
+</table>
+
 ### ATANH
 
 ```
@@ -4501,146 +8569,122 @@ ATANH(X)
 Computes the inverse hyperbolic tangent of X. Generates an error if X is outside
 of the range [-1, 1].
 
+<table>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>ATANH(X)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td>X &lt; -1</td>
+      <td>Error</td>
+    </tr>
+    <tr>
+      <td>X &gt; 1</td>
+      <td>Error</td>
+    </tr>
+  </tbody>
+</table>
+
 ### ATAN2
 
 ```
-ATAN2(Y, X)
+ATAN2(X, Y)
 ```
 
 **Description**
 
-Calculates the principal value of the inverse tangent of Y/X using the signs of
+Calculates the principal value of the inverse tangent of X/Y using the signs of
 the two arguments to determine the quadrant. The return value is in the range
 [-&pi;,&pi;].
 
-The behavior of this function is further illustrated in <a
-href="#special_atan2">the table below</a>.
-
-#### Special cases for `ATAN2()` {: #special_atan2 }
-
 <table>
-<thead>
-<tr>
-<th>Y</th>
-<th>X</th>
-<th>ATAN2(Y, X)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>NaN</code></td>
-<td>Any value</td>
-<td><code>NaN</code></td>
-</tr>
-<tr>
-<td>Any value</td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-</tr>
-<tr>
-<td>0</td>
-<td>0</td>
-<td>0, &pi; or -&pi; depending on the sign of X and Y</td>
-</tr>
-<tr>
-<td>Finite value</td>
-<td><code>-inf</code></td>
-<td>&pi; or -&pi; depending on the sign of Y</td>
-</tr>
-<tr>
-<td>Finite value</td>
-<td><code>+inf</code></td>
-<td>0</td>
-</tr>
-<tr>
-<td><code>+/-inf</code></td>
-<td>Finite value</td>
-<td>&pi;/2 or &pi;/2 depending on the sign of Y</td>
-</tr>
-<tr>
-<td><code>+/-inf</code></td>
-<td><code>-inf</code></td>
-<td>&frac34;&pi; or -&frac34;&pi; depending on the sign of Y</td>
-</tr>
-<tr>
-<td><code>+/-inf</code></td>
-<td><code>+inf</code></td>
-<td>&pi;/4 or -&pi;/4 depending on the sign of Y</td>
-</tr>
-</tbody>
+  <thead>
+    <tr>
+      <th>X</th>
+      <th>Y</th>
+      <th>ATAN2(X, Y)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>NaN</code></td>
+      <td>Any value</td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td>Any value</td>
+      <td><code>NaN</code></td>
+      <td><code>NaN</code></td>
+    </tr>
+    <tr>
+      <td>0.0</td>
+      <td>0.0</td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td>Positive Finite value</td>
+      <td><code>-inf</code></td>
+      <td>&pi;</td>
+    </tr>
+    <tr>
+      <td>Negative Finite value</td>
+      <td><code>-inf</code></td>
+      <td>-&pi;</td>
+    </tr>
+    <tr>
+      <td>Finite value</td>
+      <td><code>+inf</code></td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td>Finite value</td>
+      <td>&pi;/2</td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td>Finite value</td>
+      <td>-&pi;/2</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>-inf</code></td>
+      <td>&frac34;&pi;</td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>-inf</code></td>
+      <td>-&frac34;&pi;</td>
+    </tr>
+    <tr>
+      <td><code>+inf</code></td>
+      <td><code>+inf</code></td>
+      <td>&pi;/4</td>
+    </tr>
+    <tr>
+      <td><code>-inf</code></td>
+      <td><code>+inf</code></td>
+      <td>-&pi;/4</td>
+    </tr>
+  </tbody>
 </table>
 
-#### Special cases for trigonometric and hyperbolic rounding functions {: #special_trig_hyperbolic }
-
-<table>
-<thead>
-<tr>
-<th>X</th>
-<th>COS(X)</th>
-<th>COSH(X)</th>
-<th>ACOS(X)</th>
-<th>ACOSH(X)</th>
-<th>SIN(X)</th>
-<th>SINH(X)</th>
-<th>ASIN(X)</th>
-<th>ASINH(X)</th>
-<th>TAN(X)</th>
-<th>TANH(X)</th>
-<th>ATAN(X)</th>
-<th>ATANH(X)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>+/-inf</code></td>
-<td><code>NaN</code></td>
-<td><code>=+inf</code></td>
-<td><code>NaN</code></td>
-<td><code>=+inf</code></td>
-<td><code>NaN</code></td>
-<td><code>=+inf</code></td>
-<td><code>NaN</code></td>
-<td><code>=+inf</code></td>
-<td><code>NaN</code></td>
-<td>=+1.0</td>
-<td>&pi;/2</td>
-<td><code>NaN</code></td>
-</tr>
-<tr>
-<td><code>-inf</code></td>
-<td><code>NaN</code></td>
-<td><code>=+inf</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>-inf</code></td>
-<td><code>NaN</code></td>
-<td><code>-inf</code></td>
-<td><code>NaN</code></td>
-<td>-1.0</td>
-<td>-&pi;/2</td>
-<td><code>NaN</code></td>
-</tr>
-<tr>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-<td><code>NaN</code></td>
-</tr>
-</tbody>
-</table>
-
-[mod-div-results]: #mod_div_results
-[data-type-properties]: https://github.com/google/zetasql/blob/master/docs/data-types#data_type_properties
+[data-type-properties]: https://github.com/google/zetasql/blob/master/docs/data-types.md#data_type_properties
 
 ## Navigation functions
 
@@ -4672,7 +8716,7 @@ the calculation.
 
 **Return Data Type**
 
-ANY
+Same type as `value_expression`.
 
 **Examples**
 
@@ -4743,7 +8787,7 @@ the calculation.
 
 **Return Data Type**
 
-ANY
+Same type as `value_expression`.
 
 **Examples**
 
@@ -4819,7 +8863,7 @@ the calculation.
 
 **Return Data Type**
 
-ANY
+Same type as `value_expression`.
 
 **Examples**
 
@@ -4898,7 +8942,7 @@ unspecified, `default_expression` defaults to NULL.
 
 **Return Data Type**
 
-ANY
+Same type as `value_expression`.
 
 **Examples**
 
@@ -5046,7 +9090,7 @@ unspecified, `default_expression` defaults to NULL.
 
 **Return Data Type**
 
-ANY
+Same type as `value_expression`.
 
 **Examples**
 
@@ -5187,12 +9231,30 @@ NULLS` is present:
 
 **Supported Argument Types**
 
-+ `value_expression` is a numeric expression.
-+ `percentile` is a `DOUBLE` literal in the range `[0, 1]`.
++ `value_expression` and `percentile` must have one of the following types:
+   + `NUMERIC`
+   + `BIGNUMERIC`
+   + `DOUBLE`
++ `percentile` must be a literal in the range `[0, 1]`.
 
 **Return Data Type**
 
-`DOUBLE`
+The return data type is determined by the argument types with the following
+table.
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>DOUBLE</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
 
 **Examples**
 
@@ -5251,11 +9313,15 @@ This function ignores `NULL` values unless `RESPECT NULLS` is present.
 **Supported Argument Types**
 
 + `value_expression` can be any orderable type.
-+ `percentile` is a `DOUBLE` literal in the range `[0, 1]`.
++ `percentile` must be a literal in the range `[0, 1]`, with one of the
+  following types:
+   + `NUMERIC`
+   + `BIGNUMERIC`
+   + `DOUBLE`
 
 **Return Data Type**
 
-`ANY`
+Same type as `value_expression`.
 
 **Examples**
 
@@ -5302,8 +9368,8 @@ FROM UNNEST(['c', NULL, 'b', 'a']) AS x;
 
 ```
 
-[analytic-function-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[navigation-function-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts#navigation_function_concepts
+[analytic-function-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[navigation-function-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md#navigation_function_concepts
 
 ## Aggregate analytic functions
 
@@ -5352,8 +9418,8 @@ COUNT(*) OVER (ROWS UNBOUNDED PRECEDING)
 SUM(DISTINCT x) OVER ()
 ```
 
-[analytic-function-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[aggregate-analytic-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts#aggregate_analytic_function_concepts
+[analytic-function-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[aggregate-analytic-concepts]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md#aggregate_analytic_function_concepts
 
 [analytic-functions-link-to-aggregate-functions]: #aggregate_functions
 
@@ -5366,8 +9432,8 @@ FARM_FINGERPRINT(value)
 
 **Description**
 
-Computes the fingerprint of the STRING or BYTES input using the `Fingerprint64`
-function from the
+Computes the fingerprint of the `STRING` or `BYTES` input using the
+`Fingerprint64` function from the
 [open-source FarmHash library][hash-link-to-farmhash-github]. The output
 of this function for a particular input will never change.
 
@@ -5405,8 +9471,8 @@ FINGERPRINT(input)
 
 **Description**
 
-Computes the fingerprint of the STRING
-or BYTES input using Fingerprint.
+Computes the fingerprint of the `STRING`
+or `BYTES` input using Fingerprint.
 
 **Return type**
 
@@ -5433,13 +9499,13 @@ MD5(input)
 
 Computes the hash of the input using the
 [MD5 algorithm][hash-link-to-md5-wikipedia]. The input can either be
-STRING or BYTES. The string version treats the input as an array of bytes.
+`STRING` or `BYTES`. The string version treats the input as an array of bytes.
 
 This function returns 16 bytes.
 
 **Return type**
 
-BYTES
+`BYTES`
 
 **Example**
 
@@ -5462,13 +9528,13 @@ SHA1(input)
 
 Computes the hash of the input using the
 [SHA-1 algorithm][hash-link-to-sha-1-wikipedia]. The input can either be
-STRING or BYTES. The string version treats the input as an array of bytes.
+`STRING` or `BYTES`. The string version treats the input as an array of bytes.
 
 This function returns 20 bytes.
 
 **Return type**
 
-BYTES
+`BYTES`
 
 **Example**
 
@@ -5491,13 +9557,13 @@ SHA256(input)
 
 Computes the hash of the input using the
 [SHA-256 algorithm][hash-link-to-sha-2-wikipedia]. The input can either be
-STRING or BYTES. The string version treats the input as an array of bytes.
+`STRING` or `BYTES`. The string version treats the input as an array of bytes.
 
 This function returns 32 bytes.
 
 **Return type**
 
-BYTES
+`BYTES`
 
 **Example**
 
@@ -5514,13 +9580,13 @@ SHA512(input)
 
 Computes the hash of the input using the
 [SHA-512 algorithm][hash-link-to-sha-2-wikipedia]. The input can either be
-STRING or BYTES. The string version treats the input as an array of bytes.
+`STRING` or `BYTES`. The string version treats the input as an array of bytes.
 
 This function returns 64 bytes.
 
 **Return type**
 
-BYTES
+`BYTES`
 
 **Example**
 
@@ -5973,7 +10039,8 @@ FROM items;
 +---------+
 ```
 
-### FORMAT {: #format_string }
+### FORMAT 
+<a id="format_string"></a>
 
 ZetaSQL supports a `FORMAT()` function for formatting strings. This
 function is similar to the C `printf` function. It produces a `STRING` from a
@@ -6134,7 +10201,7 @@ Deviations from printf() are identified in <em>italics</em>.
     inf<br/>
     nan</td>
     <td>
-    <span> NUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
+    <span> NUMERIC</span><br><span> BIGNUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
     </td>
  </tr>
  <tr>
@@ -6145,7 +10212,7 @@ Deviations from printf() are identified in <em>italics</em>.
     INF<br/>
     NAN</td>
     <td>
-    <span> NUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
+    <span> NUMERIC</span><br><span> BIGNUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
     </td>
  </tr>
  <tr>
@@ -6155,7 +10222,7 @@ Deviations from printf() are identified in <em>italics</em>.
     inf<br/>
     nan</td>
     <td>
-    <span> NUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
+    <span>NUMERIC</span><br><span>BIGNUMERIC</span><br><span>FLOAT</span><br><span>DOUBLE</span>
     </td>
  </tr>
  <tr>
@@ -6165,7 +10232,7 @@ Deviations from printf() are identified in <em>italics</em>.
     INF<br/>
     NAN</td>
     <td>
-    <span> NUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
+    <span>NUMERIC</span><br><span>BIGNUMERIC</span><br><span>FLOAT</span><br><span>DOUBLE</span>
     </td>
  </tr>
  <tr>
@@ -6178,7 +10245,7 @@ Deviations from printf() are identified in <em>italics</em>.
     inf<br/>
     nan</td>
     <td>
-    <span> FLOAT</span><br><span> DOUBLE</span>
+    <span>NUMERIC</span><br><span>BIGNUMERIC</span><br><span>FLOAT</span><br><span>DOUBLE</span>
     </td>
  </tr>
  <tr>
@@ -6195,7 +10262,7 @@ Deviations from printf() are identified in <em>italics</em>.
       NAN
     </td>
     <td>
-    <span> FLOAT</span><br><span> DOUBLE</span>
+    <span>NUMERIC</span><br><span>BIGNUMERIC</span><br><span>FLOAT</span><br><span>DOUBLE</span>
     </td>
  </tr>
 
@@ -6403,7 +10470,8 @@ flags are not relevant for some element type, they are ignored.
   </tr>
 </table>
 
-#### %g and %G behavior {: #g_and_g_behavior }
+#### %g and %G behavior 
+<a id="g_and_g_behavior"></a>
 The `%g` and `%G` format specifiers choose either the decimal notation (like
 the `%f` and `%F` specifiers) or the scientific notation (like the `%e` and `%E`
 specifiers), depending on the input value's exponent and the specified
@@ -6420,7 +10488,8 @@ Unless [`#` flag](#flags) is present, the trailing zeros after the decimal point
 are removed, and the decimal point is also removed if there is no digit after
 it.
 
-#### %t and %T behavior {: #t_and_t_behavior }
+#### %t and %T behavior 
+<a id="t_and_t_behavior"></a>
 
 The `%t` and `%T` format specifiers are defined for all types. The
 [width](#width), [precision](#precision), and [flags](#flags) act as they do
@@ -6446,8 +10515,8 @@ The `STRING` is formatted as follows:
   </tr>
   <tr>
     <td><code>NULL</code> of any type</td>
-    <td><code>NULL</code></td>
-    <td><code>NULL</code></td>
+    <td>NULL</td>
+    <td>NULL</td>
   </tr>
   <tr>
     <td><span> INT32</span><br><span> INT64</span><br><span> UINT32</span><br><span> UINT64</span><br></td>
@@ -6636,6 +10705,11 @@ Converts the base64-encoded input `string_expr` into
 `BYTES` to a base64-encoded `STRING`,
 use [TO_BASE64][string-link-to-base64].
 
+There are several base64 encodings in common use that vary in exactly which
+alphabet of 65 ASCII characters are used to encode the 64 digits and padding.
+See [RFC 4648](https://tools.ietf.org/html/rfc4648#section-4) for details. This
+function expects the alphabet `[A-Za-z0-9+/=]`.
+
 **Return type**
 
 `BYTES`
@@ -6643,13 +10717,29 @@ use [TO_BASE64][string-link-to-base64].
 **Example**
 
 ```sql
-SELECT FROM_BASE64('3q2+7w==') AS byte_data;
+SELECT FROM_BASE64('/+A=') AS byte_data;
 
-+------------------+
-| byte_data        |
-+------------------+
-| \xde\xad\xbe\xef |
-+------------------+
++------------+
+| byte_data |
++-----------+
+| \377\340  |
++-----------+
+```
+
+To work with an encoding using a different base64 alphabet, you might need to
+compose `FROM_BASE64` with the `REPLACE` function. For instance, the
+`base64url` url-safe and filename-safe encoding commonly used in web programming
+uses `-_=` as the last characters rather than `+/=`. To decode a
+`base64url`-encoded string, replace `+` and `/` with `-` and `_` respectively.
+
+```sql
+SELECT FROM_BASE64(REPLACE(REPLACE("_-A=", "-", "+"), "_", "/")) AS binary;
+
++-----------+
+| binary    |
++-----------+
+| \377\340  |
++-----------+
 ```
 
 ### FROM_HEX
@@ -6836,8 +10926,8 @@ LEFT(value, length)
 Returns a `STRING` or `BYTES` value that consists of the specified
 number of leftmost characters or bytes from `value`. The `length` is an
 `INT64` that specifies the length of the returned
-value. If `value` is of type `BYTES`, `length` is the number of leftmost bytes to
-return. If `value` is `STRING`, `length` is the number of leftmost characters
+value. If `value` is of type `BYTES`, `length` is the number of leftmost bytes
+to return. If `value` is `STRING`, `length` is the number of leftmost characters
 to return.
 
 If `length` is 0, an empty `STRING` or `BYTES` value will be
@@ -8208,13 +12298,13 @@ FROM items;
 ### STRPOS
 
 ```sql
-STRPOS(string, substring)
+STRPOS(value1, value2)
 ```
 
 **Description**
 
-Returns the 1-based index of the first occurrence of `substring` inside
-`string`. Returns `0` if `substring` is not found.
+Takes two `STRING` or `BYTES` values. Returns the 1-based index of the first
+occurrence of `value2` inside `value1`. Returns `0` if `value2` is not found.
 
 **Return type**
 
@@ -8389,6 +12479,11 @@ TO_BASE64(bytes_expr)
 Converts a sequence of `BYTES` into a base64-encoded `STRING`. To convert a
 base64-encoded `STRING` into `BYTES`, use [FROM_BASE64][string-link-to-from-base64].
 
+There are several base64 encodings in common use that vary in exactly which
+alphabet of 65 ASCII characters are used to encode the 64 digits and padding.
+See [RFC 4648](https://tools.ietf.org/html/rfc4648#section-4) for details. This
+function adds padding and uses the alphabet `[A-Za-z0-9+/=]`.
+
 **Return type**
 
 `STRING`
@@ -8396,13 +12491,29 @@ base64-encoded `STRING` into `BYTES`, use [FROM_BASE64][string-link-to-from-base
 **Example**
 
 ```sql
-SELECT TO_BASE64(b'\xde\xad\xbe\xef') AS base64_string;
+SELECT TO_BASE64(b'\377\340') AS base64_string;
 
 +---------------+
 | base64_string |
 +---------------+
-| 3q2+7w==      |
+| /+A=          |
 +---------------+
+```
+
+To work with an encoding using a different base64 alphabet, you might need to
+compose `TO_BASE64` with the `REPLACE` function. For instance, the
+`base64url` url-safe and filename-safe encoding commonly used in web programming
+uses `-_=` as the last characters rather than `+/=`. To encode a
+`base64url`-encoded string, replace `-` and `_` with `+` and `/` respectively.
+
+```sql
+SELECT REPLACE(REPLACE(TO_BASE64(b"\377\340"), "+", "-"), "/", "_") as websafe_base64;
+
++----------------+
+| websafe_base64 |
++----------------+
+| _-A=           |
++----------------+
 ```
 
 ### TO_CODE_POINTS
@@ -8525,9 +12636,9 @@ TRANSLATE(expression, source_characters, target_characters)
 
 **Description**
 
-In `expression`, replaces the characters in `source_characters` with the
-characters in `target_characters`. All inputs must be the same type, either
-`STRING` or `BYTES`.
+In `expression`, replaces each character in `source_characters` with the
+corresponding character in `target_characters`. All inputs must be the same
+type, either `STRING` or `BYTES`.
 
 + Each character in `expression` is translated at most once.
 + A character in `expression` that is not present in `source_characters` is left
@@ -8753,34 +12864,153 @@ ZetaSQL supports functions that help you retrieve data stored in
 JSON-formatted strings and functions that help you transform data into
 JSON-formatted strings.
 
-### JSON_EXTRACT or JSON_EXTRACT_SCALAR
+### Function overview
 
-<a id="json_extract"></a>`JSON_EXTRACT(json_string_expr,
-json_path_string_literal)`, which returns JSON values as STRINGs.
+#### Standard JSON extraction functions (recommended)
 
-<a id="json_extract_scalar"></a>`JSON_EXTRACT_SCALAR(json_string_expr,
-json_path_string_literal)`, which returns scalar JSON values as STRINGs.
+The following functions use double quotes to escape invalid
+[JSONPath][JSONPath-format] characters: <code>"a.b"</code>.
+
+This behavior is consistent with the ANSI standard.
+
+<table>
+  <thead>
+    <tr>
+      <th>JSON function</th>
+      <th>Description</th>
+      <th>Return type</th>
+    </tr>
+  </thead>
+  <tbody>
+    
+    <tr>
+      <td><a href="#json_query"><code>JSON_QUERY</code></a></td>
+      <td>
+        Extracts a JSON value, such as an array or object, or a JSON-formatted
+        scalar value, such as a string, integer, or boolean.
+      </td>
+      <td>JSON-formatted <code>STRING</code></td>
+    </tr>
+    <tr>
+      <td><a href="#json_value"><code>JSON_VALUE</code></a></td>
+      <td>
+        Extracts a scalar value.
+        A scalar value can represent a string, integer, or boolean.
+        Removes the outermost quotes and unescapes the values.
+        Returns a SQL <code>NULL</code> if a non-scalar value is selected.
+      </td>
+      <td><code>STRING</code></td>
+    </tr>
+    
+    
+    
+  </tbody>
+</table>
+
+#### Legacy JSON extraction functions
+
+The following functions use single quotes and brackets to escape invalid
+[JSONPath][JSONPath-format] characters: <code>['a.b']</code></td>.
+
+While these functions are supported by ZetaSQL, we recommend using
+the functions in the previous table.
+
+<table>
+  <thead>
+    <tr>
+      <th>JSON function</th>
+      <th>Description</th>
+      <th>Return type</th>
+    </tr>
+  </thead>
+  <tbody>
+    
+    <tr>
+      <td><a href="#json_extract"><code>JSON_EXTRACT</code></a></td>
+      <td>
+        Extracts a JSON value, such as an array or object, or a JSON-formatted
+        scalar value, such as a string, integer, or boolean.
+      </td>
+      <td>JSON-formatted <code>STRING</code></td>
+    </tr>
+    <tr>
+      <td><a href="#json_extract_scalar"><code>JSON_EXTRACT_SCALAR</code></a></td>
+      <td>
+        Extracts a scalar value.
+        A scalar value can represent a string, integer, or boolean.
+        Removes the outermost quotes and unescapes the values.
+        Returns a SQL <code>NULL</code> if a non-scalar value is selected.
+      </td>
+      <td><code>STRING</code></td>
+    </tr>
+    
+    
+    
+  </tbody>
+</table>
+
+#### Other JSON functions
+
+<table>
+  <thead>
+    <tr>
+      <th>JSON function</th>
+      <th>Description</th>
+      <th>Return type</th>
+    </tr>
+  </thead>
+  <tbody>
+    
+    <tr>
+      <td><a href="#to_json"><code>TO_JSON</code></a></td>
+      <td>
+        Takes a SQL value and returns a JSON value.
+      </td>
+      <td>JSON value</td>
+    </tr>
+    
+    
+    <tr>
+      <td><a href="#to_json_string"><code>TO_JSON_STRING</code></a></td>
+      <td>
+        Takes a SQL value and returns a JSON-formatted string
+        representation of the value.
+      </td>
+      <td>JSON-formatted <code>STRING</code></td>
+    </tr>
+    
+  </tbody>
+</table>
+
+### JSON_EXTRACT
+
+```sql
+JSON_EXTRACT(json_string_expr, json_path)
+```
 
 **Description**
 
-Extracts JSON values or JSON scalar values as strings.
+Extracts a JSON value, such as an array or object, or a JSON-formatted scalar
+value, such as a string, integer, or boolean. If a JSON key uses invalid
+[JSONPath][JSONPath-format] characters, then you can escape those characters
+using single quotes and brackets.
 
-+  `json_string_expr`: A JSON-formatted string. For example:
++   `json_string_expr`: A JSON-formatted string. For example:
 
     ```
     {"class" : {"students" : [{"name" : "Jane"}]}}
     ```
-+  `json_path_string_literal`: The [JSONpath][jsonpath-format] format.
-   This identifies the value or values you want to obtain from the
-   JSON-formatted string. If `json_path_string_literal` returns a JSON `null`,
-   this is converted into a SQL `NULL`.
++   `json_path`: The [JSONPath][JSONPath-format]. This identifies the value or
+    values that you want to obtain from the JSON-formatted string. If
+    `json_path` returns a JSON `null`, then this is converted into a SQL `NULL`.
 
-In cases where a JSON key uses invalid JSONPath characters, you can escape
-those characters using single quotes and brackets.
+If you want to include non-scalar values such as arrays in the extraction, then
+use `JSON_EXTRACT`. If you only want to extract scalar values such strings,
+integers, and booleans, then use `JSON_EXTRACT_SCALAR`.
 
 **Return type**
 
-`STRING`s
+A JSON-formatted `STRING`
 
 **Examples**
 
@@ -8854,56 +13084,35 @@ FROM UNNEST([
 +------------------------------------+
 ```
 
-```sql
-SELECT JSON_EXTRACT('{ "name" : "Jakob", "age" : "6" }', '$.name') as json_name,
-  JSON_EXTRACT_SCALAR('{ "name" : "Jakob", "age" : "6" }', '$.name') as scalar_name,
-  JSON_EXTRACT('{ "name" : "Jakob", "age" : "6" }', '$.age') as json_age,
-  JSON_EXTRACT_SCALAR('{ "name" : "Jakob", "age" : "6" }', '$.age') as scalar;
-
-+-----------+-------------+----------+--------+
-| json_name | scalar_name | json_age | scalar |
-+-----------+-------------+----------+--------+
-| "Jakob"   | Jakob       | "6"      | 6      |
-+-----------+-------------+----------+--------+
-```
-
-In cases where a JSON key uses invalid JSONPath characters, you can escape those
-characters using single quotes and brackets, `[' ']`. For example:
+### JSON_QUERY
 
 ```sql
-SELECT JSON_EXTRACT_SCALAR('{"a.b": {"c": "world"}}', "$['a.b'].c") as hello;
-
-+-------+
-| hello |
-+-------+
-| world |
-+-------+
+JSON_QUERY(json_string_expr, json_path)
 ```
-
-### JSON_QUERY or JSON_VALUE
-
-<a id="json_query"></a>`JSON_QUERY(json_string_expr, json_path_string_literal)`,
-which returns JSON values as STRINGs.
-
-<a id="json_value"></a>`JSON_VALUE(json_string_expr, json_path_string_literal)`,
-which returns scalar JSON values as STRINGs.
 
 **Description**
 
-Extracts JSON values or JSON scalar values as strings.
+Extracts a JSON value, such as an array or object, or a JSON-formatted scalar
+value, such as a string, integer, or boolean. If a JSON key uses invalid
+[JSONPath][JSONPath-format] characters, then you can escape those characters
+using double quotes.
 
-+  `json_string_expr`: A JSON-formatted string. For example:
++   `json_string_expr`: A JSON-formatted string. For example:
 
-  ```
-  {"class" : {"students" : [{"name" : "Jane"}]}}
-  ```
-+  `json_path_string_literal`: The [JSONpath][jsonpath-format] format.
-   This identifies the value or values you want to obtain from the
-   JSON-formatted string. If `json_path_string_literal` returns a JSON `null`,
-   this is converted into a SQL `NULL`.
+    ```
+    {"class" : {"students" : [{"name" : "Jane"}]}}
+    ```
++   `json_path`: The [JSONPath][JSONPath-format]. This identifies the value or
+    values that you want to obtain from the JSON-formatted string. If
+    `json_path` returns a JSON `null`, then this is converted into a SQL `NULL`.
 
-In cases where a JSON key uses invalid JSONPath characters,
-you can escape those characters using double quotes.
+If you want to include non-scalar values such as arrays in the extraction, then
+use `JSON_QUERY`. If you only want to extract scalar values such strings,
+integers, and booleans, then use `JSON_VALUE`.
+
+**Return type**
+
+A JSON-formatted `STRING`
 
 **Examples**
 
@@ -8977,24 +13186,72 @@ FROM UNNEST([
 +------------------------------------+
 ```
 
-```sql
-SELECT JSON_QUERY('{ "name" : "Jakob", "age" : "6" }', '$.name') as json_name,
-  JSON_VALUE('{ "name" : "Jakob", "age" : "6" }', '$.name') as scalar_name,
-  JSON_QUERY('{ "name" : "Jakob", "age" : "6" }', '$.age') as json_age,
-  JSON_VALUE('{ "name" : "Jakob", "age" : "6" }', '$.age') as scalar;
+### JSON_EXTRACT_SCALAR
 
-+-----------+-------------+----------+--------+
-| json_name | scalar_name | json_age | scalar |
-+-----------+-------------+----------+--------+
-| "Jakob"   | Jakob       | "6"      | 6      |
-+-----------+-------------+----------+--------+
+```sql
+JSON_EXTRACT_SCALAR(json_string_expr[, json_path])
+```
+
+**Description**
+
+Extracts a scalar value and then returns it as a string. A scalar value can
+represent a string, integer, or boolean. Removes the outermost quotes and
+unescapes the return values. If a JSON key uses invalid
+[JSONPath][JSONPath-format] characters, then you can escape those characters
+using single quotes and brackets.
+
++   `json_string_expr`: A JSON-formatted string. For example:
+
+    ```
+    {"class" : {"students" : [{"name" : "Jane"}]}}
+    ```
++   `json_path`: The [JSONPath][JSONPath-format]. This identifies the value or
+    values that you want to obtain from the JSON-formatted string. If
+    `json_path` returns a JSON `null` or a non-scalar value (in other words, if
+    `json_path` refers to an object or an array), then a SQL `NULL` is returned.
+    If this optional parameter is not provided, then the JSONPath `$` symbol is
+    applied, which means that the entire JSON-formatted string is analyzed.
+
+If you only want to extract scalar values such strings, integers, and booleans,
+then use `JSON_EXTRACT_SCALAR`. If you want to include non-scalar values such as
+arrays in the extraction, then use `JSON_EXTRACT`.
+
+**Return type**
+
+`STRING`
+
+**Examples**
+
+The following example compares how results are returned for the `JSON_EXTRACT`
+and `JSON_EXTRACT_SCALAR` functions.
+
+```sql
+SELECT JSON_EXTRACT('{ "name" : "Jakob", "age" : "6" }', '$.name') AS json_name,
+  JSON_EXTRACT_SCALAR('{ "name" : "Jakob", "age" : "6" }', '$.name') AS scalar_name,
+  JSON_EXTRACT('{ "name" : "Jakob", "age" : "6" }', '$.age') AS json_age,
+  JSON_EXTRACT_SCALAR('{ "name" : "Jakob", "age" : "6" }', '$.age') AS scalar_age;
+
++-----------+-------------+----------+------------+
+| json_name | scalar_name | json_age | scalar_age |
++-----------+-------------+----------+------------+
+| "Jakob"   | Jakob       | "6"      | 6          |
++-----------+-------------+----------+------------+
+
+SELECT JSON_EXTRACT('{"fruits": ["apple", "banana"]}', '$.fruits') AS json_extract,
+  JSON_EXTRACT_SCALAR('{"fruits": ["apple", "banana"]}', '$.fruits') AS json_extract_scalar;
+
++--------------------+---------------------+
+| json_extract       | json_extract_scalar |
++--------------------+---------------------+
+| ["apple","banana"] | NULL                |
++--------------------+---------------------+
 ```
 
 In cases where a JSON key uses invalid JSONPath characters, you can escape those
-characters using double quotes. For example:
+characters using single quotes and brackets, `[' ']`. For example:
 
 ```sql
-SELECT JSON_VALUE('{"a.b": {"c": "world"}}', '$."a.b".c') as hello;
+SELECT JSON_EXTRACT_SCALAR('{"a.b": {"c": "world"}}', "$['a.b'].c") AS hello;
 
 +-------+
 | hello |
@@ -9003,287 +13260,701 @@ SELECT JSON_VALUE('{"a.b": {"c": "world"}}', '$."a.b".c') as hello;
 +-------+
 ```
 
+### JSON_VALUE
+
+```sql
+JSON_VALUE(json_string_expr[, json_path])
+```
+
+**Description**
+
+Extracts a scalar value and then returns it as a string. A scalar value can
+represent a string, integer, or boolean. Removes the outermost quotes and
+unescapes the return values. If a JSON key uses invalid
+[JSONPath][JSONPath-format] characters, then you can escape those characters
+using double quotes.
+
++   `json_string_expr`: A JSON-formatted string. For example:
+
+    ```
+    {"class" : {"students" : [{"name" : "Jane"}]}}
+    ```
++   `json_path`: The [JSONPath][JSONPath-format]. This identifies the value or
+    values that you want to obtain from the JSON-formatted string. If
+    `json_path` returns a JSON `null` or a non-scalar value (in other words, if
+    `json_path` refers to an object or an array), then a SQL `NULL` is returned.
+    If this optional parameter is not provided, then the JSONPath `$` symbol is
+    applied, which means that the entire JSON-formatted string is analyzed.
+
+If you only want to extract scalar values such strings, integers, and booleans,
+then use `JSON_VALUE`. If you want to include non-scalar values such as arrays
+in the extraction, then use `JSON_QUERY`.
+
+**Return type**
+
+`STRING`
+
+**Examples**
+
+```sql
+SELECT JSON_QUERY('{ "name" : "Jakob", "age" : "6" }', '$.name') AS json_name,
+  JSON_VALUE('{ "name" : "Jakob", "age" : "6" }', '$.name') AS scalar_name,
+  JSON_QUERY('{ "name" : "Jakob", "age" : "6" }', '$.age') AS json_age,
+  JSON_VALUE('{ "name" : "Jakob", "age" : "6" }', '$.age') AS scalar_age;
+
++-----------+-------------+----------+------------+
+| json_name | scalar_name | json_age | scalar_age |
++-----------+-------------+----------+------------+
+| "Jakob"   | Jakob       | "6"      | 6          |
++-----------+-------------+----------+------------+
+
+SELECT JSON_QUERY('{"fruits": ["apple", "banana"]}', '$.fruits') AS json_query,
+  JSON_VALUE('{"fruits": ["apple", "banana"]}', '$.fruits') AS json_value;
+
++--------------------+------------+
+| json_query         | json_value |
++--------------------+------------+
+| ["apple","banana"] | NULL       |
++--------------------+------------+
+```
+
+In cases where a JSON key uses invalid JSONPath characters, you can escape those
+characters using double quotes. For example:
+
+```sql
+SELECT JSON_VALUE('{"a.b": {"c": "world"}}', '$."a.b".c') AS hello;
+
++-------+
+| hello |
++-------+
+| world |
++-------+
+```
+
+### TO_JSON
+
+```sql
+TO_JSON(sql_value[, stringify_wide_numbers=>{ TRUE | FALSE } ])
+```
+
+**Description**
+
+Takes a SQL value and returns a JSON value. The value
+must be a supported ZetaSQL data type. You can review the
+ZetaSQL data types that this function supports and their
+JSON encodings [here][json-encodings].
+
+This function supports an optional mandatory-named argument called
+`stringify_wide_numbers`. If this argument is `TRUE`, numeric values outside
+of the `DOUBLE` type domain are encoded as strings.
+If this argument is not used or is `FALSE`, numeric values outside
+of the `DOUBLE` type domain are not encoded
+as strings and there may be loss of precision when numeric values are encoded
+as JSON numbers. The following numerical data types are affected by the
+`stringify_wide_numbers` argument:
+
++ `INT64`
++ `UINT64`
++ `NUMERIC`
++ `BIGNUMERIC`
+
+If one of these numerical data types appears in a container data type
+such as an `ARRAY` or `STRUCT`, the `stringify_wide_numbers` argument is
+applied to the numerical data types in the container data type.
+
+**Return type**
+
+A JSON value
+
+**Examples**
+
+In the following example, the query converts rows in a table to JSON values.
+
+```sql
+With CoordinatesTable AS (
+    (SELECT 1 AS id, [10,20] AS coordinates) UNION ALL
+    (SELECT 2 AS id, [30,40] AS coordinates) UNION ALL
+    (SELECT 3 AS id, [50,60] AS coordinates))
+SELECT TO_JSON(t) AS json_objects
+FROM CoordinatesTable AS t;
+
++--------------------------------+
+| json_objects                   |
++--------------------------------+
+| {"coordinates":[10,20],"id":1} |
+| {"coordinates":[30,40],"id":2} |
+| {"coordinates":[50,60],"id":3} |
++--------------------------------+
+```
+
+In the following example, the query returns a large numerical value as a
+JSON string.
+
+```sql
+SELECT TO_JSON(9007199254740993, stringify_wide_numbers=>TRUE) as stringify_on
+
++--------------------+
+| stringify_on       |
++--------------------+
+| "9007199254740993" |
++--------------------+
+```
+
+In the following example, both queries return a large numerical value as a
+JSON number.
+
+```sql
+SELECT TO_JSON(9007199254740993, stringify_wide_numbers=>FALSE) as stringify_off
+SELECT TO_JSON(9007199254740993) as stringify_off
+
++------------------+
+| stringify_off    |
++------------------+
+| 9007199254740993 |
++------------------+
+```
+
+In the following example, only large numeric values are converted to
+JSON strings.
+
+```sql
+With T1 AS (
+  (SELECT 9007199254740993 AS id) UNION ALL
+  (SELECT 2 AS id))
+SELECT TO_JSON(t, stringify_wide_numbers=>TRUE) AS json_objects
+FROM T1 AS t;
+
++---------------------------+
+| json_objects              |
++---------------------------+
+| {"id":"9007199254740993"} |
+| {"id":2}                  |
++---------------------------+
+```
+
+In this example, the values `9007199254740993` (`INT64`)
+and `2.1` (`DOUBLE`) are converted
+to the common supertype `DOUBLE`, which is not
+affected by the `stringify_wide_numbers` argument.
+
+```sql
+With T1 AS (
+  (SELECT 9007199254740993 AS id) UNION ALL
+  (SELECT 2.1 AS id))
+SELECT TO_JSON(t, stringify_wide_numbers=>TRUE) AS json_objects
+FROM T1 AS t;
+
++------------------------------+
+| json_objects                 |
++------------------------------+
+| {"id":9.007199254740992e+15} |
+| {"id":2.1}                   |
++------------------------------+
+```
+
 ### TO_JSON_STRING
 
-```
+```sql
 TO_JSON_STRING(value[, pretty_print])
 ```
 
 **Description**
 
-Returns a JSON-formatted string representation of `value`. This function
-supports an optional `pretty_print` parameter. If `pretty_print` is present, the
-returned value is formatted for easy readability.
+Takes a SQL value and returns a JSON-formatted string
+representation of the value. The value must be a supported ZetaSQL
+data type. You can review the ZetaSQL data types that this function
+supports and their JSON encodings [here][json-encodings].
 
-<table>
-<thead>
-<tr>
-<th>Input data type</th>
-<th>Returned value</th>
-</tr>
-</thead>
-<tbody>
- <tr>
-    <td>NULL of any type</td>
-    <td><code>null</code></td>
- </tr>
-  <tr>
-    <td>BOOL</td>
-    <td><code>true</code> or <code>false</code>.</td>
- </tr>
-
-  <tr>
-    <td>INT32, UINT32</td>
-    <td><p>Same as <code>CAST(value AS STRING)</code>. For example:</p>
-    <code>-1, 0, 12345678901</code>
-    </td>
- </tr>
-
- <tr>
-    <td>INT64, UINT64</td>
-    <td><p>Same as <code>CAST(value AS STRING)</code> when <code>value</code> is
-    in the range of [-2<sup>53</sup>, 2<sup>53</sup>], which is the range of integers that can be
-    represented losslessly as IEEE 754 double-precision floating point numbers.
-    Values outside of this range are represented as quoted strings. For example:
-    </p>
-    <code>-1</code><br>
-    <code>0</code><br>
-    <code>12345678901</code><br>
-    <code>9007199254740992</code><br>
-    <code>-9007199254740992</code><br>
-    <code>"9007199254740993"</code><br>
-    <p><code>9007199254740993</code> is greater than 2<sup>53</sup>, so it is represented
-    as a quoted string.</p>
-    </td>
- </tr>
- <tr>
-    <td>NUMERIC</td>
-   <td><p>Same as <code>CAST(value AS STRING)</code> when <code>value</code> is
-     in the range of [-2<sup>53</sup>, 2<sup>53</sup>] and has no fractional
-     part. Values outside of this range are represented as quoted strings. For
-     example:</p>
-     <code>-1</code><br/>
-     <code>0</code><br/>
-     <code>&quot;9007199254740993&quot;</code><br/>
-     <code>&quot;123.56&quot;</code>
-    </td>
- </tr>
- <tr>
-    <td>FLOAT, DOUBLE</td>
-
-    <td><code>+/-inf</code> and <code>NaN</code> are represented as
-    <code>Infinity</code>, <code>-Infinity</code>, and <code>NaN</code>,
-    respectively.
-    <p>Otherwise, the same as <code>CAST(value AS STRING)</code>.</p>
-    </td>
- </tr>
- <tr>
-    <td>STRING</td>
-    <td>Quoted string value, escaped according to the JSON standard.
-    Specifically, <code>"</code>, <code>\</code>, and the control characters
-    from <code>U+0000</code> to <code>U+001F</code> are escaped.</td>
- </tr>
- <tr>
-    <td>BYTES</td>
-    <td><p>Quoted RFC 4648 base64-escaped value. For example:</p>
-    <p><code>"R29vZ2xl"</code> is the base64 representation of bytes
-    <code>b"Google"</code></p>
-    </td>
- </tr>
- 
- <tr>
-    <td>ENUM</td>
-    <td><p>Quoted enum name as a string.</p>
-    <p>Invalid enum values are represented as their number, such as 0 or 42.</p>
-    </td>
- </tr>
- 
- <tr>
-    <td>DATE</td>
-    <td><p>Quoted date. For example:</p>
-    <code>"2017-03-06"</code>
-    </td>
- </tr>
- <tr>
-    <td>TIMESTAMP</td>
-    <td><p>Quoted ISO 8601 date-time, where T separates the date and time and
-    Zulu/UTC represents the time zone. For example:</p>
-    <code>"2017-03-06T12:34:56.789012Z"</code>
-    </td>
- </tr>
- <tr>
-    <td>DATETIME</td>
-    <td><p>Quoted ISO 8601 date-time, where T separates the date and time. For
-    example:</p>
-    <code>"2017-03-06T12:34:56.789012"</code>
-    </td>
- </tr>
- <tr>
-    <td>TIME</td>
-    <td><p>Quoted ISO 8601 time. For example:</p>
-    <code>"12:34:56.789012"</code></td>
- </tr>
- <tr>
-    <td>ARRAY</td>
-    <td><p><code>[elem1,elem2,...]</code>, where each <code>elem</code> is
-    formatted according to the element type.</p>
-    Example with formatting:
-<pre>[
-  elem1,
-  elem2,
-  ...
-]</pre>
-    <p>Where each elem is formatted according to the element type. The empty
-    array is represented as <code>[]</code>.</p>
-    </td>
- </tr>
- <tr>
-    <td>STRUCT</td>
-    <td><code>{"field_name1":field_value1,"field_name2":field_value2,...}</code>
-    <p>Where each <code>field_value</code> is formatted according to its type.
-    </p>
-    Example with formatting:
-<pre>{
-  "field_name1": field_value1,
-  "field_name2": field_value2,
-  ...
-}</pre>
-    <p>Where each <code>field_value</code> is formatted according to its type.
-    If a <code>field_value</code> is a non-empty ARRAY or STRUCT,
-    elements are indented to the appropriate level. The empty struct is
-    represented as <code>{}</code>.
-    </p>
-    <p>Fields with duplicate names might result in unparseable JSON. Anonymous
-    fields are represented with <code>""</code>.
-    </p>
-    <p>Invalid UTF-8 field names might result in unparseable JSON. String values
-    are escaped according to the JSON standard. Specifically, <code>"</code>,
-    <code>\</code>, and the control characters from <code>U+0000</code> to
-    <code>U+001F</code> are escaped.</p>
-    </td>
- </tr>
-
- <tr>
-    <td>PROTO</td>
-    <td><code>{"fieldName1":field_value1,"fieldName2":field_value2,...}</code>
-    Example with formatting:
-<pre>{
-  "fieldName1": field_value1,
-  "fieldName2": field_value2,
-  ...
-}</pre>
-    <p>Field names with underscores are converted to camel-case in accordance
-    with
-    <a href="https://developers.google.com/protocol-buffers/docs/proto3#json">
-    protobuf json conversion</a>. Field values are formatted according to
-    <a href="https://developers.google.com/protocol-buffers/docs/proto3#json">
-    protobuf json conversion</a>. If a <code>field_value</code> is a non-empty
-    repeated field or submessage, elements/fields are indented to the
-    appropriate level. The empty struct is represented as <code>{}</code>.</p>
-    <ul>
-    <li>Field names that are not valid UTF-8 might result in unparseable JSON.
-    </li>
-    <li>Field annotations are not taken into account.</li>
-    <li>Repeated fields are represented as arrays.</li>
-    <li>Submessages are formatted as values of PROTO type.</li>
-    <li>Extensions fields are included in the output, where the extension field
-    name is enclosed in brackets and prefixed with the full name of the
-    extension type.
-    </ul>
-    </td>
- </tr>
-
-</tbody>
-</table>
+This function supports an optional boolean parameter called `pretty_print`.
+If `pretty_print` is `true`, the returned value is formatted for easy
+readability.
 
 **Return type**
 
-JSON string representation of the value.
+A JSON-formatted `STRING`
 
 **Examples**
 
-Convert rows in a table to JSON.
+Convert rows in a table to JSON-formatted strings.
 
 ```sql
-WITH Input AS (
-  SELECT [1, 2] AS x, 'foo' AS y, STRUCT(true AS a, DATE '2017-04-05' AS b) AS s UNION ALL
-  SELECT NULL AS x, '' AS y, STRUCT(false AS a, DATE '0001-01-01' AS b) AS s UNION ALL
-  SELECT [3] AS x, 'bar' AS y, STRUCT(NULL AS a, DATE '2016-12-05' AS b) AS s
-)
-SELECT
-  t,
-  TO_JSON_STRING(t) AS json_row
-FROM Input AS t;
+With CoordinatesTable AS (
+    (SELECT 1 AS id, [10,20] AS coordinates) UNION ALL
+    (SELECT 2 AS id, [30,40] AS coordinates) UNION ALL
+    (SELECT 3 AS id, [50,60] AS coordinates))
+SELECT id, coordinates, TO_JSON_STRING(t) AS json_data
+FROM CoordinatesTable AS t;
+
++----+-------------+--------------------------------+
+| id | coordinates | json_data                      |
++----+-------------+--------------------------------+
+| 1  | [10, 20]    | {"id":1,"coordinates":[10,20]} |
+| 2  | [30, 40]    | {"id":2,"coordinates":[30,40]} |
+| 3  | [50, 60]    | {"id":3,"coordinates":[50,60]} |
++----+-------------+--------------------------------+
 ```
 
-The above query produces the following result:
-
-```json
-+-----------------------------------+-------------------------------------------------------+
-| t                                 | json_row                                              |
-+-----------------------------------+-------------------------------------------------------+
-| {[1, 2], foo, {true, 2017-04-05}} | {"x":[1,2],"y":"foo","s":{"a":true,"b":"2017-04-05"}} |
-| {NULL, , {false, 0001-01-01}}     | {"x":null,"y":"","s":{"a":false,"b":"0001-01-01"}}    |
-| {[3], bar, {NULL, 2016-12-05}}    | {"x":[3],"y":"bar","s":{"a":null,"b":"2016-12-05"}}   |
-+-----------------------------------+-------------------------------------------------------+
-```
-
-Convert rows in a table to JSON with formatting.
+Convert rows in a table to JSON-formatted strings that are easy to read.
 
 ```sql
-WITH Input AS (
-  SELECT [1, 2] AS x, 'foo' AS y, STRUCT(true AS a, DATE '2017-04-05' AS b) AS s UNION ALL
-  SELECT NULL AS x, '' AS y, STRUCT(false AS a, DATE '0001-01-01' AS b) AS s UNION ALL
-  SELECT [3] AS x, 'bar' AS y, STRUCT(NULL AS a, DATE '2016-12-05' AS b) AS s
-)
-SELECT
-  TO_JSON_STRING(t, true) AS json_row
-FROM Input AS t;
+With CoordinatesTable AS (
+    (SELECT 1 AS id, [10,20] AS coordinates) UNION ALL
+    (SELECT 2 AS id, [30,40] AS coordinates))
+SELECT id, coordinates, TO_JSON_STRING(t, true) AS json_data
+FROM CoordinatesTable AS t;
+
++----+-------------+--------------------+
+| id | coordinates | json_data          |
++----+-------------+--------------------+
+| 1  | [10, 20]    | {                  |
+|    |             |   "id": 1,         |
+|    |             |   "coordinates": [ |
+|    |             |     10,            |
+|    |             |     20             |
+|    |             |   ]                |
+|    |             | }                  |
++----+-------------+--------------------+
+| 2  | [30, 40]    | {                  |
+|    |             |   "id": 2,         |
+|    |             |   "coordinates": [ |
+|    |             |     30,            |
+|    |             |     40             |
+|    |             |   ]                |
+|    |             | }                  |
++----+-------------+--------------------+
 ```
 
-The above query produces the following result:
+### JSON encodings 
+<a id="json_encodings"></a>
 
-```json
-+-----------------------+
-| json_row              |
-+-----------------------+
-| {                     |
-|  "x": [               |
-|    1,                 |
-|    2                  |
-|  ],                   |
-|  "y": "foo",          |
-|  "s": {               |
-|    "a": true,         |
-|    "b": "2017-04-05"  |
-|  }                    |
-|}                      |
-| {                     |
-|  "x": null,           |
-|  "y": "",             |
-|  "s": {               |
-|    "a": false,        |
-|    "b": "0001-01-01"  |
-|  }                    |
-|}                      |
-| {                     |
-|  "x": [               |
-|    3                  |
-|  ],                   |
-|  "y": "bar",          |
-|  "s": {               |
-|    "a": null,         |
-|    "b": "2016-12-05"  |
-|  }                    |
-|}                      |
-+-----------------------+
-```
+The following table includes common encodings that are used when a
+SQL value is encoded as JSON value with
+the `TO_JSON_STRING`
+or `TO_JSON` function.
 
-### JSONPath format
+<table>
+  <thead>
+    <tr>
+      <th>From SQL</th>
+      <th width='400px'>To JSON</th>
+      <th>Examples</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>NULL</td>
+      <td>
+        <p>null</p>
+      </td>
+      <td>
+        SQL input: <code>NULL</code><br />
+        JSON output: <code>null</code>
+      </td>
+    </tr>
+    
+    <tr>
+      <td>BOOL</td>
+      <td>boolean</td>
+      <td>
+        SQL input: <code>TRUE</code><br />
+        JSON output: <code>true</code><br />
+        <hr />
+        SQL input: <code>FALSE</code><br />
+        JSON output: <code>false</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>
+        INT32<br/>
+        UINT32
+      </td>
+      <td>integer</td>
+      <td>
+        SQL input: <code>-1</code><br />
+        JSON output: <code>-1</code><br />
+        <hr />
+        SQL input: <code>0</code><br />
+        JSON output: <code>0</code><br />
+        <hr />
+        SQL input: <code>12345678901</code><br />
+        JSON output: <code>12345678901</code><br />
+      </td>
+    </tr>
+    
+    
+    
+    <tr>
+      <td>
+        INT64
+        <br />UINT64
+      </td>
+      <td>
+        <p>(TO_JSON_STRING only)</p>
+        <p>number or string</p>
+        <p>
+          Encoded as a number when the value is in the range of
+          [-2<sup>53</sup>, 2<sup>53</sup>], which is the range of
+          integers that can be represented losslessly as IEEE 754
+          double-precision floating point numbers. A value outside of this range
+          is encoded as a string.
+        </p>
+      <td>
+        SQL input: <code>9007199254740992</code><br />
+        JSON output: <code>9007199254740992</code><br />
+        <hr />
+        SQL input: <code>9007199254740993</code><br />
+        JSON output: <code>"9007199254740993"</code><br />
+      </td>
+    </tr>
+    
+    
+    
+    
+    <tr>
+      <td>
+        INT64
+        <br />UINT64
+      </td>
+      <td>
+        <p>(TO_JSON only)</p>
+        <p>number or string</p>
+        <p>
+          If the <code>stringify_wide_numbers</code> argument
+          is <code>TRUE</code> and the value is outside of the
+          DOUBLE type domain, it is
+          encoded as a string. Otherwise, it's encoded as a number.
+        </p>
+      <td>
+        SQL input: <code>9007199254740992</code><br />
+        JSON output: <code>9007199254740992</code><br />
+        <hr />
+        SQL input: <code>9007199254740993</code><br />
+        JSON output: <code>9007199254740993</code><br />
+        <hr />
+        SQL input with stringify_wide_numbers=>TRUE:
+        <code>9007199254740992</code><br />
+        JSON output: <code>9007199254740992</code><br />
+        <hr />
+        SQL input with stringify_wide_numbers=>TRUE:
+        <code>9007199254740993</code><br />
+        JSON output: <code>"9007199254740993"</code><br />
+      </td>
+    </tr>
+    
+    
+    
+    
+    <tr>
+      <td>
+        NUMERIC
+        <br/>BIGNUMERIC
+      </td>
+      <td>
+        <p>(TO_JSON_STRING only)</p>
+        <p>number or string</p>
+        <p>
+          Encoded as a number when the value is in the range of
+          [-2<sup>53</sup>, 2<sup>53</sup>] and has no fractional
+          part. A value outside of this range is encoded as a string.
+        </p>
+      </td>
+      <td>
+        SQL input: <code>-1</code><br />
+        JSON output: <code>-1</code><br />
+        <hr />
+        SQL input: <code>0</code><br />
+        JSON output: <code>0</code><br />
+        <hr />
+        SQL input: <code>9007199254740993</code><br />
+        JSON output: <code>"9007199254740993"</code><br />
+        <hr />
+        SQL input: <code>123.56</code><br />
+        JSON output: <code>"123.56"</code><br />
+      </td>
+    </tr>
+    
+    
+    
+    
+    <tr>
+      <td>
+        NUMERIC
+        <br/>BIGNUMERIC
+      </td>
+      <td>
+        <p>(TO_JSON only)</p>
+        <p>number or string</p>
+        <p>
+          If the <code>stringify_wide_numbers</code> argument
+          is <code>TRUE</code> and the value is outside of the
+          DOUBLE type domain, it is
+          encoded as a string. Otherwise, it's encoded as a number.
+        </p>
+      </td>
+      <td>
+        SQL input: <code>-1</code><br />
+        JSON output: <code>-1</code><br />
+        <hr />
+        SQL input: <code>0</code><br />
+        JSON output: <code>0</code><br />
+        <hr />
+        SQL input: <code>9007199254740993</code><br />
+        JSON output: <code>9007199254740993</code><br />
+        <hr />
+        SQL input: <code>123.56</code><br />
+        JSON output: <code>123.56</code><br />
+        <hr />
+        SQL input with stringify_wide_numbers=>TRUE: <code>9007199254740993</code><br />
+        JSON output: <code>"9007199254740993"</code><br />
+        <hr />
+        SQL input with stringify_wide_numbers=>TRUE: <code>123.56</code><br />
+        JSON output: <code>123.56</code><br />
+      </td>
+    </tr>
+    
+    
+    
+    <tr>
+      <td>
+        FLOAT<br />
+        DOUBLE
+      </td>
+      <td>
+        <p>number or string</p>
+        <p>
+          <code>+/-inf</code> and <code>NaN</code> are encoded as
+          <code>Infinity</code>, <code>-Infinity</code>, and <code>NaN</code>.
+          Otherwise, this value is encoded as a string.
+        </p>
+      </td>
+      <td>
+        SQL input: <code>1.0</code><br />
+        JSON output: <code>1</code><br />
+        <hr />
+        SQL input: <code>9007199254740993</code><br />
+        JSON output: <code>9007199254740993</code><br />
+        <hr />
+        SQL input: <code>"+inf"</code><br />
+        JSON output: <code>"Infinity"</code><br />
+        <hr />
+        SQL input: <code>"-inf"</code><br />
+        JSON output: <code>"-Infinity"</code><br />
+        <hr />
+        SQL input: <code>"NaN"</code><br />
+        JSON output: <code>"NaN"</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>STRING</td>
+      <td>
+        <p>string</p>
+        <p>
+          Encoded as a string, escaped according to the JSON standard.
+          Specifically, <code>"</code>, <code>\</code>, and the control
+          characters from <code>U+0000</code> to <code>U+001F</code> are
+          escaped.
+        </p>
+      </td>
+      <td>
+        SQL input: <code>"abc"</code><br />
+        JSON output: <code>"abc"</code><br />
+        <hr />
+        SQL input: <code>"\"abc\""</code><br />
+        JSON output: <code>"\"abc\""</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>BYTES</td>
+      <td>
+        <p>string</p>
+        <p>Uses RFC 4648 Base64 data encoding.</p>
+      </td>
+      <td>
+        SQL input: <code>b"Google"</code><br />
+        JSON output: <code>"R29vZ2xl"</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>ENUM</td>
+      <td>
+        <p>string</p>
+        <p>
+          Invalid enum values are encoded as their number, such as 0 or 42.
+        </p>
+      </td>
+      <td>
+        SQL input: <code>Color.Red</code><br />
+        JSON output: <code>"Red"</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>DATE</td>
+      <td>string</td>
+      <td>
+        SQL input: <code>DATE '2017-03-06'</code><br />
+        JSON output: <code>"2017-03-06"</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>TIMESTAMP</td>
+      <td>
+        <p>string</p>
+        <p>
+          Encoded as ISO 8601 date and time, where T separates the date and
+          time and Z (Zulu/UTC) represents the time zone.
+        </p>
+      </td>
+      <td>
+        SQL input: <code>TIMESTAMP '2017-03-06 12:34:56.789012'</code><br />
+        JSON output: <code>"2017-03-06T12:34:56.789012Z"</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>DATETIME</td>
+      <td>
+        <p>string</p>
+        <p>
+          Encoded as ISO 8601 date and time, where T separates the date and
+          time.
+        </p>
+      </td>
+      <td>
+        SQL input: <code>DATETIME '2017-03-06 12:34:56.789012'</code><br />
+        JSON output: <code>"2017-03-06T12:34:56.789012"</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>TIME</td>
+      <td>
+        <p>string</p>
+        <p>Encoded as ISO 8601 time.</p>
+      </td>
+      <td>
+        SQL input: <code>TIME '12:34:56.789012'</code><br />
+        JSON output: <code>"12:34:56.789012"</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>ARRAY</td>
+      <td>
+        <p>array</p>
+        <p>
+          Can contain zero or more elements. Each element is formatted according
+          to its type.
+        </p>
+      </td>
+      <td>
+        SQL input: <code>["red", "blue", "green"]</code><br />
+        JSON output: <code>["red", "blue", "green"]</code><br />
+        <hr />
+        SQL input:<code>[1, 2, 3]</code><br />
+        JSON output:<code>[1, 2, 3]</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>STRUCT</td>
+      <td>
+        <p>object</p>
+        <p>
+          The object can contain zero or more key/value pairs.
+          Each value is formatted according to its type.
+        </p>
+        <p>
+          For <code>TO_JSON</code>, a field is
+          inluded in the output string and any duplicates of this field are
+          omitted.
+          For <code>TO_JSON_STRING</code>,
+          a field and any duplicates of this field are included in the
+          output string.
+        </p>
+        <p>
+          Anonymous fields are represented with <code>""</code>. If a field is
+          a non-empty array or object, elements/fields are indented
+          to the appropriate level.
+        </p>
+        <p>
+          Invalid UTF-8 field names might result in unparseable JSON. String
+          values are escaped according to the JSON standard. Specifically,
+          <code>"</code>, <code>\</code>, and the control characters from
+          <code>U+0000</code> to <code>U+001F</code> are escaped.
+        </p>
+      </td>
+      <td>
+        SQL input: <code>STRUCT(12 AS purchases, TRUE AS inStock)</code><br />
+        JSON output: <code>{"purchases":12,"inStock": true}</code><br />
+      </td>
+    </tr>
+    
+    
+    <tr>
+      <td>PROTO</td>
+      <td>
+        <p>object</p>
+        <p>
+          The object can contain zero or more key/value pairs.
+          Each value is formatted according to its type.
+        </p>
+        <p>
+          Field names with underscores are converted to camel-case in accordance
+          with
+          <a href="https://developers.google.com/protocol-buffers/docs/proto3#json">
+          protobuf json conversion</a>. Field values are formatted according to
+          <a href="https://developers.google.com/protocol-buffers/docs/proto3#json">
+          protobuf json conversion</a>. If a <code>field_value</code> is a
+          non-empty repeated field or submessage, elements/fields are indented
+          to the appropriate level.
+        </p>
+        <ul>
+          <li>
+            Field names that are not valid UTF-8 might result in unparseable
+            JSON.
+          </li>
+          <li>Field annotations are ignored.</li>
+          <li>Repeated fields are represented as arrays.</li>
+          <li>Submessages are formatted as values of PROTO type.</li>
+          <li>
+            Extension fields are included in the output, where the extension
+            field name is enclosed in brackets and prefixed with the full name
+            of the extension type.
+          </li>
+          
+        </ul>
+      </td>
+      <td>
+        SQL input: <code>NEW Item(12 AS purchases,TRUE AS in_Stock)</code><br />
+        JSON output: <code>{"purchases":12,"inStock": true}</code><br />
+      </td>
+    </tr>
+    
+  </tbody>
+</table>
 
-Most JSON functions pass in a `json_string_expr` and `json_path_string_literal`
+### JSONPath 
+<a id="JSONPath_format"></a>
+
+Most JSON functions pass in a `json_string_expr` and `json_path`
 parameter. The `json_string_expr` parameter passes in a JSON-formatted
-string, and the `json_path_string_literal` parameter identifies the value or
+string, and the `json_path` parameter identifies the value or
 values you want to obtain from the JSON-formatted string.
 
 The `json_string_expr` parameter must be a JSON string that is
@@ -9293,7 +13964,7 @@ formatted like this:
 {"class" : {"students" : [{"name" : "Jane"}]}}
 ```
 
-You construct the `json_path_string_literal` parameter using the
+You construct the `json_path` parameter using the
 [JSONPath][json-path] format. As part of this format, this parameter must start
 with a `$` symbol, which refers to the outermost level of the JSON-formatted
 string. You can identify child values using dots. If the JSON object is an
@@ -9307,15 +13978,16 @@ $        | Root object or element | "$"                   | `{"class":{"students
 .        | Child operator         | "$.class.students"    | `[{"name":"Jane"}]`
 []       | Subscript operator     | "$.class.students[0]" | `{"name":"Jane"}`
 
-A JSON functions returns `NULL` if the `json_path_string_literal` parameter does
+A JSON functions returns `NULL` if the `json_path` parameter does
 not match a value in `json_string_expr`. If the selected value for a scalar
 function is not scalar, such as an object or an array, the function
 returns `NULL`.
 
 If the JSONPath is invalid, the function raises an error.
 
-[jsonpath-format]: #jsonpath_format
-[json-path]: https://github.com/json-path/JsonPath#operators
+[json-encodings]: #json_encodings
+[JSONPath-format]: #JSONPath_format
+[json-path]: https://github.com/json-path/JSONPath#operators
 
 ## Array functions
 
@@ -9437,6 +14109,48 @@ SELECT ARRAY_CONCAT([1, 2], [3, 4], [5, 6]) as count_to_six;
 +--------------------------------------------------+
 ```
 
+### ARRAY_FILTER
+
+```sql
+ARRAY_FILTER(array_expression, lambda_expression)
+
+lambda_expression:
+  { e->boolean_expression | (e, i)->boolean_expression }
+```
+
+**Description**
+
+Takes an array, filters out unwanted elements, and returns the results in a new
+array.
+
++   `array_expression`: The array to filter.
++   `lambda_expression`: Each element in `array_expression` is evaluated against
+    the [lambda expression][lambda-definition]. If the expression evaluates to
+    `FALSE` or `NULL`, the element is removed from the resulting array.
++   `e`: An array element.
++   `i`: The zero-based offset of the array element.
++   `boolean_expression`: The predicate used to filter the array elements.
+
+Returns `NULL` if the `array_expression` is `NULL`.
+
+**Return type**
+
+ARRAY
+
+**Example**
+
+```sql
+SELECT
+  ARRAY_FILTER([1,2,3], e->e>1) AS a1,
+  ARRAY_FILTER([0,2,3], (e, i)->e>i) AS a2;
+
++-------+-------+
+| a1    | a2    |
++-------+-------+
+| [2,3] | [2,3] |
++-------+-------+
+```
+
 ### ARRAY_LENGTH
 
 ```sql
@@ -9459,8 +14173,7 @@ WITH items AS
   (SELECT ["coffee", NULL, "milk" ] as list
   UNION ALL
   SELECT ["cake", "pie"] as list)
-
-SELECT list, ARRAY_LENGTH(list) AS size
+SELECT ARRAY_TO_STRING(list, ', ', 'NULL'), ARRAY_LENGTH(list) AS size
 FROM items
 ORDER BY size DESC;
 
@@ -9527,6 +14240,285 @@ FROM items;
 +--------------------------------+
 ```
 
+### ARRAY_TRANSFORM
+
+```sql
+ARRAY_TRANSFORM(array_expression, lambda_expression)
+
+lambda_expression:
+  { e->transform_expression | (e, i)->transform_expression }
+```
+
+**Description**
+
+Takes an array, transforms the elements, and returns the results in a new array.
+
++   `array_expression`: The array to transform.
++   `lambda_expression`: Each element in `array_expression` is evaluated against
+    the [lambda expression][lambda-definition]. The evaluation results are
+    returned in a new array.
++   `e`: An array element.
++   `i`: The zero-based offset of the array element.
++   `transform_expression`: The expression used to transform the array elements.
+
+Returns `NULL` if the `array_expression` is `NULL`.
+
+**Return type**
+
+ARRAY
+
+**Example**
+
+```sql
+SELECT
+  ARRAY_TRANSFORM([1,2,3], e->e+1) AS a1,
+  ARRAY_TRANSFORM([1,2,3], (e, i)->e+i) AS a2;
+
++---------+---------+
+| a1      | a2      |
++---------+---------+
+| [2,3,4] | [1,3,5] |
++---------+---------+
+```
+
+### FLATTEN
+
+```sql
+FLATTEN(flatten_path)
+
+flatten_path:
+{
+  array_expression
+  | flatten_path.field
+  | flatten_path.array_field
+  | flatten_path.array_field[{offset_clause | safe_offset_clause}]
+}
+```
+
+**Description**
+
+Nested data can be flattened into a single, flat array with the `FLATTEN`
+operator. The `FLATTEN` operator accepts a unique type of path called the
+_flatten path_. The flatten path lets you traverse through the levels of a
+nested array from left to right. For example,
+`FLATTEN(column.array_field.target)` will return an array of all
+`targets` inside `column`. The flatten path can include:
+
++ `array_expression`: Expression that evaluates to a single, flat array.
++ `flatten_path.field`: A concatenation of `element.field` for all elements of
+  `FLATTEN(flatten_path)`. `field` represents a non-array field.
++ `flatten_path.array_field`: A concatenation of elements of
+  `element.array_field` for all elements of `FLATTEN(flatten_path)`.
+  `array_field` represents an array field.
+  + `[{offset_clause | safe_offset_clause}]`: If the optional
+    [`OFFSET`][offset-clause] or [`SAFE_OFFSET`][safe-offset-clause] is present,
+    for each array_field value, `FLATTEN` includes only the array element at
+    the selected offset, rather than all elements.
+
+`FLATTEN` can return `NULL` if following the flatten path encounters a
+`NULL` before it encounters an array. Once a non-null array is encountered,
+`FLATTEN` can never return `NULL` and will always return an array.
+
+`NULL`s in arrays are added to the resulting array.
+
+Tip: Nested data is common in protocol buffers that have data within repeated
+messages.
+
+Tip: The `FLATTEN` operator is implicit inside the `UNNEST` operator and
+`UNNEST(flatten_path)` is equivalent to `UNNEST(FLATTEN(flatten_path))`.
+
+You can learn more about flattening nested data into arrays and
+the flatten path in
+[Flattening nested data into an array][flatten-tree-to-array].
+
+**Return type**
+
+ARRAY
+
+**Examples**
+
+In this `STRUCT` example, `(5,6)` and `(7,8)` are flattened
+into `[5,6,7,8]`.
+
+```sql
+SELECT FLATTEN([
+  STRUCT( [STRUCT(5 AS y), STRUCT(6)] AS x ),
+  STRUCT( [STRUCT(7 AS y), STRUCT(8)] AS x )
+  ].x.y) AS my_array
+
++--------------+
+| my_array     |
++--------------+
+| [5, 6, 7, 8] |
++--------------+
+```
+
+In this PROTO example, `(5)`, `(6,7)` and `(8)` are
+flattened into `[5,6,7,8]`.
+
+```proto
+message MyProto {
+  message InnerProto {
+    repeated int64 x = 1;
+  }
+  repeated InnerProto y = 2;
+}
+```
+
+```sql
+SELECT FLATTEN(
+  CAST(
+     'y { x: 5 }
+      y { x: 6 x: 7 }
+      y { x: 8 }'
+  AS MyProto).y.x AS my_array
+)
+
++--------------+
+| my_array     |
++--------------+
+| [5, 6, 7, 8] |
++--------------+
+```
+
+In this PROTO example, `(5,6)` and `(7,8)` are
+flattened into `[(5,6), (7,8)]`.
+
+```proto
+message MyProto {
+  Message Inner {
+    int64 x = 1;
+    int64 y = 2;
+  }
+  repeated Inner z = 1;
+}
+```
+
+```sql
+SELECT FLATTEN(
+  CAST(
+     'z { x: 5  y: 6 }
+      z { x: 7  y: 8 }'
+  AS MyProto).z AS my_array
+
++------------------+
+| my_array         |
++------------------+
+| [(5, 6), (7, 8)] |
++------------------+
+```
+
+In this example, all of the arrays for `v.sales.quantity` are concatenated in
+a flattened array.
+
+```sql
+WITH t AS (
+  SELECT
+  [
+    STRUCT([STRUCT([1,2,3] AS quantity), STRUCT([4,5,6] AS quantity)] AS sales),
+    STRUCT([STRUCT([7,8] AS quantity), STRUCT([] AS quantity)] AS sales)
+  ] AS v
+)
+SELECT FLATTEN(v.sales.quantity) AS all_values
+FROM t;
+
++--------------------------+
+| all_values               |
++--------------------------+
+| [1, 2, 3, 4, 5, 6, 7, 8] |
++--------------------------+
+```
+
+In this example, `OFFSET` gets the second value in each array and
+concatenates them.
+
+```sql
+WITH t AS (
+  SELECT
+  [
+    STRUCT([STRUCT([1,2,3] AS quantity), STRUCT([4,5,6] AS quantity)] AS sales),
+    STRUCT([STRUCT([7,8,9] AS quantity), STRUCT([10,11,12] AS quantity)] AS sales)
+  ] AS v
+)
+SELECT FLATTEN(v.sales.quantity[OFFSET(1)]) AS second_values
+FROM t;
+
++---------------+
+| second_values |
++---------------+
+| [2, 5, 8, 11] |
++---------------+
+```
+
+If you use `OFFSET` with `FLATTEN` and a value is missing from an array,
+an error is returned.
+
+```sql
+WITH t AS (
+  SELECT
+  [
+    STRUCT([STRUCT([1,2,3] AS quantity), STRUCT([4,5,6] AS quantity)] AS sales),
+    STRUCT([STRUCT([7,8,9] AS quantity), STRUCT([10] AS quantity)] AS sales)
+  ] AS v
+)
+SELECT FLATTEN(v.sales.quantity[OFFSET(1)]) AS second_values
+FROM t;
+
+-- ERROR: Array index is out of bounds.
+```
+
+In this example, `SAFE_OFFSET` gets the third value in each array and
+concatenates them. If a value is missing, a `NULL` is returned for the value.
+
+```sql
+WITH t AS (
+  SELECT
+  [
+    STRUCT([STRUCT([1,2,3] AS quantity), STRUCT([4,5,6] AS quantity)] AS sales),
+    STRUCT([STRUCT([7] AS quantity), STRUCT([10,11,12] AS quantity)] AS sales)
+  ] AS v
+)
+SELECT FLATTEN(v.sales.quantity[SAFE_OFFSET(1)]) AS third_values
+FROM t;
+
++------------------+
+| third_values     |
++------------------+
+| [3, 6, NULL, 12] |
++------------------+
+```
+
+The resulting array may contain `NULL` `ARRAY` elements, but only if
+evaluating the flatten path along some array elements returns `NULL`.
+For example:
+
+```sql
+SELECT FLATTEN([
+  STRUCT( [STRUCT(5 AS y), STRUCT(6)] AS x ),
+  STRUCT( [STRUCT(7 AS y), NULL] AS x )
+  ].x.y) AS my_array
+
++-----------------+
+| my_array        |
++-----------------+
+| [5, 6, 7, NULL] |
++-----------------+
+```
+
+```sql
+SELECT FLATTEN([
+  STRUCT( STRUCT(5 AS y) AS x),
+  STRUCT( NULL AS x ),
+  STRUCT( STRUCT(6 AS y) )
+  ].x.y) AS my_array
+
++--------------+
+| my_array     |
++--------------+
+| [5, NULL, 6] |
++--------------+
+```
+
 ### GENERATE_ARRAY
 
 ```sql
@@ -9541,7 +14533,7 @@ parameters determine the inclusive start and end of the array.
 The `GENERATE_ARRAY` function accepts the following data types as inputs:
 
 <ul>
-<li>INT64</li><li>UINT64</li><li>NUMERIC</li><li>DOUBLE</li>
+<li>INT64</li><li>UINT64</li><li>NUMERIC</li><li>BIGNUMERIC</li><li>DOUBLE</li>
 </ul>
 
 The `step_expression` parameter determines the increment used to
@@ -10101,12 +15093,18 @@ FROM items;
 +----------------------------------+---------------+----------------+
 ```
 
-[subqueries]: https://github.com/google/zetasql/blob/master/docs/query-syntax#subqueries
-[datamodel-sql-tables]: https://github.com/google/zetasql/blob/master/docs/data-model#standard-sql-tables
-[datamodel-value-tables]: https://github.com/google/zetasql/blob/master/docs/data-model#value-tables
-[array-data-type]: https://github.com/google/zetasql/blob/master/docs/data-types#array_type
+[offset-clause]: #offset_and_ordinal
+[safe-offset-clause]: #safe_offset_and_safe_ordinal
+[subqueries]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#subqueries
+[datamodel-sql-tables]: https://github.com/google/zetasql/blob/master/docs/data-model.md#standard-sql-tables
+[datamodel-value-tables]: https://github.com/google/zetasql/blob/master/docs/data-model.md#value-tables
+[array-data-type]: https://github.com/google/zetasql/blob/master/docs/data-types.md#array_type
+[flatten-tree-to-array]:https://github.com/google/zetasql/blob/master/docs/arrays.md#flattening_nested_data_into_arrays
 
 [array-link-to-operators]: #operators
+
+ [lambda-definition]:
+https://github.com/google/zetasql/blob/master/docs/functions-reference.md#lambdas 
 
 ## Date functions
 
@@ -10120,13 +15118,15 @@ CURRENT_DATE([time_zone])
 
 **Description**
 
-Returns the current date as of the specified or default timezone.
+Returns the current date as of the specified or default timezone. Parentheses
+are optional when called with no
+arguments.
 
-This function supports an optional `time_zone` parameter. This parameter is a
-string representing the timezone to use. If no timezone is specified, the
-default timezone, which is implementation defined, is used. See
-[Timezone definitions][date-functions-link-to-timezone-definitions] for information on how to
-specify a time zone.
+ This function supports an optional
+`time_zone` parameter. This parameter is a string representing the timezone to
+use. If no timezone is specified, the default timezone, which is implementation defined,
+is used. See [Timezone definitions][date-functions-link-to-timezone-definitions]
+for information on how to specify a time zone.
 
 If the `time_zone` parameter evaluates to `NULL`, this function returns `NULL`.
 
@@ -10144,6 +15144,24 @@ SELECT CURRENT_DATE() as the_date;
 +--------------+
 | 2016-12-25   |
 +--------------+
+```
+
+When a column named `current_date` is present, the column name and the function
+call without parentheses are ambiguous. To ensure the function call, add
+parentheses; to ensure the column name, qualify it with its
+[range variable][date-functions-link-to-range-variables]. For example, the
+following query will select the function in the `the_date` column and the table
+column in the `current_date` column.
+
+```sql
+WITH t AS (SELECT 'column value' AS `current_date`)
+SELECT current_date() AS the_date, t.current_date FROM t;
+
++------------+--------------+
+| the_date   | current_date |
++------------+--------------+
+| 2016-12-25 | column value |
++------------+--------------+
 ```
 
 ### EXTRACT
@@ -10703,7 +15721,7 @@ SELECT LAST_DAY(DATE '2008-11-10', WEEK(SUNDAY)) AS last_day
 +------------+
 | last_day   |
 +------------+
-| 2008-11-05 |
+| 2008-11-15 |
 +------------+
 ```
 
@@ -10715,7 +15733,7 @@ SELECT LAST_DAY(DATE '2008-11-10', WEEK(MONDAY)) AS last_day
 +------------+
 | last_day   |
 +------------+
-| 2008-11-06 |
+| 2008-11-16 |
 +------------+
 ```
 
@@ -10771,10 +15789,24 @@ generally overrides any earlier ones.
 
 DATE
 
-**Example**
+**Examples**
+
+This example converts a `MM/DD/YY` formatted string to a `DATE` object:
 
 ```sql
 SELECT PARSE_DATE("%x", "12/25/08") as parsed;
+
++------------+
+| parsed     |
++------------+
+| 2008-12-25 |
++------------+
+```
+
+This example converts a `YYYYMMDD` formatted string to a `DATE` object:
+
+```sql
+SELECT PARSE_DATE("%Y%m%d", "20081225") as parsed;
 
 +------------+
 | parsed     |
@@ -10818,46 +15850,56 @@ following elements:
  <tr>
     <td class="tab0">Format element</td>
     <td class="tab0">Description</td>
+    <td class="tab0">Example</td>
  </tr>
  <tr>
     <td>%A</td>
     <td>The full weekday name.</td>
+    <td>Wednesday</td>
  </tr>
  <tr>
     <td>%a</td>
     <td>The abbreviated weekday name.</td>
+    <td>Wed</td>
  </tr>
  <tr>
     <td>%B</td>
     <td>The full month name.</td>
+    <td>January</td>
  </tr>
  <tr>
     <td>%b or %h</td>
     <td>The abbreviated month name.</td>
+    <td>Jan</td>
  </tr>
  <tr>
     <td>%C</td>
     <td>The century (a year divided by 100 and truncated to an integer) as a
     decimal
 number (00-99).</td>
+    <td>20</td>
  </tr>
  <tr>
     <td>%D</td>
     <td>The date in the format %m/%d/%y.</td>
+    <td>01/20/21</td>
  </tr>
  <tr>
     <td>%d</td>
     <td>The day of the month as a decimal number (01-31).</td>
+    <td>20</td>
  </tr>
  <tr>
     <td>%e</td>
     <td>The day of month as a decimal number (1-31); single digits are preceded
     by a
 space.</td>
+    <td>20</td>
  </tr>
  <tr>
     <td>%F</td>
     <td>The date in the format %Y-%m-%d.</td>
+    <td>2021-01-20</td>
  </tr>
  <tr>
     <td>%G</td>
@@ -10866,6 +15908,7 @@ space.</td>
     on the Monday before the first Thursday of the Gregorian calendar year.
     Note that %G and %Y may produce different results near Gregorian year
     boundaries, where the Gregorian year and ISO year can diverge.</td>
+    <td>2021</td>
  </tr>
  <tr>
     <td>%g</td>
@@ -10875,36 +15918,44 @@ space.</td>
     calendar year. Note that %g and %y may produce different results near
     Gregorian year boundaries, where the Gregorian year and ISO year can
     diverge.</td>
+    <td>21</td>
  </tr>
  <tr>
     <td>%j</td>
     <td>The day of the year as a decimal number (001-366).</td>
+    <td>020</td>
  </tr>
  <tr>
     <td>%m</td>
     <td>The month as a decimal number (01-12).</td>
+    <td>01</td>
  </tr>
  <tr>
     <td>%n</td>
     <td>A newline character.</td>
+    <td></td>
  </tr>
  <tr>
     <td>%Q</td>
     <td>The quarter as a decimal number (1-4).</td>
+    <td>1</td>
  </tr>
  <tr>
     <td>%t</td>
     <td>A tab character.</td>
+    <td></td>
  </tr>
  <tr>
     <td>%U</td>
     <td>The week number of the year (Sunday as the first day of the week) as a
     decimal number (00-53).</td>
+    <td>03</td>
  </tr>
  <tr>
     <td>%u</td>
     <td>The weekday (Monday as the first day of the week) as a decimal number
     (1-7).</td>
+   <td>3</td>
 </tr>
  <tr>
     <td>%V</td>
@@ -10914,35 +15965,42 @@ space.</td>
     January 1 has four or more days in the new year, then it is week 1;
     otherwise it is week 53 of the previous year, and the next week is
     week 1.</td>
+    <td>03</td>
  </tr>
  <tr>
     <td>%W</td>
     <td>The week number of the year (Monday as the first day of the week) as a
     decimal number (00-53).</td>
+    <td>03</td>
  </tr>
  <tr>
     <td>%w</td>
     <td>The weekday (Sunday as the first day of the week) as a decimal number
     (0-6).</td>
+    <td>3</td>
  </tr>
  <tr>
     <td>%x</td>
     <td>The date representation in MM/DD/YY format.</td>
+    <td>01/20/21</td>
  </tr>
  <tr>
     <td>%Y</td>
     <td>The year with century as a decimal number.</td>
+    <td>2021</td>
  </tr>
  <tr>
     <td>%y</td>
     <td>The year without century as a decimal number (00-99), with an optional
     leading zero. Can be mixed with %C. If %C is not specified, years 00-68 are
     2000s, while years 69-99 are 1900s.</td>
+    <td>21</td>
  </tr>
  <tr>
     <td>%E4Y</td>
     <td>Four-character years (0001 ... 9999). Note that %Y produces as many
     characters as it takes to fully render the year.</td>
+    <td>2021</td>
  </tr>
 </table>
 
@@ -10950,6 +16008,7 @@ space.</td>
 [ISO-8601-week]: https://en.wikipedia.org/wiki/ISO_week_date
 [date-format]: #format_date
 [date-format-elements]: #supported_format_elements_for_date
+[date-functions-link-to-range-variables]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#range_variables
 
 [date-functions-link-to-timezone-definitions]: #timezone_definitions
 
@@ -10965,7 +16024,8 @@ CURRENT_DATETIME([timezone])
 
 **Description**
 
-Returns the current time as a `DATETIME` object.
+Returns the current time as a `DATETIME` object. Parentheses are optional when
+called with no arguments.
 
 This function supports an optional `timezone` parameter.
 See [Timezone definitions][datetime-link-to-timezone-definitions] for
@@ -10985,6 +16045,24 @@ SELECT CURRENT_DATETIME() as now;
 +----------------------------+
 | 2016-05-19 10:38:47.046465 |
 +----------------------------+
+```
+
+When a column named `current_datetime` is present, the column name and the
+function call without parentheses are ambiguous. To ensure the function call,
+add parentheses; to ensure the column name, qualify it with its
+[range variable][datetime-functions-link-to-range-variables]. For example, the
+following query will select the function in the `now` column and the table
+column in the `current_datetime` column.
+
+```sql
+WITH t AS (SELECT 'column value' AS `current_datetime`)
+SELECT current_datetime() as now, t.current_datetime FROM t;
+
++----------------------------+------------------+
+| now                        | current_datetime |
++----------------------------+------------------+
+| 2016-05-19 10:38:47.046465 | column value     |
++----------------------------+------------------+
 ```
 
 ### DATETIME
@@ -11584,7 +16662,7 @@ SELECT LAST_DAY(DATETIME '2008-11-10 15:30:00', WEEK(SUNDAY)) AS last_day
 +------------+
 | last_day   |
 +------------+
-| 2008-11-05 |
+| 2008-11-15 |
 +------------+
 ```
 
@@ -11596,7 +16674,7 @@ SELECT LAST_DAY(DATETIME '2008-11-10 15:30:00', WEEK(MONDAY)) AS last_day
 +------------+
 | last_day   |
 +------------+
-| 2008-11-06 |
+| 2008-11-16 |
 +------------+
 ```
 
@@ -11706,49 +16784,60 @@ following elements:
  <tr>
     <td class="tab0">Format element</td>
     <td class="tab0">Description</td>
+    <td class="tab0">Example</td>
  </tr>
  <tr>
     <td>%A</td>
     <td>The full weekday name.</td>
+    <td>Wednesday</td>
  </tr>
  <tr>
     <td>%a</td>
     <td>The abbreviated weekday name.</td>
+    <td>Wed</td>
  </tr>
  <tr>
     <td>%B</td>
     <td>The full month name.</td>
+    <td>January</td>
  </tr>
  <tr>
     <td>%b or %h</td>
     <td>The abbreviated month name.</td>
+    <td>Jan</td>
  </tr>
  <tr>
     <td>%C</td>
     <td>The century (a year divided by 100 and truncated to an integer) as a
     decimal number (00-99).</td>
+    <td>20</td>
  </tr>
  <tr>
     <td>%c</td>
     <td>The date and time representation.</td>
+    <td>Wed Jan 20 21:47:00 2021</td>
  </tr>
  <tr>
     <td>%D</td>
     <td>The date in the format %m/%d/%y.</td>
+    <td>01/20/21</td>
  </tr>
  <tr>
     <td>%d</td>
     <td>The day of the month as a decimal number (01-31).</td>
+    <td>20</td>
  </tr>
  <tr>
     <td>%e</td>
     <td>The day of month as a decimal number (1-31); single digits are preceded
     by a
 space.</td>
+    <td>20</td>
  </tr>
  <tr>
     <td>%F</td>
     <td>The date in the format %Y-%m-%d.</td>
+    <td>2021-01-20</td>
  </tr>
  <tr>
     <td>%G</td>
@@ -11757,6 +16846,7 @@ space.</td>
     on the Monday before the first Thursday of the Gregorian calendar year.
     Note that %G and %Y may produce different results near Gregorian year
     boundaries, where the Gregorian year and ISO year can diverge.</td>
+    <td>2021</td>
  </tr>
  <tr>
     <td>%g</td>
@@ -11766,90 +16856,110 @@ space.</td>
     calendar year. Note that %g and %y may produce different results near
     Gregorian year boundaries, where the Gregorian year and ISO year can
     diverge.</td>
+    <td>21</td>
  </tr>
  <tr>
     <td>%H</td>
     <td>The hour (24-hour clock) as a decimal number (00-23).</td>
+    <td>21</td>
  </tr>
  <tr>
     <td>%I</td>
     <td>The hour (12-hour clock) as a decimal number (01-12).</td>
+    <td>09</td>
  </tr>
  <tr>
     <td>%j</td>
     <td>The day of the year as a decimal number (001-366).</td>
+    <td>020</td>
  </tr>
  <tr>
     <td>%k</td>
     <td>The hour (24-hour clock) as a decimal number (0-23); single digits are
     preceded
 by a space.</td>
+    <td>21</td>
  </tr>
  <tr>
     <td>%l</td>
     <td>The hour (12-hour clock) as a decimal number (1-12); single digits are
     preceded
 by a space.</td>
+    <td>9</td>
  </tr>
  <tr>
     <td>%M</td>
     <td>The minute as a decimal number (00-59).</td>
+    <td47></td>
  </tr>
  <tr>
     <td>%m</td>
     <td>The month as a decimal number (01-12).</td>
+    <td>01</td>
  </tr>
  <tr>
     <td>%n</td>
     <td>A newline character.</td>
+    <td></td>
  </tr>
  <tr>
     <td>%P</td>
     <td>Either am or pm.</td>
+    <td>pm</td>
  </tr>
  <tr>
     <td>%p</td>
     <td>Either AM or PM.</td>
+    <td>PM</td>
  </tr>
  <tr>
     <td>%Q</td>
     <td>The quarter as a decimal number (1-4).</td>
+    <td>1</td>
  </tr>
  <tr>
     <td>%R</td>
     <td>The time in the format %H:%M.</td>
+    <td>21:47</td>
  </tr>
  <tr>
     <td>%r</td>
     <td>The 12-hour clock time using AM/PM notation.</td>
+    <td>09:47:00 PM</td>
  </tr>
  <tr>
     <td>%S</td>
     <td>The second as a decimal number (00-60).</td>
+    <td>00</td>
  </tr>
  <tr>
     <td>%s</td>
     <td>The number of seconds since 1970-01-01 00:00:00. Always overrides all
     other format elements, independent of where %s appears in the string.
     If multiple %s elements appear, then the last one takes precedence.</td>
+    <td>1611179220</td>
 </tr>
  <tr>
     <td>%T</td>
     <td>The time in the format %H:%M:%S.</td>
+    <td>21:47:00</td>
  </tr>
  <tr>
     <td>%t</td>
     <td>A tab character.</td>
+    <td></td>
  </tr>
  <tr>
     <td>%U</td>
     <td>The week number of the year (Sunday as the first day of the week) as a
     decimal number (00-53).</td>
+    <td>03</td>
  </tr>
  <tr>
     <td>%u</td>
     <td>The weekday (Monday as the first day of the week) as a decimal number
     (1-7).</td>
+    <td>3</td>
 </tr>
  <tr>
     <td>%V</td>
@@ -11859,52 +16969,63 @@ by a space.</td>
     January 1 has four or more days in the new year, then it is week 1;
     otherwise it is week 53 of the previous year, and the next week is
     week 1.</td>
+    <td>03</td>
  </tr>
  <tr>
     <td>%W</td>
     <td>The week number of the year (Monday as the first day of the week) as a
     decimal number (00-53).</td>
+    <td>03</td>
  </tr>
  <tr>
     <td>%w</td>
     <td>The weekday (Sunday as the first day of the week) as a decimal number
     (0-6).</td>
+    <td>3</td>
  </tr>
  <tr>
     <td>%X</td>
     <td>The time representation in HH:MM:SS format.</td>
+    <td>21:47:00</td>
  </tr>
  <tr>
     <td>%x</td>
     <td>The date representation in MM/DD/YY format.</td>
+    <td>01/20/21</td>
  </tr>
  <tr>
     <td>%Y</td>
     <td>The year with century as a decimal number.</td>
+    <td>2021</td>
  </tr>
  <tr>
     <td>%y</td>
     <td>The year without century as a decimal number (00-99), with an optional
     leading zero. Can be mixed with %C. If %C is not specified, years 00-68 are
     2000s, while years 69-99 are 1900s.</td>
+    <td>21</td>
  </tr>
  <tr>
     <td>%%</td>
     <td>A single % character.</td>
+    <td>%</td>
  </tr>
  <tr>
     <td>%E#S</td>
     <td>Seconds with # digits of fractional precision.</td>
+    <td>00.000</td>
  </tr>
  <tr>
     <td>%E*S</td>
     <td>Seconds with full fractional precision (a literal '*').</td>
+    <td>00</td>
  </tr>
  <tr>
     <td>%E4Y</td>
     <td>Four-character years (0001 ... 9999). Note that %Y
     produces as many characters as it takes to fully render the
 year.</td>
+    <td>2021</td>
  </tr>
 </table>
 
@@ -11912,6 +17033,7 @@ year.</td>
 [ISO-8601-week]: https://en.wikipedia.org/wiki/ISO_week_date
 [datetime-format]: #format_datetime
 [datetime-format-elements]: #supported_format_elements_for_datetime
+[datetime-functions-link-to-range-variables]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#range_variables
 
 [datetime-link-to-timezone-definitions]: #timezone_definitions
 
@@ -11927,7 +17049,8 @@ CURRENT_TIME([timezone])
 
 **Description**
 
-Returns the current time as a `TIME` object.
+Returns the current time as a `TIME` object. Parentheses are optional when
+called with no arguments.
 
 This function supports an optional `timezone` parameter.
 See [Timezone definitions][time-link-to-timezone-definitions] for information
@@ -11947,6 +17070,24 @@ SELECT CURRENT_TIME() as now;
 +----------------------------+
 | 15:31:38.776361            |
 +----------------------------+
+```
+
+When a column named `current_time` is present, the column name and the function
+call without parentheses are ambiguous. To ensure the function call, add
+parentheses; to ensure the column name, qualify it with its
+[range variable][time-functions-link-to-range-variables]. For example, the
+following query will select the function in the `now` column and the table
+column in the `current_time` column.
+
+```sql
+WITH t AS (SELECT 'column value' AS `current_time`)
+SELECT current_time() as now, t.current_time FROM t;
+
++-----------------+--------------+
+| now             | current_time |
++-----------------+--------------+
+| 15:31:38.776361 | column value |
++-----------------+--------------+
 ```
 
 ### TIME
@@ -12313,86 +17454,105 @@ following elements:
  <tr>
     <td class="tab0">Format element</td>
     <td class="tab0">Description</td>
+    <td class="tab0">Example</td>
  </tr>
  <tr>
     <td>%H</td>
     <td>The hour (24-hour clock) as a decimal number (00-23).</td>
+    <td>21</td>
  </tr>
  <tr>
     <td>%I</td>
     <td>The hour (12-hour clock) as a decimal number (01-12).</td>
+    <td>09</td>
  </tr>
  <tr>
     <td>%k</td>
     <td>The hour (24-hour clock) as a decimal number (0-23); single digits are
     preceded
 by a space.</td>
+    <td>21</td>
  </tr>
  <tr>
     <td>%l</td>
     <td>The hour (12-hour clock) as a decimal number (1-12); single digits are
     preceded
 by a space.</td>
+    <td>9</td>
  </tr>
  <tr>
     <td>%M</td>
     <td>The minute as a decimal number (00-59).</td>
+    <td>47</td>
  </tr>
  <tr>
     <td>%n</td>
     <td>A newline character.</td>
+    <td></td>
  </tr>
  <tr>
     <td>%P</td>
     <td>Either am or pm.</td>
+    <td>pm</td>
  </tr>
  <tr>
     <td>%p</td>
     <td>Either AM or PM.</td>
+    <td>PM</td>
  </tr>
  <tr>
     <td>%R</td>
     <td>The time in the format %H:%M.</td>
+    <td>21:47</td>
  </tr>
  <tr>
     <td>%r</td>
     <td>The 12-hour clock time using AM/PM notation.</td>
+    <td>09:47:00 PM</td>
  </tr>
  <tr>
     <td>%S</td>
     <td>The second as a decimal number (00-60).</td>
+    <td>00</td>
  </tr>
  <tr>
     <td>%T</td>
     <td>The time in the format %H:%M:%S.</td>
+    <td>21:47:00</td>
  </tr>
  <tr>
     <td>%t</td>
     <td>A tab character.</td>
+    <td></td>
  </tr>
  <tr>
     <td>%X</td>
     <td>The time representation in HH:MM:SS format.</td>
+    <td>21:47:00</td>
  </tr>
  <tr>
     <td>%%</td>
     <td>A single % character.</td>
+    <td>%</td>
  </tr>
  <tr>
     <td>%E#S</td>
     <td>Seconds with # digits of fractional precision.</td>
+    <td>00.000</td>
  </tr>
  <tr>
     <td>%E*S</td>
     <td>Seconds with full fractional precision (a literal '*').</td>
+    <td>00</td>
  </tr>
 </table>
 
 [time-format]: #format_time
 [time-format-elements]: #supported_format_elements_for_time
-[time-to-string]: https://github.com/google/zetasql/blob/master/docs/conversion_rules.md#casting-time-types
+[time-functions-link-to-range-variables]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#range_variables
 
 [time-link-to-timezone-definitions]: #timezone_definitions
+[time-to-string]: #cast
 
 ## Timestamp functions
 
@@ -12410,12 +17570,12 @@ CURRENT_TIMESTAMP()
 
 **Description**
 
-Parentheses are optional. This function handles leap seconds by smearing them
-across a window of 20 hours around the inserted leap
-second.
 `CURRENT_TIMESTAMP()` produces a TIMESTAMP value that is continuous,
 non-ambiguous, has exactly 60 seconds per minute and does not repeat values over
-the leap second.
+the leap second. Parentheses are optional.
+
+This function handles leap seconds by smearing them across a window of 20 hours
+around the inserted leap second.
 
 **Supported Input Types**
 
@@ -12425,7 +17585,7 @@ Not applicable
 
 TIMESTAMP
 
-**Example**
+**Examples**
 
 ```sql
 SELECT CURRENT_TIMESTAMP() as now;
@@ -12435,6 +17595,24 @@ SELECT CURRENT_TIMESTAMP() as now;
 +---------------------------------------------+
 | 2020-06-02 17:00:53.110 America/Los_Angeles |
 +---------------------------------------------+
+```
+
+When a column named `current_timestamp` is present, the column name and the
+function call without parentheses are ambiguous. To ensure the function call,
+add parentheses; to ensure the column name, qualify it with its
+[range variable][timestamp-functions-link-to-range-variables]. For example, the
+following query will select the function in the `now` column and the table
+column in the `current_timestamp` column.
+
+```sql
+WITH t AS (SELECT 'column value' AS `current_timestamp`)
+SELECT current_timestamp() AS now, t.current_timestamp FROM t;
+
++---------------------------------------------+-------------------+
+| now                                         | current_timestamp |
++---------------------------------------------+-------------------+
+| 2020-06-02 17:00:53.110 America/Los_Angeles | column value      |
++---------------------------------------------+-------------------+
 ```
 
 ### EXTRACT
@@ -12667,7 +17845,7 @@ SELECT TIMESTAMP(DATETIME "2008-12-25 15:30:00") AS timestamp_datetime;
 
 -- Results may differ, depending upon the environment and time zone where this query was executed.
 +---------------------------------------------+
-| timestamp_str                               |
+| timestamp_datetime                          |
 +---------------------------------------------+
 | 2008-12-25 15:30:00.000 America/Los_Angeles |
 +---------------------------------------------+
@@ -12678,7 +17856,7 @@ SELECT TIMESTAMP(DATE "2008-12-25") AS timestamp_date;
 
 -- Results may differ, depending upon the environment and time zone where this query was executed.
 +---------------------------------------------+
-| timestamp_str                               |
+| timestamp_date                              |
 +---------------------------------------------+
 | 2008-12-25 00:00:00.000 America/Los_Angeles |
 +---------------------------------------------+
@@ -13343,50 +18521,61 @@ following elements:
  <tr>
     <td class="tab0">Format element</td>
     <td class="tab0">Description</td>
+    <td class="tab0">Example</td>
  </tr>
  <tr>
     <td>%A</td>
     <td>The full weekday name.</td>
+    <td>Wednesday</td>
  </tr>
  <tr>
     <td>%a</td>
     <td>The abbreviated weekday name.</td>
+    <td>Wed</td>
  </tr>
  <tr>
     <td>%B</td>
     <td>The full month name.</td>
+    <td>January</td>
  </tr>
  <tr>
     <td>%b or %h</td>
     <td>The abbreviated month name.</td>
+    <td>Jan</td>
  </tr>
  <tr>
     <td>%C</td>
     <td>The century (a year divided by 100 and truncated to an integer) as a
     decimal
 number (00-99).</td>
+    <td>20</td>
  </tr>
  <tr>
     <td>%c</td>
     <td>The date and time representation in the format %a %b %e %T %Y.</td>
+    <td>Wed Jan 20 16:47:00 2021</td>
  </tr>
  <tr>
     <td>%D</td>
     <td>The date in the format %m/%d/%y.</td>
+    <td>01/20/21</td>
  </tr>
  <tr>
     <td>%d</td>
     <td>The day of the month as a decimal number (01-31).</td>
+    <td>20</td>
  </tr>
  <tr>
     <td>%e</td>
     <td>The day of month as a decimal number (1-31); single digits are preceded
     by a
 space.</td>
+    <td>20</td>
  </tr>
  <tr>
     <td>%F</td>
     <td>The date in the format %Y-%m-%d.</td>
+    <td>2021-01-20</td>
  </tr>
  <tr>
     <td>%G</td>
@@ -13396,6 +18585,7 @@ space.</td>
     on the Monday before the first Thursday of the Gregorian calendar year.
     Note that %G and %Y may produce different results near Gregorian year
     boundaries, where the Gregorian year and ISO year can diverge.</td>
+    <td>2021</td>
  </tr>
  <tr>
     <td>%g</td>
@@ -13406,90 +18596,110 @@ space.</td>
     calendar year. Note that %g and %y may produce different results near
     Gregorian year boundaries, where the Gregorian year and ISO year can
     diverge.</td>
+    <td>21</td>
  </tr>
  <tr>
     <td>%H</td>
     <td>The hour (24-hour clock) as a decimal number (00-23).</td>
+    <td>16</td>
  </tr>
  <tr>
     <td>%I</td>
     <td>The hour (12-hour clock) as a decimal number (01-12).</td>
+    <td>04</td>
  </tr>
  <tr>
     <td>%j</td>
     <td>The day of the year as a decimal number (001-366).</td>
+    <td>020</td>
  </tr>
  <tr>
     <td>%k</td>
     <td>The hour (24-hour clock) as a decimal number (0-23); single digits are
     preceded
 by a space.</td>
+    <td>16</td>
  </tr>
  <tr>
     <td>%l</td>
     <td>The hour (12-hour clock) as a decimal number (1-12); single digits are
     preceded
 by a space.</td>
+    <td>11</td>
  </tr>
  <tr>
     <td>%M</td>
     <td>The minute as a decimal number (00-59).</td>
+    <td>47</td>
  </tr>
  <tr>
     <td>%m</td>
     <td>The month as a decimal number (01-12).</td>
+    <td>01</td>
  </tr>
  <tr>
     <td>%n</td>
     <td>A newline character.</td>
+    <td></td>
  </tr>
  <tr>
     <td>%P</td>
     <td>Either am or pm.</td>
+    <td>am</td>
  </tr>
  <tr>
     <td>%p</td>
     <td>Either AM or PM.</td>
+    <td>AM</td>
  </tr>
  <tr>
     <td>%Q</td>
     <td>The quarter as a decimal number (1-4).</td>
+    <td>1</td>
  </tr>
  <tr>
     <td>%R</td>
     <td>The time in the format %H:%M.</td>
+    <td>16:47</td>
  </tr>
  <tr>
     <td>%r</td>
     <td>The 12-hour clock time using AM/PM notation.</td>
+    <td>04:47:00 PM</td>
  </tr>
  <tr>
     <td>%S</td>
     <td>The second as a decimal number (00-60).</td>
+    <td>00</td>
  </tr>
  <tr>
     <td>%s</td>
     <td>The number of seconds since 1970-01-01 00:00:00 UTC. Always overrides all
     other format elements, independent of where %s appears in the string.
     If multiple %s elements appear, then the last one takes precedence.</td>
+    <td>1611179220</td>
 </tr>
  <tr>
     <td>%T</td>
     <td>The time in the format %H:%M:%S.</td>
+    <td>16:47:00</td>
  </tr>
  <tr>
     <td>%t</td>
     <td>A tab character.</td>
+    <td></td>
  </tr>
  <tr>
     <td>%U</td>
     <td>The week number of the year (Sunday as the first day of the week) as a
     decimal number (00-53).</td>
+    <td>03</td>
  </tr>
  <tr>
     <td>%u</td>
     <td>The weekday (Monday as the first day of the week) as a decimal number
     (1-7).</td>
+    <td>3</td>
 </tr>
  <tr>
     <td>%V</td>
@@ -13499,70 +18709,85 @@ by a space.</td>
     January 1 has four or more days in the new year, then it is week 1;
     otherwise it is week 53 of the previous year, and the next week is
     week 1.</td>
+    <td>03</td>
  </tr>
  <tr>
     <td>%W</td>
     <td>The week number of the year (Monday as the first day of the week) as a
     decimal number (00-53).</td>
+    <td>03</td>
  </tr>
  <tr>
     <td>%w</td>
     <td>The weekday (Sunday as the first day of the week) as a decimal number
     (0-6).</td>
+    <td>3</td>
  </tr>
  <tr>
     <td>%X</td>
     <td>The time representation in HH:MM:SS format.</td>
+    <td>16:47:00</td>
  </tr>
  <tr>
     <td>%x</td>
     <td>The date representation in MM/DD/YY format.</td>
+    <td>01/20/21</td>
  </tr>
  <tr>
     <td>%Y</td>
     <td>The year with century as a decimal number.</td>
+    <td>2021</td>
  </tr>
  <tr>
     <td>%y</td>
     <td>The year without century as a decimal number (00-99), with an optional
     leading zero. Can be mixed with %C. If %C is not specified, years 00-68 are
     2000s, while years 69-99 are 1900s.</td>
+    <td>21</td>
  </tr>
  <tr>
     <td>%Z</td>
     <td>The time zone name.</td>
+    <td>UTC-5</td>
  </tr>
  <tr>
     <td>%z</td>
     <td>The offset from the Prime Meridian in the format +HHMM or -HHMM as
     appropriate,
 with positive values representing locations east of Greenwich.</td>
+    <td>-0500</td>
  </tr>
  <tr>
     <td>%%</td>
     <td>A single % character.</td>
+    <td>%</td>
  </tr>
  <tr>
     <td>%Ez</td>
     <td>RFC 3339-compatible numeric time zone (+HH:MM or -HH:MM).</td>
+    <td>-05:00</td>
  </tr>
  <tr>
     <td>%E#S</td>
     <td>Seconds with # digits of fractional precision.</td>
+    <td>00.000</td>
  </tr>
  <tr>
     <td>%E*S</td>
     <td>Seconds with full fractional precision (a literal '*').</td>
+    <td>00</td>
  </tr>
  <tr>
     <td>%E4Y</td>
     <td>Four-character years (0001 ... 9999). Note that %Y
     produces as many characters as it takes to fully render the
 year.</td>
+    <td>2021</td>
  </tr>
 </table>
 
-### Time zone definitions {: #timezone_definitions }
+### Time zone definitions 
+<a id="timezone_definitions"></a>
 
 Certain date and timestamp functions allow you to override the default time zone
 and specify a different one. You can specify a time zone by either supplying
@@ -13593,8 +18818,9 @@ SELECT UNIX_MILLIS(TIMESTAMP "2008-12-25 15:30:00-08:00") as millis;
 [timestamp-link-to-timezone-definitions]: #timezone_definitions
 [timestamp-format]: #format_timestamp
 [timestamp-format-elements]: #supported_format_elements_for_timestamp
-[data-types-link-to-date_type]: https://github.com/google/zetasql/blob/master/docs/data-types#date_type
-[data-types-link-to-timestamp_type]: https://github.com/google/zetasql/blob/master/docs/data-types#timestamp_type
+[timestamp-functions-link-to-range-variables]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#range_variables
+[data-types-link-to-date_type]: https://github.com/google/zetasql/blob/master/docs/data-types.md#date_type
+[data-types-link-to-timestamp_type]: https://github.com/google/zetasql/blob/master/docs/data-types.md#timestamp_type
 
 ## Protocol buffer functions
 
@@ -13666,7 +18892,7 @@ default value for `country`.
 +-----------------+
 ```
 
-### FROM PROTO
+### FROM_PROTO
 
 ```
 FROM_PROTO(expression)
@@ -13856,7 +19082,7 @@ SELECT FROM_PROTO(DATE '2019-10-30')
 +------------+
 ```
 
-### TO PROTO
+### TO_PROTO
 
 ```
 TO_PROTO(expression)
@@ -14027,129 +19253,166 @@ SELECT TO_PROTO(
 ### EXTRACT {#proto_extract}
 
 ```sql
-EXTRACT( extraction_type (field) FROM proto_expression )
+EXTRACT( extraction_type (proto_field) FROM proto_expression )
 
 extraction_type:
-  { FIELD | RAW | HAS }
+  { FIELD | RAW | HAS | ONEOF_CASE }
 ```
 
 **Description**
 
-Extracts a value from a proto. `proto_expression` represents the expression
-that returns a proto, `field` represents the field of the proto to extract from,
-and `extraction_type` determines the type of data to return. `EXTRACT` can be
-used to get values of ambiguous fields. An alternative to `EXTRACT` is the
-[dot operator][querying-protocol-buffers].
+Extracts a value from a protocol buffer. `proto_expression` represents the
+expression that returns a protocol buffer, `proto_field` represents the field
+of the protocol buffer to extract from, and `extraction_type` determines the
+type of data to return. `EXTRACT` can be used to get values of ambiguous fields.
+An alternative to `EXTRACT` is the [dot operator][querying-protocol-buffers].
 
 **Extraction Types**
 
 You can choose the type of information to get with `EXTRACT`. Your choices are:
 
-+  `FIELD`: Extract a value from a field.
-+  `RAW`: Extract an uninterpreted value from a field.
-   Raw values ignore any ZetaSQL type annotations.
-+  `HAS`: Returns `true` if a field is set in a proto message;
-   otherwise, `false`. Returns an error if this is used with a scalar proto3
++  `FIELD`: Extract a value from a protocol buffer field.
++  `RAW`: Extract an uninterpreted value from a
+    protocol buffer field. Raw values
+    ignore any ZetaSQL type annotations.
++  `HAS`: Returns `TRUE` if a protocol buffer field is set in a proto message;
+   otherwise, `FALSE`. Returns an error if this is used with a scalar proto3
    field. Alternatively, use [`has_x`][has-value], to perform this task.
++  `ONEOF_CASE`: Returns the name of the set protocol buffer field in a Oneof.
+   If no field is set, returns an empty string.
 
 **Return Type**
 
 The return type depends upon the extraction type in the query.
 
-+  `FIELD`: Type of proto field.
-+  `RAW`: Type of proto field, ignoring format annotations if present.
++  `FIELD`: Protocol buffer field type.
++  `RAW`: Protocol buffer field
+    type. Format annotations are
+    ignored.
 +  `HAS`: `BOOL`
++  `ONEOF_CASE`: `STRING`
 
 **Examples**
 
-Extract the year from a proto called `Date`.
+The examples in this section reference two protocol buffers called `Album` and
+`Chart`, and one table called `AlbumList`.
 
-```sql
-SELECT EXTRACT(FIELD(year) FROM new google.type.Date(
-    2019 as year,
-    10 as month,
-    30 as day
-  )
-) as year;
-
-+------------------+
-| year             |
-+------------------+
-| 2019             |
-+------------------+
-```
-
-Set up a proto2 called `Book`.
-
-```sql
-message Book {
-  optional int32 publish_date = 1 [ (zetasql.format) = DATE ];
+```proto
+message Album {
+  optional string album_name = 1;
+  repeated string song = 2;
+  oneof group_name {
+    string solo = 3;
+    string duet = 4;
+    string band = 5;
+  }
 }
 ```
 
-Extract `publish_date` from a proto called `Book`.
+```proto
+message Chart {
+  optional int64 date = 1 [(zetasql.format) = DATE];
+  optional string chart_name = 2;
+  optional int64 rank = 3;
+}
+```
 
 ```sql
-SELECT EXTRACT(FIELD(publish_date) FROM new Book(
-    ‘1970-05-04’ as publish_date,
-  )
-) as release_date;
+WITH AlbumList AS (
+  SELECT
+    NEW Album(
+      'Beyonce' AS solo,
+      'Lemonade' AS album_name,
+      ['Sandcastles','Hold Up'] AS song) AS album_col,
+    NEW Chart(
+      'Billboard' AS chart_name,
+      '2016-04-23' AS date,
+      1 AS rank) AS chart_col
+    UNION ALL
+  SELECT
+    NEW Album(
+      'The Beetles' AS band,
+      'Rubber Soul' AS album_name,
+      ['The Word', 'Wait', 'Nowhere Man'] AS song) AS album_col,
+    NEW Chart(
+      'Billboard' AS chart_name,
+      1 as rank) AS chart_col
+)
+SELECT * FROM AlbumList
+```
+
+The following example extracts the album names from a table called `AlbumList`
+that contains a proto-typed column called `Album`.
+
+```sql
+SELECT EXTRACT(FIELD(album_name) FROM album_col) AS name_of_album
+FROM AlbumList
 
 +------------------+
-| release_date     |
+| name_of_album    |
 +------------------+
-| 1970-05-04       |
+| Lemonade         |
+| Rubber Soul      |
 +------------------+
 ```
 
-Extract the uninterpreted `publish_date` from a proto called `Book`.
-In this example, the uninterpreted value is the number of days between
-1970-01-01 and 1970-05-04.
+A table called `AlbumList` contains a proto-typed column called `Album`.
+`Album` contains a field called `date`, which can store an integer. The
+`date` field has an annotated format called `DATE` assigned to it, which means
+that when you extract the value in this field, it returns a `DATE`, not an
+`INT64`.
+
+If you would like to return the value for `date` as an `INT64`, not
+as a `DATE`, use the `RAW` extraction type in your query. For example:
 
 ```sql
-SELECT EXTRACT(RAW(publish_date) FROM new Book(
-    ‘1970-05-04’ as publish_date,
-  )
-) as release_date;
+SELECT
+  EXTRACT(RAW(date) FROM chart_col) AS raw_date,
+  EXTRACT(FIELD(date) FROM chart_col) AS formatted_date
+FROM AlbumList
 
-+------------------+
-| release_date     |
-+------------------+
-| 123              |
-+------------------+
++----------+----------------+
+| raw_date | formatted_date |
++----------+----------------+
+| 16914    | 2016-04-23     |
+| 0        | 1970-01-01     |
++----------+----------------+
 ```
 
-Check to see if `publish_date` is set in a proto2 called `Book`.
-In this example, `publish_date` is set to 1970-05-04.
+The following example checks to see if release dates exist in a table called
+`AlbumList` that contains a protocol buffer called `Chart`.
 
 ```sql
-SELECT EXTRACT(HAS(publish_date) FROM new Book(
-    ‘1970-05-04’ as publish_date,
-  )
-) as has_release_date;
+SELECT EXTRACT(HAS(date) FROM chart_col) AS has_release_date
+FROM AlbumList
 
 +------------------+
 | has_release_date |
 +------------------+
-| true             |
+| TRUE             |
+| FALSE            |
 +------------------+
 ```
 
-Check to see if `publish_date` is set in a proto2 called `Book`.
-In this example, `publish_date` is not set.
+The following example extracts the group name that is assigned to an artist in
+a table called `AlbumList`. The group name is set for exactly one
+protocol buffer field inside of the `group_name` Oneof. The `group_name` Oneof
+exists inside the `Chart` protocol buffer.
 
 ```sql
-SELECT EXTRACT(HAS(publish_date) FROM new Book()) as has_release_date;
+SELECT EXTRACT(ONEOF_CASE(group_name) FROM album_col) AS artist_type
+FROM AlbumList;
 
-+------------------+
-| has_release_date |
-+------------------+
-| false            |
-+------------------+
++-------------+
+| artist_type |
++-------------+
+| solo        |
+| band        |
++-------------+
 ```
 
-[querying-protocol-buffers]: https://github.com/google/zetasql/blob/master/docs/protocol-buffers#querying-protocol-buffers
-[has-value]: https://github.com/google/zetasql/blob/master/docs/protocol-buffers#checking-if-a-non-repeated-field-has-a-value
+[querying-protocol-buffers]: https://github.com/google/zetasql/blob/master/docs/protocol-buffers.md#querying_protocol_buffers
+[has-value]: https://github.com/google/zetasql/blob/master/docs/protocol-buffers.md#checking_if_a_field_has_a_value
 
 ## Security functions
 
@@ -14850,284 +20113,300 @@ lowest precedence, i.e. the order in which they will be evaluated within a
 statement.
 
 <table>
-<thead>
-<tr>
-<th>Order of Precedence</th>
-<th>Operator</th>
-<th>Input Data Types</th>
-<th>Name</th>
-<th>Operator Arity</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>1</td>
-<td>.</td>
-<td><span> PROTO<span><br><span> STRUCT<span><br></td>
-<td>Member field access operator</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>[ ]</td>
-<td>ARRAY</td>
-<td>Array position. Must be used with OFFSET or ORDINAL&mdash;see
+  <thead>
+    <tr>
+      <th>Order of Precedence</th>
+      <th>Operator</th>
+      <th>Input Data Types</th>
+      <th>Name</th>
+      <th>Operator Arity</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>.</td>
+      <td><span> PROTO</span><br><span> STRUCT</span><br></td>
+      <td>Member field access operator</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>[ ]</td>
+      <td>ARRAY</td>
+      <td>Array position. Must be used with OFFSET or ORDINAL&mdash;see
+      
 
 <a href="functions-and-operators.md#array_functions">
 
 Array Functions
 </a>
 .</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>2</td>
-<td>-</td>
-<td>All numeric types</td>
-<td>Unary minus</td>
-<td>Unary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>~</td>
-<td>Integer or BYTES</td>
-<td>Bitwise not</td>
-<td>Unary</td>
-</tr>
-<tr>
-<td>3</td>
-<td>*</td>
-<td>All numeric types</td>
-<td>Multiplication</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>/</td>
-<td>All numeric types</td>
-<td>Division</td>
-<td>Binary</td>
-</tr>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>+</td>
+      <td>All numeric types</td>
+      <td>Unary plus</td>
+      <td>Unary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>-</td>
+      <td>All numeric types</td>
+      <td>Unary minus</td>
+      <td>Unary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>~</td>
+      <td>Integer or BYTES</td>
+      <td>Bitwise not</td>
+      <td>Unary</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>*</td>
+      <td>All numeric types</td>
+      <td>Multiplication</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>/</td>
+      <td>All numeric types</td>
+      <td>Division</td>
+      <td>Binary</td>
+    </tr>
+    
+    <tr>
+      <td>&nbsp;</td>
+      <td>||</td>
+      <td>STRING, BYTES, or ARRAY&#60;T&#62;</td>
+      <td>Concatenation operator</td>
+      <td>Binary</td>
+    </tr>
+    
+    <tr>
+      <td>4</td>
+      <td>+</td>
+      <td>All numeric types<br>DATE and INT64</td>
+      <td>Addition</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>-</td>
+      <td>All numeric types<br>DATE and INT64</td>
+      <td>Subtraction</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>&lt;&lt;</td>
+      <td>Integer or BYTES</td>
+      <td>Bitwise left-shift</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>&gt;&gt;</td>
+      <td>Integer or BYTES</td>
+      <td>Bitwise right-shift</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>&amp;</td>
+      <td>Integer or BYTES</td>
+      <td>Bitwise and</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>^</td>
+      <td>Integer or BYTES</td>
+      <td>Bitwise xor</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td>|</td>
+      <td>Integer or BYTES</td>
+      <td>Bitwise or</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>9 (Comparison Operators)</td>
+      <td>=</td>
+      <td>Any comparable type. See
+      
 
-<tr>
-<td>&nbsp;</td>
-<td>||</td>
-<td>STRING, BYTES, or ARRAY&#60;T&#62;</td>
-<td>Concatenation operator</td>
-<td>Binary</td>
-</tr>
-
-<tr>
-<td>4</td>
-<td>+</td>
-<td>All numeric types<br>DATE and INT64</td>
-<td>Addition</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>-</td>
-<td>All numeric types<br>DATE and INT64</td>
-<td>Subtraction</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>5</td>
-<td>&lt;&lt;</td>
-<td>Integer or BYTES</td>
-<td>Bitwise left-shift</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>&gt;&gt;</td>
-<td>Integer or BYTES</td>
-<td>Bitwise right-shift</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>6</td>
-<td>&amp;</td>
-<td>Integer or BYTES</td>
-<td>Bitwise and</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>7</td>
-<td>^</td>
-<td>Integer or BYTES</td>
-<td>Bitwise xor</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>8</td>
-<td>|</td>
-<td>Integer or BYTES</td>
-<td>Bitwise or</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>9 (Comparison Operators)</td>
-<td>=</td>
-<td>Any comparable type. See
-
-<a href="https://github.com/google/zetasql/blob/master/docs/data-types#data_types">
-
-Data Types
-</a>
-
-for a complete list.</td>
-<td>Equal</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>&lt;</td>
-<td>Any comparable type. See
-
-<a href="https://github.com/google/zetasql/blob/master/docs/data-types#data_types">
+<a href="https://github.com/google/zetasql/blob/master/docs/data-types.md#data_types">
 
 Data Types
 </a>
 
-for a complete list.</td>
-<td>Less than</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>&gt;</td>
-<td>Any comparable type. See
+      for a complete list.</td>
+      <td>Equal</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>&lt;</td>
+      <td>Any comparable type. See
+      
 
-<a href="https://github.com/google/zetasql/blob/master/docs/data-types#data_types">
-
-Data Types
-</a>
-
-for a complete list.</td>
-<td>Greater than</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>&lt;=</td>
-<td>Any comparable type. See
-
-<a href="https://github.com/google/zetasql/blob/master/docs/data-types#data_types">
+<a href="https://github.com/google/zetasql/blob/master/docs/data-types.md#data_types">
 
 Data Types
 </a>
 
-for a complete list.</td>
-<td>Less than or equal to</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>&gt;=</td>
-<td>Any comparable type. See
+      for a complete list.</td>
+      <td>Less than</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>&gt;</td>
+      <td>Any comparable type. See
+      
 
-<a href="https://github.com/google/zetasql/blob/master/docs/data-types#data_types">
-
-Data Types
-</a>
-
-for a complete list.</td>
-<td>Greater than or equal to</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>!=, &lt;&gt;</td>
-<td>Any comparable type. See
-
-<a href="https://github.com/google/zetasql/blob/master/docs/data-types#data_types">
+<a href="https://github.com/google/zetasql/blob/master/docs/data-types.md#data_types">
 
 Data Types
 </a>
 
-for a complete list.</td>
-<td>Not equal</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>[NOT] LIKE</td>
-<td>STRING and byte</td>
-<td>Value does [not] match the pattern specified</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>[NOT] BETWEEN</td>
-<td>Any comparable types. See
+      for a complete list.</td>
+      <td>Greater than</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>&lt;=</td>
+      <td>Any comparable type. See
+      
 
-<a href="https://github.com/google/zetasql/blob/master/docs/data-types#data_types">
+<a href="https://github.com/google/zetasql/blob/master/docs/data-types.md#data_types">
 
 Data Types
 </a>
 
-for a complete list.</td>
-<td>Value is [not] within the range specified</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>[NOT] IN</td>
-<td>Any comparable types. See
+      for a complete list.</td>
+      <td>Less than or equal to</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>&gt;=</td>
+      <td>Any comparable type. See
+      
 
-<a href="https://github.com/google/zetasql/blob/master/docs/data-types#data_types">
+<a href="https://github.com/google/zetasql/blob/master/docs/data-types.md#data_types">
 
 Data Types
 </a>
 
-for a complete list.</td>
-<td>Value is [not] in the set of values specified</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>IS [NOT] <code>NULL</code></td>
-<td>All</td>
-<td>Value is [not] <code>NULL</code></td>
-<td>Unary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>IS [NOT] TRUE</td>
-<td>BOOL</td>
-<td>Value is [not] TRUE.</td>
-<td>Unary</td>
-</tr>
-<tr>
-<td>&nbsp;</td>
-<td>IS [NOT] FALSE</td>
-<td>BOOL</td>
-<td>Value is [not] FALSE.</td>
-<td>Unary</td>
-</tr>
-<tr>
-<td>10</td>
-<td>NOT</td>
-<td>BOOL</td>
-<td>Logical NOT</td>
-<td>Unary</td>
-</tr>
-<tr>
-<td>11</td>
-<td>AND</td>
-<td>BOOL</td>
-<td>Logical AND</td>
-<td>Binary</td>
-</tr>
-<tr>
-<td>12</td>
-<td>OR</td>
-<td>BOOL</td>
-<td>Logical OR</td>
-<td>Binary</td>
-</tr>
-</tbody>
+      for a complete list.</td>
+      <td>Greater than or equal to</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>!=, &lt;&gt;</td>
+      <td>Any comparable type. See
+      
+
+<a href="https://github.com/google/zetasql/blob/master/docs/data-types.md#data_types">
+
+Data Types
+</a>
+
+      for a complete list.</td>
+      <td>Not equal</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>[NOT] LIKE</td>
+      <td>STRING and byte</td>
+      <td>Value does [not] match the pattern specified</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>[NOT] BETWEEN</td>
+      <td>Any comparable types. See
+      
+
+<a href="https://github.com/google/zetasql/blob/master/docs/data-types.md#data_types">
+
+Data Types
+</a>
+
+      for a complete list.</td>
+      <td>Value is [not] within the range specified</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>[NOT] IN</td>
+      <td>Any comparable types. See
+      
+
+<a href="https://github.com/google/zetasql/blob/master/docs/data-types.md#data_types">
+
+Data Types
+</a>
+
+      for a complete list.</td>
+      <td>Value is [not] in the set of values specified</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>IS [NOT] <code>NULL</code></td>
+      <td>All</td>
+      <td>Value is [not] <code>NULL</code></td>
+      <td>Unary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>IS [NOT] TRUE</td>
+      <td>BOOL</td>
+      <td>Value is [not] TRUE.</td>
+      <td>Unary</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td>IS [NOT] FALSE</td>
+      <td>BOOL</td>
+      <td>Value is [not] FALSE.</td>
+      <td>Unary</td>
+    </tr>
+    <tr>
+      <td>10</td>
+      <td>NOT</td>
+      <td>BOOL</td>
+      <td>Logical NOT</td>
+      <td>Unary</td>
+    </tr>
+    <tr>
+      <td>11</td>
+      <td>AND</td>
+      <td>BOOL</td>
+      <td>Logical AND</td>
+      <td>Binary</td>
+    </tr>
+    <tr>
+      <td>12</td>
+      <td>OR</td>
+      <td>BOOL</td>
+      <td>Logical OR</td>
+      <td>Binary</td>
+    </tr>
+  </tbody>
 </table>
 
 Operators with the same precedence are left associative. This means that those
@@ -15202,34 +20481,38 @@ All arithmetic operators accept input of numeric type T, and the result type
 has type T unless otherwise indicated in the description below:
 
 <table>
-<thead>
-<tr>
-<th>Name</th>
-<th>Syntax</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Addition</td>
-<td>X + Y</td>
-</tr>
-<tr>
-<td>Subtraction</td>
-<td>X - Y</td>
-</tr>
-<tr>
-<td>Multiplication</td>
-<td>X * Y</td>
-</tr>
-<tr>
-<td>Division</td>
-<td>X / Y</td>
-</tr>
-<tr>
-<td>Unary Minus</td>
-<td>- X</td>
-</tr>
-</tbody>
+  <thead>
+    <tr>
+    <th>Name</th>
+    <th>Syntax</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Addition</td>
+      <td>X + Y</td>
+    </tr>
+    <tr>
+      <td>Subtraction</td>
+      <td>X - Y</td>
+    </tr>
+    <tr>
+      <td>Multiplication</td>
+      <td>X * Y</td>
+    </tr>
+    <tr>
+      <td>Division</td>
+      <td>X / Y</td>
+    </tr>
+    <tr>
+      <td>Unary Plus</td>
+      <td>+ X</td>
+    </tr>
+    <tr>
+      <td>Unary Minus</td>
+      <td>- X</td>
+    </tr>
+  </tbody>
 </table>
 
 NOTE: Divide by zero operations return an error. To return a different result,
@@ -15237,68 +20520,98 @@ consider the IEEE_DIVIDE or SAFE_DIVIDE functions.
 
 Result types for Addition and Multiplication:
 
-<table>
+<table style="font-size:small">
+
 <thead>
-<tr><th>&nbsp;</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>FLOAT</th><th>DOUBLE</th></tr>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
 </thead>
-<tbody><tr><td>INT32</td><td>INT64</td><td>INT64</td><td>INT64</td><td>ERROR</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>INT64</td><td>INT64</td><td>INT64</td><td>INT64</td><td>ERROR</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>UINT32</td><td>INT64</td><td>INT64</td><td>UINT64</td><td>UINT64</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>UINT64</td><td>ERROR</td><td>ERROR</td><td>UINT64</td><td>UINT64</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>FLOAT</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td></tr></tbody>
+<tbody>
+<tr><th>INT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>INT64</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>UINT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>UINT64</th><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>FLOAT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>DOUBLE</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
 </table>
 
 Result types for Subtraction:
 
-<table>
+<table style="font-size:small">
+
 <thead>
-<tr><th>&nbsp;</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>FLOAT</th><th>DOUBLE</th></tr>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
 </thead>
-<tbody><tr><td>INT32</td><td>INT64</td><td>INT64</td><td>INT64</td><td>ERROR</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>INT64</td><td>INT64</td><td>INT64</td><td>INT64</td><td>ERROR</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>UINT32</td><td>INT64</td><td>INT64</td><td>INT64</td><td>INT64</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>UINT64</td><td>ERROR</td><td>ERROR</td><td>INT64</td><td>INT64</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>FLOAT</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td></tr></tbody>
+<tbody>
+<tr><th>INT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>INT64</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>UINT32</th><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>UINT64</th><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>FLOAT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>DOUBLE</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
 </table>
 
 Result types for Division:
 
-<table>
+<table style="font-size:small">
+
 <thead>
-<tr><th>&nbsp;</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>FLOAT</th><th>DOUBLE</th></tr>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
 </thead>
-<tbody><tr><td>INT32</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>INT64</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>UINT32</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>UINT64</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>NUMERIC</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>FLOAT</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td></tr><tr><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td><td>DOUBLE</td></tr></tbody>
+<tbody>
+<tr><th>INT32</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>INT64</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>UINT32</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>UINT64</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>NUMERIC</th><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>BIGNUMERIC</th><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>FLOAT</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+<tr><th>DOUBLE</th><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
+</table>
+
+Result types for Unary Plus:
+
+<table>
+
+<thead>
+<tr>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
+</tr>
+</thead>
+<tbody>
+<tr><th>OUTPUT</th><td style="vertical-align:middle">INT32</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">UINT32</td><td style="vertical-align:middle">UINT64</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">FLOAT</td><td style="vertical-align:middle">DOUBLE</td></tr>
+</tbody>
+
 </table>
 
 Result types for Unary Minus:
 
 <table>
+
 <thead>
 <tr>
-<th>Input Data Type</th>
-<th>Result Data Type</th>
+<th>INPUT</th><th>INT32</th><th>INT64</th><th>UINT32</th><th>UINT64</th><th>NUMERIC</th><th>BIGNUMERIC</th><th>FLOAT</th><th>DOUBLE</th>
 </tr>
 </thead>
 <tbody>
-
-<tr>
-<td>INT32</td>
-<td>INT32</td>
-</tr>
-
-<tr>
-<td>INT64</td>
-<td>INT64</td>
-</tr>
-
-<tr>
-<td>NUMERIC</td>
-<td>NUMERIC</td>
-</tr>
-
-<tr>
-<td>FLOAT</td>
-<td>FLOAT</td>
-</tr>
-
-<tr>
-<td>DOUBLE</td>
-<td>DOUBLE</td>
-</tr>
-
+<tr><th>OUTPUT</th><td style="vertical-align:middle">INT32</td><td style="vertical-align:middle">INT64</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">ERROR</td><td style="vertical-align:middle">NUMERIC</td><td style="vertical-align:middle">BIGNUMERIC</td><td style="vertical-align:middle">FLOAT</td><td style="vertical-align:middle">DOUBLE</td></tr>
 </tbody>
+
 </table>
 
 ### Date arithmetics operators
@@ -15432,7 +20745,7 @@ to produce a result. The result can be `TRUE`, `FALSE`, or `NULL`:
 | FALSE   | FALSE   | FALSE   | FALSE  |
 | FALSE   | NULL    | FALSE   | NULL   |
 | NULL    | TRUE    | NULL    | TRUE   |
-| NULL    | FALSE   | NULL    | NULL   |
+| NULL    | FALSE   | FALSE   | NULL   |
 | NULL    | NULL    | NULL    | NULL   |
 
 | x       | NOT x   |
@@ -15790,9 +21103,9 @@ The concatenation operator combines multiple values into one.
 </table>
 
 [operators-link-to-filtering-arrays]: https://github.com/google/zetasql/blob/master/docs/arrays.md#filtering-arrays
-[operators-link-to-data-types]: https://github.com/google/zetasql/blob/master/docs/data-types
-[operators-link-to-from-clause]: https://github.com/google/zetasql/blob/master/docs/query-syntax#from_clause
-[operators-link-to-struct-type]: https://github.com/google/zetasql/blob/master/docs/data-types#struct_type
+[operators-link-to-data-types]: https://github.com/google/zetasql/blob/master/docs/data-types.md
+[operators-link-to-from-clause]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#from_clause
+[operators-link-to-struct-type]: https://github.com/google/zetasql/blob/master/docs/data-types.md#struct_type
 
 [operators-link-to-math-functions]: #mathematical_functions
 [link-to-coercion]: #coercion

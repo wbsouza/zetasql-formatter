@@ -17,6 +17,7 @@
 #include "zetasql/public/types/array_type.h"
 
 #include "zetasql/public/language_options.h"
+#include "zetasql/public/types/type_parameters.h"
 #include "zetasql/public/value_content.h"
 #include "zetasql/base/simple_reference_counted.h"
 
@@ -25,7 +26,7 @@ namespace zetasql {
 ArrayType::ArrayType(const TypeFactory* factory, const Type* element_type)
     : Type(factory, TYPE_ARRAY),
       element_type_(element_type) {
-  CHECK(!element_type->IsArray());  // Blocked in MakeArrayType.
+  ZETASQL_CHECK(!element_type->IsArray());  // Blocked in MakeArrayType.
 }
 
 ArrayType::~ArrayType() {}
@@ -36,7 +37,7 @@ bool ArrayType::IsSupportedType(const LanguageOptions& language_options) const {
 
 bool ArrayType::EqualsForSameKind(const Type* that, bool equivalent) const {
   const ArrayType* other = that->AsArray();
-  DCHECK(other);
+  ZETASQL_DCHECK(other);
   return EqualsImpl(this, other, equivalent);
 }
 
@@ -134,6 +135,41 @@ std::string ArrayType::TypeName(ProductMode mode) const {
   return absl::StrCat("ARRAY<", element_type_->TypeName(mode), ">");
 }
 
+zetasql_base::StatusOr<std::string> ArrayType::TypeNameWithParameters(
+    const TypeParameters& type_params, ProductMode mode) const {
+  if (type_params.IsEmpty()) {
+    return TypeName(mode);
+  }
+  if (type_params.num_children() != 1) {
+    return MakeSqlError()
+           << "Input type parameter does not correspond to ArrayType";
+  }
+  ZETASQL_ASSIGN_OR_RETURN(
+      std::string element_parameters,
+      element_type_->TypeNameWithParameters(type_params.child(0), mode));
+  return absl::StrCat("ARRAY<", element_parameters, ">");
+}
+
+zetasql_base::StatusOr<TypeParameters> ArrayType::ValidateAndResolveTypeParameters(
+    const std::vector<TypeParameterValue>& type_parameter_values,
+    ProductMode mode) const {
+  return MakeSqlError() << ShortTypeName(mode)
+                        << " type cannot have type parameters by itself, it "
+                           "can only have type parameters on its element type";
+}
+
+absl::Status ArrayType::ValidateResolvedTypeParameters(
+    const TypeParameters& type_parameters, ProductMode mode) const {
+  // type_parameters must be empty or has the one child.
+  if (type_parameters.IsEmpty()) {
+    return absl::OkStatus();
+  }
+  ZETASQL_RET_CHECK(type_parameters.IsStructOrArrayParameters());
+  ZETASQL_RET_CHECK_EQ(type_parameters.num_children(), 1);
+  return element_type_->ValidateResolvedTypeParameters(type_parameters.child(0),
+                                                       mode);
+}
+
 bool ArrayType::EqualsImpl(const ArrayType* const type1,
                            const ArrayType* const type2, bool equivalent) {
   return type1->element_type()->EqualsImpl(type2->element_type(), equivalent);
@@ -162,26 +198,26 @@ absl::HashState ArrayType::HashValueContent(const ValueContent& value,
   // dependency cycle). In the future we will create a virtual list factory
   // interface defined outside of "value", but which Value can provide to
   // Array/Struct to use to construct lists.
-  LOG(FATAL) << "HashValueContent should never be called for ArrayType, since "
+  ZETASQL_LOG(FATAL) << "HashValueContent should never be called for ArrayType, since "
                 "its value content is created in Value class";
 }
 
 bool ArrayType::ValueContentEquals(
     const ValueContent& x, const ValueContent& y,
     const ValueEqualityCheckOptions& options) const {
-  LOG(FATAL) << "ValueContentEquals should never be called for ArrayType,"
+  ZETASQL_LOG(FATAL) << "ValueContentEquals should never be called for ArrayType,"
                 "since its value content is compared in Value class";
 }
 
 bool ArrayType::ValueContentLess(const ValueContent& x, const ValueContent& y,
                                  const Type* other_type) const {
-  LOG(FATAL) << "ValueContentLess should never be called for ArrayType,"
+  ZETASQL_LOG(FATAL) << "ValueContentLess should never be called for ArrayType,"
                 "since its value content is compared in Value class";
 }
 
 std::string ArrayType::FormatValueContent(
     const ValueContent& value, const FormatValueContentOptions& options) const {
-  LOG(FATAL)
+  ZETASQL_LOG(FATAL)
       << "FormatValueContent should never be called for ArrayType, since "
          "its value content is maintained in the Value class";
 }

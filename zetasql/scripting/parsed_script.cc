@@ -16,6 +16,7 @@
 
 #include "zetasql/scripting/parsed_script.h"
 
+#include <cstdint>
 #include <stack>
 
 #include "zetasql/common/errors.h"
@@ -90,7 +91,7 @@ class VerifyMaxScriptingDepthVisitor : public NonRecursiveParseTreeVisitor {
 class ValidateRaiseStatementsVisitor : public NonRecursiveParseTreeVisitor {
  public:
   ~ValidateRaiseStatementsVisitor() override {
-    DCHECK_EQ(exception_handler_nesting_level_, 0);
+    ZETASQL_DCHECK_EQ(exception_handler_nesting_level_, 0);
   }
 
   zetasql_base::StatusOr<VisitResult> defaultVisit(const ASTNode* node) override {
@@ -166,21 +167,7 @@ class ValidateVariableDeclarationsVisitor
              statement->GetAs<ASTVariableDeclaration>()
                  ->variable_list()
                  ->identifier_list()) {
-          if (!zetasql_base::InsertIfNotPresent(&variables_, id->GetAsIdString(),
-                                       id->GetParseLocationRange().start())) {
-            return MakeVariableDeclarationError(
-                id,
-                absl::StrCat("Variable '", id->GetAsString(),
-                             "' redeclaration"),
-                absl::StrCat(id->GetAsString(), " previously declared here"),
-                variables_[id->GetAsIdString()]);
-          }
-          if (zetasql_base::ContainsKey(parsed_script_->routine_arguments(),
-                               id->GetAsIdString())) {
-            return MakeVariableDeclarationError(
-                id, absl::StrCat("Variable '", id->GetAsString(),
-                                 "' previously declared as an argument"));
-          }
+          ZETASQL_RETURN_IF_ERROR(CheckForVariableRedeclaration(id));
         }
       } else {
         found_non_variable_decl = true;
@@ -203,6 +190,17 @@ class ValidateVariableDeclarationsVisitor
     });
   }
 
+  zetasql_base::StatusOr<VisitResult> visitASTForInStatement(
+      const ASTForInStatement* node) override {
+    ZETASQL_RETURN_IF_ERROR(CheckForVariableRedeclaration(node->variable()));
+    return VisitResult::VisitChildren(node, [this, node]() {
+      // Remove FOR variable created here so that subsequent statements
+      // can reuse the variable name.
+      variables_.erase(node->variable()->GetAsIdString());
+      return absl::OkStatus();
+    });
+  }
+
   absl::Status MakeVariableDeclarationError(const ASTNode* node,
                                             absl::string_view error_message) {
     return MakeSqlErrorAtNode(node, true) << error_message;
@@ -220,6 +218,25 @@ class ValidateVariableDeclarationsVisitor
             script_text),
         parsed_script_->error_message_mode(), script_text);
     return MakeSqlError().Attach(location) << error_message;
+  }
+
+  absl::Status CheckForVariableRedeclaration(const ASTIdentifier* id) {
+    if (!zetasql_base::InsertIfNotPresent(&variables_, id->GetAsIdString(),
+                                 id->GetParseLocationRange().start())) {
+      return MakeVariableDeclarationError(
+          id,
+          absl::StrCat("Variable '", id->GetAsString(),
+                       "' redeclaration"),
+          absl::StrCat(id->GetAsString(), " previously declared here"),
+          variables_[id->GetAsIdString()]);
+    }
+    if (zetasql_base::ContainsKey(parsed_script_->routine_arguments(),
+                         id->GetAsIdString())) {
+      return MakeVariableDeclarationError(
+          id, absl::StrCat("Variable '", id->GetAsString(),
+                           "' previously declared as an argument"));
+    }
+    return absl::OkStatus();
   }
 
   // Associates each active variable with the location of its declaration.
@@ -255,10 +272,10 @@ class PopulateIndexMapsVisitor : public NonRecursiveParseTreeVisitor {
   ParsedScript::NodeIndexMap* map_node_index_;
 };
 
-// Visitor to find the statement within a script that matches a given position.
-class FindStatementFromPositionVisitor : public NonRecursiveParseTreeVisitor {
+// Visitor to find the node within a script that matches a given position.
+class FindNodeFromPositionVisitor : public NonRecursiveParseTreeVisitor {
  public:
-  explicit FindStatementFromPositionVisitor(const ParseLocationPoint& location)
+  explicit FindNodeFromPositionVisitor(const ParseLocationPoint& location)
       : location_(location) {}
 
   const ASTNode* match() const { return match_; }
@@ -267,7 +284,10 @@ class FindStatementFromPositionVisitor : public NonRecursiveParseTreeVisitor {
     if (match_ != nullptr) {
       return VisitResult::Empty();
     }
-    if (node->IsStatement() || node->node_kind() == AST_ELSEIF_CLAUSE) {
+    if (node->IsStatement()
+        || node->node_kind() == AST_ELSEIF_CLAUSE
+        || node->node_kind() == AST_UNTIL_CLAUSE
+        || node->node_kind() == AST_QUERY) {
       const ParseLocationRange& stmt_range = node->GetParseLocationRange();
       if (stmt_range.start() == location_) {
         match_ = node;
@@ -310,41 +330,56 @@ class FindStatementFromPositionVisitor : public NonRecursiveParseTreeVisitor {
 
 zetasql_base::StatusOr<const ASTNode*> ParsedScript::FindScriptNodeFromPosition(
     const ParseLocationPoint& start_pos) const {
-  FindStatementFromPositionVisitor visitor(start_pos);
+  FindNodeFromPositionVisitor visitor(start_pos);
   ZETASQL_RETURN_IF_ERROR(script()->TraverseNonRecursive(&visitor));
   return visitor.match();
 }
 
-zetasql_base::StatusOr<ParsedScript::VariableTypeMap>
-ParsedScript::GetVariablesInScopeAtNode(const ASTNode* next_node) const {
-  VariableTypeMap variables;
+zetasql_base::StatusOr<ParsedScript::VariableCreationMap>
+ParsedScript::GetVariablesInScopeAtNode(
+    const ControlFlowNode * node) const {
+  VariableCreationMap variables;
+  const ASTNode * ast_node = node->ast_node();
 
-  for (const ASTNode* node = next_node->parent(); node != nullptr;
-       node = node->parent()) {
-    const ASTStatementList* stmt_list = node->GetAsOrNull<ASTStatementList>();
-    if (stmt_list == nullptr || !stmt_list->variable_declarations_allowed()) {
-      continue;
-    }
+  // If ast_node is an on-going FOR...IN loop, add variable to scope.
+  if (ast_node->node_kind() == AST_FOR_IN_STATEMENT
+      && node->kind() == ControlFlowNode::Kind::kForAdvance) {
+    const ASTForInStatement* for_stmt =
+            ast_node->GetAs<ASTForInStatement>();
+    variables.insert_or_assign(for_stmt->variable()->GetAsIdString(), for_stmt);
+  }
 
-    // Add variables declared in DECLARE statements up to, but not including,
-    // the current statement.
-    for (const ASTStatement* stmt : stmt_list->statement_list()) {
-      if (stmt == next_node) {
-        // Skip over DECLARE statements that haven't run yet when
-        // <statement> is about to begin.
-        break;
-      }
-      if (stmt->node_kind() == AST_VARIABLE_DECLARATION) {
-        const ASTVariableDeclaration* decl =
-            stmt->GetAs<ASTVariableDeclaration>();
-        for (const ASTIdentifier* variable :
-             decl->variable_list()->identifier_list()) {
-          variables.insert_or_assign(variable->GetAsIdString(), decl->type());
+  for (const ASTNode* node_it = ast_node->parent(); node_it != nullptr;
+       node_it = node_it->parent()) {
+    if (node_it->node_kind() == AST_FOR_IN_STATEMENT) {
+      const ASTForInStatement* for_stmt =
+            node_it->GetAs<ASTForInStatement>();
+      variables.insert_or_assign(for_stmt->variable()->GetAsIdString(),
+                                 for_stmt);
+    } else if (node_it->node_kind() == AST_STATEMENT_LIST
+               && node_it->GetAs<ASTStatementList>()
+                      ->variable_declarations_allowed()) {
+      // Add variables declared in variable-creating statements up to, but not
+      // including, the current statement.
+      for (const ASTStatement* stmt :
+               node_it->GetAs<ASTStatementList>()->statement_list()) {
+        if (stmt == ast_node) {
+          // Skip over DECLARE statements that haven't run yet when
+          // <statement> is about to begin.
+          break;
         }
-      } else {
-        // Variable declarations are only allowed at the start of a block,
-        // before any other statements, so no need to check further.
-        break;
+        if (stmt->node_kind() == AST_VARIABLE_DECLARATION) {
+          const ASTVariableDeclaration* decl =
+              stmt->GetAs<ASTVariableDeclaration>();
+          for (const ASTIdentifier* variable :
+               decl->variable_list()->identifier_list()) {
+            variables.insert_or_assign(variable->GetAsIdString(), decl);
+          }
+        } else {
+          // Variable declarations are only allowed at the start of a block,
+          // before any other statements, so no need to check further.
+          break;
+        }
       }
     }
   }
@@ -425,12 +460,22 @@ zetasql_base::StatusOr<std::unique_ptr<ParsedScript>> ParsedScript::CreateForRou
                         std::move(routine_arguments));
 }
 
+zetasql_base::StatusOr<std::unique_ptr<ParsedScript>> ParsedScript::CreateForRoutine(
+    absl::string_view script_string, const ASTScript* ast_script,
+    ErrorMessageMode error_message_mode, ArgumentTypeMap routine_arguments) {
+  std::unique_ptr<ParsedScript> parsed_script = absl::WrapUnique(
+      new ParsedScript(script_string, ast_script, /*parser_output=*/nullptr,
+                       error_message_mode, std::move(routine_arguments)));
+  ZETASQL_RETURN_IF_ERROR(parsed_script->GatherInformationAndRunChecks());
+  return parsed_script;
+}
+
 zetasql_base::StatusOr<std::unique_ptr<ParsedScript>> ParsedScript::Create(
     absl::string_view script_string, const ASTScript* ast_script,
     ErrorMessageMode error_message_mode) {
-  std::unique_ptr<ParsedScript> parsed_script =
-      absl::WrapUnique(new ParsedScript(script_string, ast_script, nullptr,
-                                        error_message_mode, {}));
+  std::unique_ptr<ParsedScript> parsed_script = absl::WrapUnique(
+      new ParsedScript(script_string, ast_script, /*parser_output=*/nullptr,
+                       error_message_mode, {}));
   ZETASQL_RETURN_IF_ERROR(parsed_script->GatherInformationAndRunChecks());
   return parsed_script;
 }
@@ -481,8 +526,8 @@ std::pair<int64_t, int64_t> ParsedScript::GetPositionalParameters(
 
   int64_t start = lower->second;
   int64_t end = upper == positional_query_parameters_.end()
-                  ? positional_query_parameters_.size()
-                  : upper->second;
+                    ? positional_query_parameters_.size()
+                    : upper->second;
   return {start, end - start};
 }
 

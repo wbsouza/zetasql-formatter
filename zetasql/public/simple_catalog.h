@@ -17,6 +17,7 @@
 #ifndef ZETASQL_PUBLIC_SIMPLE_CATALOG_H_
 #define ZETASQL_PUBLIC_SIMPLE_CATALOG_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -32,6 +33,7 @@
 #include "zetasql/public/procedure.h"
 #include "zetasql/public/table_valued_function.h"
 #include "zetasql/public/type.h"
+#include "zetasql/public/types/annotation.h"
 #include "zetasql/public/value.h"
 #include <cstdint>
 #include "absl/base/thread_annotations.h"
@@ -142,18 +144,17 @@ class SimpleCatalog : public EnumerableCatalog {
   // available.
 
   // Tables
-  void AddTable(const std::string& name, const Table* table)
+  void AddTable(absl::string_view name, const Table* table)
       ABSL_LOCKS_EXCLUDED(mutex_);
   void AddTable(const Table* table) ABSL_LOCKS_EXCLUDED(mutex_);
-  void AddOwnedTable(const std::string& name,
-                     std::unique_ptr<const Table> table)
+  void AddOwnedTable(absl::string_view name, std::unique_ptr<const Table> table)
       ABSL_LOCKS_EXCLUDED(mutex_);
-  bool AddOwnedTableIfNotPresent(const std::string& name,
+  bool AddOwnedTableIfNotPresent(absl::string_view name,
                                  std::unique_ptr<const Table> table)
       ABSL_LOCKS_EXCLUDED(mutex_);
   void AddOwnedTable(std::unique_ptr<const Table> table)
       ABSL_LOCKS_EXCLUDED(mutex_);
-  void AddOwnedTable(const std::string& name, const Table* table);
+  void AddOwnedTable(absl::string_view name, const Table* table);
   void AddOwnedTable(const Table* table) ABSL_LOCKS_EXCLUDED(mutex_);
 
   // Models
@@ -176,7 +177,8 @@ class SimpleCatalog : public EnumerableCatalog {
   // Types
   void AddType(const std::string& name, const Type* type)
       ABSL_LOCKS_EXCLUDED(mutex_);
-  bool AddTypeIfNotPresent(const std::string& name, const Type* type);
+  bool AddTypeIfNotPresent(const std::string& name, const Type* type)
+      ABSL_LOCKS_EXCLUDED(mutex_);
 
   // Catalogs
   void AddCatalog(const std::string& name, Catalog* catalog)
@@ -269,6 +271,16 @@ class SimpleCatalog : public EnumerableCatalog {
                                  ZetaSQLBuiltinFunctionOptions())
       ABSL_LOCKS_EXCLUDED(mutex_);
 
+  // Add ZetaSQL built-in function definitions into this catalog.
+  // This can add functions in both the global namespace and more specific
+  // namespaces. If any of the selected functions are in namespaces,
+  // sub-Catalogs will be created and the appropriate functions will be added in
+  // those sub-Catalogs.
+  // Also: Functions and Catalogs with the same names must not already exist.
+  // Functions are unowned, and must outlive this catalog.
+  void AddZetaSQLFunctions(const std::vector<const Function*>& functions)
+      ABSL_LOCKS_EXCLUDED(mutex_);
+
   // Set the google::protobuf::DescriptorPool to use when resolving Types.
   // All message and enum types declared in <pool> will be resolvable with
   // FindType or GetType, treating the full name as one identifier.
@@ -284,7 +296,11 @@ class SimpleCatalog : public EnumerableCatalog {
   //
   void SetDescriptorPool(const google::protobuf::DescriptorPool* pool)
       ABSL_LOCKS_EXCLUDED(mutex_);
+  ABSL_DEPRECATED("Use std::unique_ptr version")
   void SetOwnedDescriptorPool(const google::protobuf::DescriptorPool* pool)
+      ABSL_LOCKS_EXCLUDED(mutex_);
+  void SetOwnedDescriptorPool(
+      std::unique_ptr<const google::protobuf::DescriptorPool> pool)
       ABSL_LOCKS_EXCLUDED(mutex_);
 
   // Clear the set of functions stored in this Catalog and any subcatalogs
@@ -384,8 +400,6 @@ class SimpleCatalog : public EnumerableCatalog {
       const std::string& name,
       std::unique_ptr<const TableValuedFunction> table_function)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  void AddTypeLocked(const std::string& name, const Type* type)
-      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void AddConstantLocked(const std::string& name, const Constant* constant)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
@@ -459,14 +473,13 @@ class SimpleTable : public Table {
   // by calls to GetSerializationId(); it should be unique across all tables in
   // the same catalog.
   typedef std::pair<std::string, const Type*> NameAndType;
-  SimpleTable(const std::string& name, const std::vector<NameAndType>& columns,
+  SimpleTable(absl::string_view name, const std::vector<NameAndType>& columns,
               const int64_t serialization_id = 0);
 
   // Make a table with the given Columns.
   // Crashes if there are duplicate column names.
   // Takes ownership of elements of <columns> if <take_ownership> is true.
-  SimpleTable(const std::string& name,
-              const std::vector<const Column*>& columns,
+  SimpleTable(absl::string_view name, const std::vector<const Column*>& columns,
               bool take_ownership = false, const int64_t serialization_id = 0);
 
   // Make a value table with row type <row_type>.
@@ -478,11 +491,10 @@ class SimpleTable : public Table {
   // only be able to find the column with name "value", not the top level table
   // columns of this SimpleTable (and the top level table columns of this
   // SimpleTable do not have an associated Column).
-  SimpleTable(const std::string& name, const Type* row_type,
-              const int64_t id = 0);
+  SimpleTable(absl::string_view, const Type* row_type, const int64_t id = 0);
 
   // Make a table with no Columns.  (Other constructors are ambiguous for this.)
-  explicit SimpleTable(const std::string& name, const int64_t id = 0);
+  explicit SimpleTable(absl::string_view, const int64_t id = 0);
 
   SimpleTable(const SimpleTable&) = delete;
   SimpleTable& operator=(const SimpleTable&) = delete;
@@ -491,7 +503,14 @@ class SimpleTable : public Table {
   std::string FullName() const override { return name_; }
 
   int NumColumns() const override { return columns_.size(); }
-  const Column* GetColumn(int i) const override { return columns_[i]; }
+  const Column* GetColumn(int i) const override {
+    // Note: The column interface does not define what should happen
+    // when `i` is out of range.
+    if (i < 0 || i >= columns_.size()) {
+      return nullptr;
+    }
+    return columns_[i];
+  }
   const Column* FindColumnByName(const std::string& name) const override;
   std::optional<std::vector<int>> PrimaryKey() const override {
     return primary_key_;
@@ -561,6 +580,33 @@ class SimpleTable : public Table {
   CreateEvaluatorTableIterator(
       absl::Span<const int> column_idxs) const override;
 
+  // Sets the <anonymization_info_> with the specified <userid_column_name>
+  // (overwriting any previous anonymization info).  An error is returned if
+  // the named column is ambiguous or does not exist in this table.
+  //
+  // Setting the AnonymizationInfo defines this table as supporting
+  // anonymization semantics and containing sensitive private data.
+  absl::Status SetAnonymizationInfo(const std::string& userid_column_name);
+
+  // Same as above, but with the specified <userid_column_name_path>.
+  absl::Status SetAnonymizationInfo(
+      absl::Span<const std::string> userid_column_name_path);
+
+  // Resets <anonymization_info_>, implying that the table does not support
+  // anonymization queries.
+  void ResetAnonymizationInfo() {
+    anonymization_info_.reset();
+  }
+
+  // Returns anonymization info for a table, including a column reference that
+  // indicates the userid column for anonymization purposes.
+  std::optional<const AnonymizationInfo> GetAnonymizationInfo() const override {
+    if (anonymization_info_ != nullptr) {
+      return *anonymization_info_;
+    }
+    return std::optional<const AnonymizationInfo>();
+  }
+
   // Serialize this table into protobuf. The provided map is used to store
   // serialized FileDescriptorSets, which can be deserialized into separate
   // DescriptorPools in order to reconstruct the Type. The map may be
@@ -609,6 +655,8 @@ class SimpleTable : public Table {
   absl::flat_hash_map<std::string, const Column*> columns_map_;
   absl::flat_hash_set<std::string> duplicate_column_names_;
   int64_t id_ = 0;
+  // Does not own the referenced Column* (if set).
+  std::unique_ptr<AnonymizationInfo> anonymization_info_;
   bool allow_anonymous_column_name_ = false;
   bool anonymous_column_seen_ = false;
   bool allow_duplicate_column_names_ = false;
@@ -707,6 +755,9 @@ class SimpleColumn : public Column {
   SimpleColumn(const std::string& table_name, const std::string& name,
                const Type* type, bool is_pseudo_column = false,
                bool is_writable_column = true);
+  SimpleColumn(const std::string& table_name, const std::string& name,
+               AnnotatedType annotated_type, bool is_pseudo_column = false,
+               bool is_writable_column = true);
   SimpleColumn(const SimpleColumn&) = delete;
   SimpleColumn& operator=(const SimpleColumn&) = delete;
 
@@ -714,7 +765,12 @@ class SimpleColumn : public Column {
 
   std::string Name() const override { return name_; }
   std::string FullName() const override { return full_name_; }
-  const Type* GetType() const override { return type_; }
+  const Type* GetType() const override { return annotated_type_.type; }
+  const AnnotationMap* GetTypeAnnotationMap() const override {
+    return annotated_type_.annotation_map;
+  }
+  AnnotatedType annotated_type() const { return annotated_type_; }
+
   bool IsPseudoColumn() const override { return is_pseudo_column_; }
   bool IsWritableColumn() const override { return is_writable_column_; }
 
@@ -743,9 +799,9 @@ class SimpleColumn : public Column {
  private:
   const std::string name_;
   const std::string full_name_;
-  const Type* type_;
   bool is_pseudo_column_ = false;
   bool is_writable_column_ = true;
+  AnnotatedType annotated_type_;
 };
 
 // A named constant with a concrete value in the catalog.

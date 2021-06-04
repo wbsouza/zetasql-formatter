@@ -37,6 +37,7 @@
 #include "zetasql/public/options.pb.h"
 #include "zetasql/public/type.h"
 #include "zetasql/public/value.h"
+#include "absl/status/status.h"
 #include "zetasql/base/statusor.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/str_cat.h"
@@ -87,7 +88,7 @@ inline std::string PrimaryKeyModeName(PrimaryKeyMode mode) {
     case PrimaryKeyMode::NO_PRIMARY_KEY:
       return "NO_PRIMARY_KEY";
     default:
-      LOG(FATAL) << "Unknown PrimaryKeyMode: " << static_cast<int>(mode);
+      ZETASQL_LOG(FATAL) << "Unknown PrimaryKeyMode: " << static_cast<int>(mode);
   }
 }
 
@@ -109,8 +110,8 @@ class TestTableOptions {
 
   // Sets expected table size range.
   void set_expected_table_size_range(int min, int max) {
-    CHECK_GE(max, min);
-    CHECK_GE(min, 0);
+    ZETASQL_CHECK_GE(max, min);
+    ZETASQL_CHECK_GE(min, 0);
     expected_table_size_min_ = min;
     expected_table_size_max_ = max;
   }
@@ -137,6 +138,11 @@ class TestTableOptions {
     return &required_features_;
   }
 
+  const std::string& userid_column() const { return userid_column_; }
+  void set_userid_column(const std::string& userid_column) {
+    userid_column_ = userid_column;
+  }
+
  private:
   // LINT.IfChange
   // Defines expected table size after populating it with random data. The
@@ -154,6 +160,14 @@ class TestTableOptions {
   // required features, and even then it is only visible in tests that list all
   // of its required features in their [required_features] sections.
   std::set<LanguageFeature> required_features_;
+
+  // Table metadata identifying the User ID column for
+  // (broken link). Corresponds to
+  // zetasql::Table::GetUserIdColumn().
+  //
+  // An empty string means no user id column is set for this table (the default
+  // case).
+  std::string userid_column_;
 };
 
 // This describes a table that should be present in the created database.
@@ -200,6 +214,35 @@ struct TestDatabase {
   std::set<std::string> proto_names;        // Set of proto type names.
   std::set<std::string> enum_names;         // Set of enum type names.
   std::map<std::string, TestTable> tables;  // Keyed on table name.
+};
+
+// The result of executing a single statement in a script.
+struct StatementResult {
+  // Line number of the start of the statement, 1-based.
+  // 0 if the line number cannot be determined.
+  int line = 0;
+
+  // Column number of the start of the statement, 1-based.
+  // 0 if the column number cannot be determined.
+  int column = 0;
+
+  // The result of the statement. See TestDriver::ExecuteStatement() for a
+  // description on what types of values are expected for different statement
+  // types.
+  zetasql_base::StatusOr<Value> result;
+};
+
+// Represents the result of executing a script through a TestDriver.
+struct ScriptResult {
+  // A list of statements that were executed, along with their results.
+  //
+  // Even if the script fails, <statement_results> should still be populated
+  // with the list of statements that ran up to an including the failure.
+  //
+  // A failed StatementResult is still possible, even if the script succeeds.
+  // This can happen if the error was caught by an exception handler in the
+  // script.
+  std::vector<StatementResult> statement_results;
 };
 
 // Serialize TestDatabase to a proto. This is to allow building test drivers in
@@ -273,6 +316,14 @@ class TestDriver {
       const std::string& sql, const std::map<std::string, Value>& parameters,
       TypeFactory* type_factory) = 0;
 
+  // Similar to ExecuteStatement(), but executes 'sql' as a script, rather than
+  // an individual statement.
+  virtual zetasql_base::StatusOr<ScriptResult> ExecuteScript(
+      const std::string& sql, const std::map<std::string, Value>& parameters,
+      TypeFactory* type_factory) {
+    return absl::UnimplementedError("Scripts are not supported");
+  }
+
   // This method is only intended to be overridden by the
   // reference implementation.  Other engines should not override.
   virtual bool IsReferenceImplementation() const { return false; }
@@ -290,7 +341,7 @@ class TestDriver {
 
   static absl::TimeZone GetDefaultDefaultTimeZone() {
     absl::TimeZone time_zone;
-    CHECK(absl::LoadTimeZone(default_default_time_zone, &time_zone));
+    ZETASQL_CHECK(absl::LoadTimeZone(default_default_time_zone, &time_zone));
     return time_zone;
   }
 

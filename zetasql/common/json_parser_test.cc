@@ -16,13 +16,14 @@
 
 #include "zetasql/common/json_parser.h"
 
+#include <cstdint>
 #include <memory>
 
 #include "zetasql/base/logging.h"
-#include <cstdint>
-#include "absl/strings/escaping.h"
 #include "gtest/gtest.h"
+#include <cstdint>
 #include "absl/flags/flag.h"
+#include "absl/strings/escaping.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 
@@ -267,7 +268,7 @@ TEST(JSONParserTest, ParseStringFail) {
     ParseAndExpectFail(test);
   }
 
-  // Parse special case to test the DCHECK in ParseOctalDigits.
+  // Parse special case to test the ZETASQL_DCHECK in ParseOctalDigits.
   // Resizing to special.size() because it strips out the null terminator.
   std::string special = "\"\\4";
   special.resize(special.size());

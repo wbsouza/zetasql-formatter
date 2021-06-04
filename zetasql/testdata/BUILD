@@ -30,6 +30,7 @@ filegroup(
         "external_extension.proto",
         "referenced_schema.proto",
         "referencing_schema.proto",
+        "test_proto3.proto",
         "test_schema.proto",
     ],
 )
@@ -192,12 +193,14 @@ cc_library(
         ":test_packageless_cc_proto",
         ":test_proto3_cc_proto",
         ":test_schema_cc_proto",
+        ":tvf_with_user_id",
         "//zetasql/base",
         "//zetasql/base:ret_check",
         "//zetasql/base:status",
         "//zetasql/base:statusor",
         "//zetasql/common:errors",
         "//zetasql/public:analyzer",
+        "//zetasql/public:anon_function",
         "//zetasql/public:builtin_function",
         "//zetasql/public:catalog",
         "//zetasql/public:constant",
@@ -214,12 +217,35 @@ cc_library(
         "//zetasql/public:type",
         "//zetasql/public:type_cc_proto",
         "//zetasql/public:value",
+        "//zetasql/public/annotation:collation",
+        "//zetasql/public/types",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
         "@com_google_protobuf//:protobuf",
+    ],
+)
+
+cc_library(
+    name = "tvf_with_user_id",
+    testonly = 1,
+    srcs = [],
+    hdrs = ["tvf_with_user_id.h"],
+    copts = [
+        "-Wno-char-subscripts",
+        "-Wno-return-type",
+        "-Wno-sign-compare",
+        "-Wno-switch",
+        "-Wno-unused-but-set-parameter",
+        "-Wno-unused-function",
+        "-Wnonnull-compare",
+    ],
+    deps = [
+        "//zetasql/public:catalog",
+        "//zetasql/public:function",
+        "@com_google_absl//absl/algorithm:container",
     ],
 )
 
@@ -244,6 +270,31 @@ cc_library(
         "//zetasql/public:catalog",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "special_catalog",
+    testonly = 1,
+    srcs = ["special_catalog.cc"],
+    hdrs = ["special_catalog.h"],
+    copts = [
+        "-Wno-char-subscripts",
+        "-Wno-return-type",
+        "-Wno-sign-compare",
+        "-Wno-switch",
+        "-Wno-unused-but-set-parameter",
+        "-Wno-unused-function",
+        "-Wnonnull-compare",
+    ],
+    deps = [
+        "//zetasql/base:map_util",
+        "//zetasql/public:catalog",
+        "//zetasql/public:simple_catalog",
+        "//zetasql/public:type",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
     ],
 )
 

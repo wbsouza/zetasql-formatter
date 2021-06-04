@@ -17,7 +17,7 @@
 #include "zetasql/public/json_value.h"
 
 #define JSON_NOEXCEPTION
-#define JSON_THROW_USER(exception) LOG(FATAL) << (exception).what();
+#define JSON_THROW_USER(exception) ZETASQL_LOG(FATAL) << (exception).what();
 
 #include <stddef.h>
 #include <stdint.h>
@@ -31,7 +31,9 @@
 
 
 #include "zetasql/base/logging.h"
+#include "zetasql/common/errors.h"
 #include "zetasql/common/json_parser.h"
+#include "zetasql/public/numeric_parser.h"
 #include <cstdint>  
 #include "absl/base/optimization.h"
 #include "absl/status/status.h"
@@ -41,6 +43,8 @@
 #include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
 #include "single_include/nlohmann/json.hpp"
+#include "zetasql/base/ret_check.h"
+#include "zetasql/base/status_builder.h"
 #include "zetasql/base/status_macros.h"
 
 namespace zetasql {
@@ -55,8 +59,16 @@ namespace {
 // document tree from a given JSON string.
 class JSONValueBuilder {
  public:
-  // Constructs a builder that adds content to the given 'value'.
-  explicit JSONValueBuilder(JSON& value) : value_(value) {}
+  // Constructs a builder that adds content to the given 'value'. If
+  // 'max_nesting' has a value, then the parser will return an error when the
+  // JSON document exceeds the max level of nesting. If 'max_nesting' is
+  // negative, 0 will be set instead.
+  explicit JSONValueBuilder(JSON& value, absl::optional<int> max_nesting)
+      : value_(value), max_nesting_(max_nesting) {
+    if (max_nesting_.has_value() && *max_nesting_ < 0) {
+      max_nesting_ = 0;
+    }
+  }
 
   // Resets the builder with a new 'value' to construct.
   void Reset(JSON& value) {
@@ -66,6 +78,11 @@ class JSONValueBuilder {
   }
 
   absl::Status BeginObject() {
+    if (max_nesting_.has_value() && ref_stack_.size() >= *max_nesting_) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Max nesting of ", *max_nesting_,
+                       " has been exceeded while parsing JSON document"));
+    }
     auto result = HandleValue(JSON::value_t::object);
     ZETASQL_ASSIGN_OR_RETURN(ref_stack_.emplace_back(), result);
     return absl::OkStatus();
@@ -73,16 +90,37 @@ class JSONValueBuilder {
 
   absl::Status EndObject() {
     ref_stack_.pop_back();
+    ZETASQL_DCHECK(GetSkippingNodeMarker()->is_null());
     return absl::OkStatus();
   }
 
   absl::Status BeginMember(const std::string& key) {
-    // Add null at given key and store the reference for later
-    object_member_ = &(ref_stack_.back()->operator[](key));
+    // Skipping mode
+    if (ref_stack_.back() == GetSkippingNodeMarker()) {
+       return absl::OkStatus();
+    }
+
+    // Insert JSON null at the `key` spot, if an element with such `key` doesn't
+    // exist already.
+    auto [it, inserted] =
+        ref_stack_.back()->emplace(key, nlohmann::detail::value_t::null);
+
+    // If object already contains key, enter skipping mode
+    if (!inserted) {
+      object_member_ = GetSkippingNodeMarker();
+      return absl::OkStatus();
+    }
+    // Store the freshly added null reference for later
+    object_member_ = &(*it);
     return absl::OkStatus();
   }
 
   absl::Status BeginArray() {
+    if (max_nesting_.has_value() && ref_stack_.size() >= *max_nesting_) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Max nesting of ", *max_nesting_,
+                       " has been exceeded while parsing JSON document"));
+    }
     auto result = HandleValue(JSON::value_t::array);
     ZETASQL_ASSIGN_OR_RETURN(ref_stack_.emplace_back(), result);
     return absl::OkStatus();
@@ -135,6 +173,11 @@ class JSONValueBuilder {
       return &value_;
     }
 
+    // If subtree being processed is to be skipped, return early.
+    if (ref_stack_.back() == GetSkippingNodeMarker()) {
+      return GetSkippingNodeMarker();
+    }
+
     if (!ref_stack_.back()->is_array() && !ref_stack_.back()->is_object()) {
       return absl::InternalError(
           "Encountered invalid state while parsing JSON.");
@@ -143,15 +186,30 @@ class JSONValueBuilder {
     if (ref_stack_.back()->is_array()) {
       ref_stack_.back()->emplace_back(std::forward<Value>(v));
       return &(ref_stack_.back()->back());
-    } else {
-      CHECK(object_member_);
-      *object_member_ = JSON(std::forward<Value>(v));
-      return object_member_;
     }
+    ZETASQL_CHECK(object_member_);
+    // If here, the subtree should not be skipped, and the subtree is an object.
+    // Since the subtree is an object, this code can only be reached if the key
+    // associated with the value v has already been seen. If the key is a
+    // duplicate, object_member_ will be set to skipping_mode_marker_ to
+    // indicate it should be skipped.
+    if (object_member_ != GetSkippingNodeMarker()) {
+      *object_member_ = JSON(std::forward<Value>(v));
+    }
+    return object_member_;
+  }
+
+  // Marker used to indicate that the current JSON subtree being parsed should
+  // be skipped. Set when a duplicate key is found for a given object.
+  static JSON* GetSkippingNodeMarker() {
+    static JSON* const skipping_mode_marker = new JSON();
+    return skipping_mode_marker;
   }
 
   // The parsed JSON value.
   JSON& value_;
+  // Max nesting allowed.
+  absl::optional<int> max_nesting_;
   // Stack to model hierarchy of values.
   std::vector<JSON*> ref_stack_;
   // Helper to hold the reference for the next object element.
@@ -188,8 +246,9 @@ class JSONValueParserBase {
 class JSONValueLegacyParser : public ::zetasql::JSONParser,
                               public JSONValueParserBase {
  public:
-  JSONValueLegacyParser(absl::string_view str, JSON& value)
-      : zetasql::JSONParser(str), value_builder_(value) {}
+  JSONValueLegacyParser(absl::string_view str, JSON& value,
+                        absl::optional<int> max_nesting)
+      : zetasql::JSONParser(str), value_builder_(value, max_nesting) {}
 
  protected:
   bool BeginObject() override {
@@ -245,7 +304,10 @@ class JSONValueLegacyParser : public ::zetasql::JSONParser,
 // NOTE: Method names are specific requirement of nlohmann SAX parser interface.
 class JSONValueStandardParser : public JSONValueParserBase {
  public:
-  explicit JSONValueStandardParser(JSON& value) : value_builder_(value) {}
+  JSONValueStandardParser(JSON& value, bool strict_number_parsing,
+                          absl::optional<int> max_nesting)
+      : value_builder_(value, max_nesting),
+        strict_number_parsing_(strict_number_parsing) {}
   JSONValueStandardParser() = delete;
 
   bool null() { return MaybeUpdateStatus(value_builder_.ParsedNull()); }
@@ -262,7 +324,13 @@ class JSONValueStandardParser : public JSONValueParserBase {
     return MaybeUpdateStatus(value_builder_.ParsedUInt(val));
   }
 
-  bool number_float(double val, const std::string& /*unused*/) {
+  bool number_float(double val, const std::string& input_str) {
+    if (strict_number_parsing_) {
+      auto status = internal::CheckNumberRoundtrip(input_str, val);
+      if (!status.ok()) {
+        return MaybeUpdateStatus(status);
+      }
+    }
     return MaybeUpdateStatus(value_builder_.ParsedDouble(val));
   }
 
@@ -307,6 +375,7 @@ class JSONValueStandardParser : public JSONValueParserBase {
 
  private:
   JSONValueBuilder value_builder_;
+  const bool strict_number_parsing_;
 };
 
 }  // namespace
@@ -317,11 +386,14 @@ struct JSONValue::Impl {
   JSON value;
 };
 
-StatusOr<JSONValue> JSONValue::ParseJSONString(absl::string_view str,
-                                               bool legacy_mode) {
+StatusOr<JSONValue> JSONValue::ParseJSONString(
+    absl::string_view str, JSONParsingOptions parsing_options) {
   JSONValue json;
-  if (legacy_mode) {
-    JSONValueLegacyParser parser(str, json.impl_->value);
+  if (parsing_options.legacy_mode) {
+    ZETASQL_RET_CHECK(!parsing_options.strict_number_parsing)
+        << "Strict number parsing not supported in legacy mode.";
+    JSONValueLegacyParser parser(str, json.impl_->value,
+                                 parsing_options.max_nesting);
     if (!parser.Parse()) {
       if (parser.status().ok()) {
         return absl::InternalError(
@@ -331,7 +403,9 @@ StatusOr<JSONValue> JSONValue::ParseJSONString(absl::string_view str,
       }
     }
   } else {
-    JSONValueStandardParser parser(json.impl_->value);
+    JSONValueStandardParser parser(json.impl_->value,
+                                   parsing_options.strict_number_parsing,
+                                   parsing_options.max_nesting);
     JSON::sax_parse(str, &parser);
     ZETASQL_RETURN_IF_ERROR(parser.status());
   }
@@ -342,7 +416,9 @@ StatusOr<JSONValue> JSONValue::ParseJSONString(absl::string_view str,
 StatusOr<JSONValue> JSONValue::DeserializeFromProtoBytes(
     absl::string_view str) {
   JSONValue json;
-  JSONValueStandardParser parser(json.impl_->value);
+  JSONValueStandardParser parser(json.impl_->value,
+                                 /*strict_number_parsing=*/false,
+                                 /*max_nesting=*/absl::nullopt);
   JSON::sax_parse(str, &parser, JSON::input_format_t::ubjson);
   ZETASQL_RETURN_IF_ERROR(parser.status());
   return json;
@@ -396,7 +472,8 @@ bool JSONValueConstRef::IsInt64() const {
   // is_number_integer() returns true for both signed and unsigned values. We
   // need to make sure that the value fits int64_t if it is unsigned.
   return impl_->value.is_number_integer() &&
-         (!impl_->value.is_number_unsigned() || impl_->value.get<int64_t>() >= 0);
+         (!impl_->value.is_number_unsigned() ||
+          impl_->value.get<int64_t>() >= 0);
 }
 
 bool JSONValueConstRef::IsUInt64() const {
@@ -407,7 +484,9 @@ bool JSONValueConstRef::IsDouble() const {
   return impl_->value.is_number_float();
 }
 
-int64_t JSONValueConstRef::GetInt64() const { return impl_->value.get<int64_t>(); }
+int64_t JSONValueConstRef::GetInt64() const {
+  return impl_->value.get<int64_t>();
+}
 
 uint64_t JSONValueConstRef::GetUInt64() const {
   return impl_->value.get<uint64_t>();
@@ -564,6 +643,8 @@ std::vector<JSONValueRef> JSONValueRef::GetArrayElements() {
   return elements;
 }
 
+void JSONValueRef::SetNull() { impl_->value = nlohmann::detail::value_t::null; }
+
 void JSONValueRef::SetInt64(int64_t value) { impl_->value = value; }
 
 void JSONValueRef::SetUInt64(uint64_t value) { impl_->value = value; }
@@ -573,5 +654,49 @@ void JSONValueRef::SetDouble(double value) { impl_->value = value; }
 void JSONValueRef::SetString(absl::string_view value) { impl_->value = value; }
 
 void JSONValueRef::SetBoolean(bool value) { impl_->value = value; }
+
+void JSONValueRef::Set(JSONValue json_value) {
+  impl_->value = std::move(json_value.impl_->value);
+}
+
+void JSONValueRef::SetToEmptyObject() { impl_->value = JSON::object(); }
+
+void JSONValueRef::SetToEmptyArray() { impl_->value = JSON::array(); }
+
+absl::Status internal::CheckNumberRoundtrip(absl::string_view lhs, double val) {
+  constexpr uint32_t kMaxStringLength = 1500;
+  // Reject round-trip if input string is too long
+  if (lhs.length() > kMaxStringLength) {
+    return zetasql_base::InvalidArgumentErrorBuilder()
+           << "Input number " << lhs << " is too long.";
+  }
+
+  // Serialize 'val' to it's string representation.
+  const std::string rhs = JSONValue(val).GetConstRef().ToString();
+  // Simple check - if strings are equal, return early.
+  if (rhs == lhs) {
+    return absl::OkStatus();
+  }
+
+  // Else, parse each string into a fixed precision representation and compare
+  // the resulting representations.
+  constexpr uint32_t word_count =
+      (kMaxStringLength /
+       multiprecision_int_impl::IntTraits<64>::kMaxWholeDecimalDigits) +
+      1;
+  FixedPointRepresentation<word_count> lhs_number;
+  FixedPointRepresentation<word_count> rhs_number;
+  auto status = ParseJSONNumber(lhs, lhs_number);
+  ZETASQL_RETURN_IF_ERROR(status);
+  status = ParseJSONNumber(rhs, rhs_number);
+  ZETASQL_RETURN_IF_ERROR(status);
+  if (lhs_number.is_negative == rhs_number.is_negative &&
+      lhs_number.output == rhs_number.output) {
+    return absl::OkStatus();
+  }
+  return zetasql_base::InvalidArgumentErrorBuilder()
+         << "Input number: " << lhs
+         << " cannot round-trip through string representation.";
+}
 
 }  // namespace zetasql

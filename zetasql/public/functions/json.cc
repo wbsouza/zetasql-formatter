@@ -15,6 +15,7 @@
 
 #include "zetasql/public/functions/json.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -71,16 +72,17 @@ absl::Status JsonPathEvaluator::Extract(absl::string_view json,
 
 absl::optional<JSONValueConstRef> JsonPathEvaluator::Extract(
     JSONValueConstRef input) const {
+  bool first_token = true;
   for (path_iterator_->Rewind(); !path_iterator_->End(); ++(*path_iterator_)) {
     const ValidJSONPathIterator::Token& token = *(*path_iterator_);
 
-    if (token.empty()) {
+    if (first_token) {
       // The JSONPath "$.a[1].b" will result in the following list of tokens:
       // "", "a", "1", "b". The first token is always the empty token
       // corresponding to the whole JSON document, and we don't need to do
-      // anything in that iteration. There shouldn't be any empty tokens after
-      // the first one as ValidJSONPathIterator would reject those invalid
-      // paths.
+      // anything in that iteration. There can be other empty tokens after
+      // the first one (empty keys are valid).
+      first_token = false;
       continue;
     }
 
@@ -155,6 +157,85 @@ absl::Status JsonPathEvaluator::ExtractArray(absl::string_view json,
   return absl::OkStatus();
 }
 
+absl::optional<std::vector<JSONValueConstRef>> JsonPathEvaluator::ExtractArray(
+    JSONValueConstRef input) const {
+  absl::optional<JSONValueConstRef> json = Extract(input);
+  if (!json.has_value() || json->IsNull() || !json->IsArray()) {
+    return absl::nullopt;
+  }
+
+  return json->GetArrayElements();
+}
+
+absl::Status JsonPathEvaluator::ExtractStringArray(
+    absl::string_view json, std::vector<absl::optional<std::string>>* value,
+    bool* is_null) const {
+  json_internal::JSONPathStringArrayExtractor array_parser(
+      json, path_iterator_.get());
+  value->clear();
+  array_parser.ExtractStringArray(value, is_null);
+  if (array_parser.StoppedDueToStackSpace()) {
+    return MakeEvalError() << "JSON parsing failed due to deeply nested "
+                              "array/struct. Maximum nesting depth is "
+                           << JSONPathExtractor::kMaxParsingDepth;
+  }
+  return absl::OkStatus();
+}
+
+absl::optional<std::vector<absl::optional<std::string>>>
+JsonPathEvaluator::ExtractStringArray(JSONValueConstRef input) const {
+  absl::optional<std::vector<JSONValueConstRef>> json_array =
+      ExtractArray(input);
+  if (!json_array.has_value()) {
+    return absl::nullopt;
+  }
+
+  std::vector<absl::optional<std::string>> results;
+  results.reserve(json_array->size());
+  for (JSONValueConstRef element : *json_array) {
+    if (element.IsArray() || element.IsObject()) {
+      return absl::nullopt;
+    }
+
+    if (element.IsNull()) {
+      results.push_back(absl::nullopt);
+    } else if (element.IsString()) {
+      // ToString() adds extra quotes and escapes special characters,
+      // which we don't want.
+      results.push_back(element.GetString());
+    } else {
+      results.push_back(element.ToString());
+    }
+  }
+  return results;
+}
+
+std::string ConvertJSONPathTokenToSqlStandardMode(
+    absl::string_view json_path_token) {
+  // See json_internal.cc for list of characters that don't need escaping.
+  static const RE2& kSpecialCharsPattern =
+      *new RE2(R"([^\p{L}\p{N}\d_\-\:\s])");
+  static const RE2& kDoubleQuotesPattern = *new RE2(R"(")");
+
+  if (!RE2::PartialMatch(json_path_token, kSpecialCharsPattern)) {
+    // No special characters. Can be field access or array element access.
+    // Note that '$[0]' is equivalent to '$.0'.
+    return std::string(json_path_token);
+  } else if (absl::StrContains(json_path_token, "\"")) {
+    // We need to escape double quotes in the json_path_token because the SQL
+    // standard mode use them to wrap around json_path_token with special
+    // characters.
+    std::string escaped(json_path_token);
+    // Two backslashes are needed in the replacement string because \<digit>
+    // is used for group matching.
+    RE2::GlobalReplace(&escaped, kDoubleQuotesPattern, R"(\\")");
+    return absl::StrCat("\"", escaped, "\"");
+  } else {
+    // Special characters but no double quotes.
+    return absl::StrCat("\"", json_path_token, "\"");
+  }
+}
+
 zetasql_base::StatusOr<std::string> ConvertJSONPathToSqlStandardMode(
     absl::string_view json_path) {
   // See json_internal.cc for list of characters that don't need escaping.
@@ -173,7 +254,10 @@ zetasql_base::StatusOr<std::string> ConvertJSONPathToSqlStandardMode(
   for (; !iterator->End(); ++(*iterator)) {
     // Token is unescaped.
     absl::string_view token = **iterator;
-    if (!RE2::PartialMatch(token, kSpecialCharsPattern)) {
+    if (token.empty()) {
+      // Special case: empty token needs to be escaped.
+      absl::StrAppend(&new_json_path, ".\"\"");
+    } else if (!RE2::PartialMatch(token, kSpecialCharsPattern)) {
       // No special characters. Can be field access or array element access.
       // Note that '$[0]' is equivalent to '$.0'.
       absl::StrAppend(&new_json_path, ".", token);

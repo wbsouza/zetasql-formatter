@@ -100,11 +100,21 @@ message TestExtraPB {
   repeated string str_value = 3;
 }
 
+message TestAbPB {
+  optional int32 a = 1;
+  optional string b = 2;
+}
+
+message TestBcPB {
+  optional int32 b = 1;
+  optional string c = 2;
+}
+
 message RepeatedHolderPB {
   repeated TestExtraPB repeated_field = 1;
 }
 
-// Next ID to use: 108
+// Next ID to use: 110
 message KitchenSinkPB {
   required int64 int64_key_1 = 1;
   required int64 int64_key_2 = 2;
@@ -157,6 +167,14 @@ message KitchenSinkPB {
 
   optional Nested nested_value = 33;
   repeated Nested nested_repeated_value = 34;
+
+  message NestedWithRequiredMessageFields {
+    required Nested nested_required_value = 1;
+    optional int32 nested_int32_val = 2;
+    optional Nested nested_value = 3;
+  }
+
+  optional NestedWithRequiredMessageFields nested_with_required_fields = 109;
 
   repeated RepeatedHolderPB repeated_holder = 35;
 
@@ -314,6 +332,8 @@ message KitchenSinkPB {
     int64 int64_one_of = 106;
   }
 
+  optional MessageWithMapField maps = 108;
+
   reserved 103;  // Used for testing unknown fields.
 
   extensions 1000 to 1008;
@@ -332,6 +352,7 @@ message MessageWithMapField {
   // comparisons don't always report true.
   map<uint32, TestOptionalFields> uint32_testoptionalfields_map = 7;
   map<bool, int32> bool_int32_map = 8;
+  map<string, string> string_string_map = 9;
 }
 
 // This protocol buffer has the exact same shape as the synthetic map entry for
@@ -828,4 +849,39 @@ message TestSQLTable {
 message RecursiveMessage {
   optional int64 int64_field = 1;
   optional RecursiveMessage recursive_msg = 2;
+}
+
+// zetasql.is_hidden_column annotation only affects top level fields
+// (columns), e.g. TableWithIsHiddenAnnotation.hidden_field. It doesn't affect
+// child fields of a compound type, e.g. StructWithIsHidden.h1 or
+// NullableIntWithIsHidden.value
+message TableWithIsHiddenAnnotation {
+  option (zetasql.table_type) = SQL_TABLE;
+  option (zetasql.is_struct) = true;
+
+  optional int32 f1 = 1;
+  optional int32 hidden_field = 2 [(zetasql.is_hidden_column) = true];
+  optional StructWithIsHidden struct_with_is_hidden = 3;
+  optional NullableInt hidden_nullable_int = 4
+      [(zetasql.is_hidden_column) = true];
+  optional NullableIntWithIsHidden wrapper_message_with_is_hidden = 5;
+}
+message StructWithIsHidden {
+  optional int32 h1 = 1 [(zetasql.is_hidden_column) = true];
+}
+message NullableIntWithIsHidden {
+  option (zetasql.is_wrapper) = true;
+
+  optional int32 value = 1
+      [(zetasql.use_defaults) = false, (zetasql.is_hidden_column) = true];
+}
+
+message IteratorProto {
+  message Row {
+    optional int32 key = 1;
+    optional string name = 2;
+    repeated string tag = 3;
+  }
+
+  repeated Row row = 1;
 }

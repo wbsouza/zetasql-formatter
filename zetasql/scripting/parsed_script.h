@@ -17,6 +17,8 @@
 #ifndef ZETASQL_SCRIPTING_PARSED_SCRIPT_H_
 #define ZETASQL_SCRIPTING_PARSED_SCRIPT_H_
 
+#include <cstdint>
+
 #include "zetasql/parser/parse_tree.h"
 #include "zetasql/parser/parser.h"
 #include "zetasql/public/options.pb.h"
@@ -24,11 +26,11 @@
 #include "zetasql/public/type.h"
 #include "zetasql/scripting/break_continue_context.h"
 #include "zetasql/scripting/control_flow_graph.h"
+#include "zetasql/base/case.h"
 #include "absl/base/macros.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/flags/declare.h"
 #include "zetasql/base/statusor.h"
-#include "zetasql/base/case.h"
 #include "zetasql/base/status.h"
 
 // Flag which controls the maximum supported nesting of script statements within
@@ -43,10 +45,14 @@ class ParsedScript {
   // to its parent.  For each statement s, s->parent()->child(map[s]) == s.
   using NodeIndexMap = absl::flat_hash_map<const ASTNode*, int>;
 
-  // Mapping of variable name to ASTType.
-  using VariableTypeMap =
-      absl::flat_hash_map<IdString, const ASTType*, IdStringCaseHash,
-                          IdStringCaseEqualFunc>;
+  // Mapping of active variable names to the ASTScriptStatement which creates
+  // the variable.
+  // For now, the two ASTScriptStatement's that create variables are:
+  // - ASTVariableDeclaration
+  // - ASTForInStatement
+  using VariableCreationMap =
+      absl::flat_hash_map<IdString, const ASTScriptStatement*,
+                          IdStringCaseHash, IdStringCaseEqualFunc>;
 
   // Mapping of argument name to zetasql Type.
   using ArgumentTypeMap =
@@ -57,7 +63,8 @@ class ParsedScript {
   using NamedQueryParameterMap = std::map<ParseLocationPoint, IdString>;
 
   // Case-insensitive set of strings. Strings are not owned by the set.
-  using StringSet = std::set<absl::string_view, zetasql_base::CaseLess>;
+  using StringSet =
+      std::set<absl::string_view, zetasql_base::CaseLess>;
 
   // Either a map of named parameters or the number of positional parameters.
   using QueryParameters = absl::optional<absl::variant<StringSet, int64_t>>;
@@ -95,6 +102,13 @@ class ParsedScript {
       absl::string_view script_string, const ParserOptions& parser_options,
       ErrorMessageMode error_message_mode, ArgumentTypeMap routine_arguments);
 
+  // Similar to the above functions, but allows the caller to provide an AST
+  // node when the script is contained with a larger script, for example,
+  // a CREATE PROCEDURE statement.
+  static zetasql_base::StatusOr<std::unique_ptr<ParsedScript>> CreateForRoutine(
+      absl::string_view script_string, const ASTScript* ast_script,
+      ErrorMessageMode error_message_mode, ArgumentTypeMap routine_arguments);
+
   const ASTScript* script() const { return ast_script_; }
   absl::string_view script_text() const { return script_string_; }
   ErrorMessageMode error_message_mode() const { return error_message_mode_; }
@@ -118,14 +132,16 @@ class ParsedScript {
       const ParseLocationRange& range) const;
 
   // Returns the node in the script which starts at the given position,
-  // or nullptr if no such statement exists.
+  // or nullptr if no such node exists.
+  // Note: since this function finds non-statement nodes as well, caller
+  // should ensure that there is only one ASTNode starting at <start_pos>.
   zetasql_base::StatusOr<const ASTNode*> FindScriptNodeFromPosition(
       const ParseLocationPoint& start_pos) const;
 
   // Returns a map of all variables in scope immediately prior to the execution
-  // of <next_node>.
-  zetasql_base::StatusOr<VariableTypeMap> GetVariablesInScopeAtNode(
-      const ASTNode* node) const;
+  // of <node>.
+  zetasql_base::StatusOr<VariableCreationMap> GetVariablesInScopeAtNode(
+      const ControlFlowNode * node) const;
 
   // Validates the query parameters (e.g. no missing ones, not mixing named and
   // positional parameters).
@@ -136,7 +152,22 @@ class ParsedScript {
       absl::string_view script_string, const ParserOptions& parser_options,
       ErrorMessageMode error_message_mode, ArgumentTypeMap routine_arguments);
 
-  // <script_string> is owned externally.  Takes ownership of <parser_output>.
+  // script_string: The string of the entire script for which parse locations
+  //   within <ast_script> are based off of. Owned externally.
+  //
+  // ast_script: The parse tree for the current script or procedure body.
+  //   Owned by <parser_output> if <parser_output> is non-null; otherwise,
+  //   owned externally.
+  //
+  // parser_output: If non-null, owns the lifetime of <ast_script>.
+  //
+  // error_message_mode: Indicates how errors should be returned when validating
+  //   the script or procedure body.
+  //
+  // routine_arguments: If <ast_script> is a procedure body, specifies the
+  //   name and type of each argument. This is used in validation, for example,
+  //   to ensure that script variables do not shadow arguments. When
+  //   <ast_script> represents a top-level script, this should be empty.
   ParsedScript(absl::string_view script_string, const ASTScript* ast_script,
                std::unique_ptr<ParserOutput> parser_output,
                ErrorMessageMode error_message_mode,

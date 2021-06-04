@@ -1,0 +1,1359 @@
+select f1, f2 from T where f1=f2 group by f1
+--
+QueryStatement [0-44] [select f1,...group by f1]
+  Query [0-44] [select f1,...group by f1]
+    Select [0-44] [select f1,...group by f1]
+      SelectList [7-13] [f1, f2]
+        SelectColumn [7-9] [f1]
+          PathExpression [7-9] [f1]
+            Identifier(f1) [7-9] [f1]
+        SelectColumn [11-13] [f2]
+          PathExpression [11-13] [f2]
+            Identifier(f2) [11-13] [f2]
+      FromClause [14-20] [from T]
+        TablePathExpression [19-20] [T]
+          PathExpression [19-20] [T]
+            Identifier(T) [19-20] [T]
+      WhereClause [21-32] [where f1=f2]
+        BinaryExpression(=) [27-32] [f1=f2]
+          PathExpression [27-29] [f1]
+            Identifier(f1) [27-29] [f1]
+          PathExpression [30-32] [f2]
+            Identifier(f2) [30-32] [f2]
+      GroupBy [33-44] [group by f1]
+        GroupingItem [42-44] [f1]
+          PathExpression [42-44] [f1]
+            Identifier(f1) [42-44] [f1]
+--
+SELECT
+  f1,
+  f2
+FROM
+  T
+WHERE
+  f1 = f2
+GROUP BY f1
+==
+
+select f1, f2 from T group by f1, f2, 1, 2
+--
+QueryStatement [0-42] [select f1,..., f2, 1, 2]
+  Query [0-42] [select f1,..., f2, 1, 2]
+    Select [0-42] [select f1,..., f2, 1, 2]
+      SelectList [7-13] [f1, f2]
+        SelectColumn [7-9] [f1]
+          PathExpression [7-9] [f1]
+            Identifier(f1) [7-9] [f1]
+        SelectColumn [11-13] [f2]
+          PathExpression [11-13] [f2]
+            Identifier(f2) [11-13] [f2]
+      FromClause [14-20] [from T]
+        TablePathExpression [19-20] [T]
+          PathExpression [19-20] [T]
+            Identifier(T) [19-20] [T]
+      GroupBy [21-42] [group by f1, f2, 1, 2]
+        GroupingItem [30-32] [f1]
+          PathExpression [30-32] [f1]
+            Identifier(f1) [30-32] [f1]
+        GroupingItem [34-36] [f2]
+          PathExpression [34-36] [f2]
+            Identifier(f2) [34-36] [f2]
+        GroupingItem [38-39] [1]
+          IntLiteral(1) [38-39] [1]
+        GroupingItem [41-42] [2]
+          IntLiteral(2) [41-42] [2]
+--
+SELECT
+  f1,
+  f2
+FROM
+  T
+GROUP BY f1, f2, 1, 2
+==
+
+select f1 from T group by f1 having f1 < 5;
+--
+QueryStatement [0-42] [select f1...having f1 < 5]
+  Query [0-42] [select f1...having f1 < 5]
+    Select [0-42] [select f1...having f1 < 5]
+      SelectList [7-9] [f1]
+        SelectColumn [7-9] [f1]
+          PathExpression [7-9] [f1]
+            Identifier(f1) [7-9] [f1]
+      FromClause [10-16] [from T]
+        TablePathExpression [15-16] [T]
+          PathExpression [15-16] [T]
+            Identifier(T) [15-16] [T]
+      GroupBy [17-28] [group by f1]
+        GroupingItem [26-28] [f1]
+          PathExpression [26-28] [f1]
+            Identifier(f1) [26-28] [f1]
+      Having [29-42] [having f1 < 5]
+        BinaryExpression(<) [36-42] [f1 < 5]
+          PathExpression [36-38] [f1]
+            Identifier(f1) [36-38] [f1]
+          IntLiteral(5) [41-42] [5]
+--
+SELECT
+  f1
+FROM
+  T
+GROUP BY f1
+HAVING f1 < 5
+==
+
+select f1, sum(f2) from T group by f1 having f1 = 3 and sum(f2) > 5;
+--
+QueryStatement [0-67] [select f1,...sum(f2) > 5]
+  Query [0-67] [select f1,...sum(f2) > 5]
+    Select [0-67] [select f1,...sum(f2) > 5]
+      SelectList [7-18] [f1, sum(f2)]
+        SelectColumn [7-9] [f1]
+          PathExpression [7-9] [f1]
+            Identifier(f1) [7-9] [f1]
+        SelectColumn [11-18] [sum(f2)]
+          FunctionCall [11-18] [sum(f2)]
+            PathExpression [11-14] [sum]
+              Identifier(sum) [11-14] [sum]
+            PathExpression [15-17] [f2]
+              Identifier(f2) [15-17] [f2]
+      FromClause [19-25] [from T]
+        TablePathExpression [24-25] [T]
+          PathExpression [24-25] [T]
+            Identifier(T) [24-25] [T]
+      GroupBy [26-37] [group by f1]
+        GroupingItem [35-37] [f1]
+          PathExpression [35-37] [f1]
+            Identifier(f1) [35-37] [f1]
+      Having [38-67] [having f1 = 3 and sum(f2) > 5]
+        AndExpr [45-67] [f1 = 3 and sum(f2) > 5]
+          BinaryExpression(=) [45-51] [f1 = 3]
+            PathExpression [45-47] [f1]
+              Identifier(f1) [45-47] [f1]
+            IntLiteral(3) [50-51] [3]
+          BinaryExpression(>) [56-67] [sum(f2) > 5]
+            FunctionCall [56-63] [sum(f2)]
+              PathExpression [56-59] [sum]
+                Identifier(sum) [56-59] [sum]
+              PathExpression [60-62] [f2]
+                Identifier(f2) [60-62] [f2]
+            IntLiteral(5) [66-67] [5]
+--
+SELECT
+  f1,
+  sum(f2)
+FROM
+  T
+GROUP BY f1
+HAVING f1 = 3 AND sum(f2) > 5
+==
+
+select max(true) as a from T having a;
+--
+QueryStatement [0-37] [select max...T having a]
+  Query [0-37] [select max...T having a]
+    Select [0-37] [select max...T having a]
+      SelectList [7-21] [max(true) as a]
+        SelectColumn [7-21] [max(true) as a]
+          FunctionCall [7-16] [max(true)]
+            PathExpression [7-10] [max]
+              Identifier(max) [7-10] [max]
+            BooleanLiteral(true) [11-15] [true]
+          Alias [17-21] [as a]
+            Identifier(a) [20-21] [a]
+      FromClause [22-28] [from T]
+        TablePathExpression [27-28] [T]
+          PathExpression [27-28] [T]
+            Identifier(T) [27-28] [T]
+      Having [29-37] [having a]
+        PathExpression [36-37] [a]
+          Identifier(a) [36-37] [a]
+--
+SELECT
+  max(true) AS a
+FROM
+  T
+HAVING a
+==
+
+select sum(f1) as a from T having true;
+--
+QueryStatement [0-38] [select sum...having true]
+  Query [0-38] [select sum...having true]
+    Select [0-38] [select sum...having true]
+      SelectList [7-19] [sum(f1) as a]
+        SelectColumn [7-19] [sum(f1) as a]
+          FunctionCall [7-14] [sum(f1)]
+            PathExpression [7-10] [sum]
+              Identifier(sum) [7-10] [sum]
+            PathExpression [11-13] [f1]
+              Identifier(f1) [11-13] [f1]
+          Alias [15-19] [as a]
+            Identifier(a) [18-19] [a]
+      FromClause [20-26] [from T]
+        TablePathExpression [25-26] [T]
+          PathExpression [25-26] [T]
+            Identifier(T) [25-26] [T]
+      Having [27-38] [having true]
+        BooleanLiteral(true) [34-38] [true]
+--
+SELECT
+  sum(f1) AS a
+FROM
+  T
+HAVING true
+==
+
+select sum(f1) as a from T having a > 5 having a > 5;
+--
+ERROR: Syntax error: Expected end of input but got keyword HAVING [at 1:41]
+select sum(f1) as a from T having a > 5 having a > 5;
+                                        ^
+==
+
+select * from (select a from T having a > 5);
+--
+QueryStatement [0-44] [select * from...having a > 5)]
+  Query [0-44] [select * from...having a > 5)]
+    Select [0-44] [select * from...having a > 5)]
+      SelectList [7-8] [*]
+        SelectColumn [7-8] [*]
+          Star(*) [7-8] [*]
+      FromClause [9-44] [from (select...having a > 5)]
+        TableSubquery [14-44] [(select a from T having a > 5)]
+          Query [15-43] [select a from T having a > 5]
+            Select [15-43] [select a from T having a > 5]
+              SelectList [22-23] [a]
+                SelectColumn [22-23] [a]
+                  PathExpression [22-23] [a]
+                    Identifier(a) [22-23] [a]
+              FromClause [24-30] [from T]
+                TablePathExpression [29-30] [T]
+                  PathExpression [29-30] [T]
+                    Identifier(T) [29-30] [T]
+              Having [31-43] [having a > 5]
+                BinaryExpression(>) [38-43] [a > 5]
+                  PathExpression [38-39] [a]
+                    Identifier(a) [38-39] [a]
+                  IntLiteral(5) [42-43] [5]
+
+--
+SELECT
+  *
+FROM
+  (
+    SELECT
+      a
+    FROM
+      T
+    HAVING a > 5
+  )
+==
+
+select array_agg(x order by x) as a from T;
+--
+QueryStatement [0-42] [select array_agg...as a from T]
+  Query [0-42] [select array_agg...as a from T]
+    Select [0-42] [select array_agg...as a from T]
+      SelectList [7-35] [array_agg(x order by x) as a]
+        SelectColumn [7-35] [array_agg(x order by x) as a]
+          FunctionCall [7-30] [array_agg(x order by x)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            OrderBy [19-29] [order by x]
+              OrderingExpression(ASC) [28-29] [x]
+                PathExpression [28-29] [x]
+                  Identifier(x) [28-29] [x]
+          Alias [31-35] [as a]
+            Identifier(a) [34-35] [a]
+      FromClause [36-42] [from T]
+        TablePathExpression [41-42] [T]
+          PathExpression [41-42] [T]
+            Identifier(T) [41-42] [T]
+--
+SELECT
+  array_agg(x
+    ORDER BY x) AS a
+FROM
+  T
+==
+
+select array_agg(x order by x, y nulls last, z) as a from T;
+--
+QueryStatement [0-59] [select array_agg...as a from T]
+  Query [0-59] [select array_agg...as a from T]
+    Select [0-59] [select array_agg...as a from T]
+      SelectList [7-52] [array_agg(...last, z) as a]
+        SelectColumn [7-52] [array_agg(...last, z) as a]
+          FunctionCall [7-47] [array_agg(...nulls last, z)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            OrderBy [19-46] [order by x, y nulls last, z]
+              OrderingExpression(ASC) [28-29] [x]
+                PathExpression [28-29] [x]
+                  Identifier(x) [28-29] [x]
+              OrderingExpression(ASC) [31-43] [y nulls last]
+                PathExpression [31-32] [y]
+                  Identifier(y) [31-32] [y]
+                NullOrder(NULLS LAST) [33-43] [nulls last]
+              OrderingExpression(ASC) [45-46] [z]
+                PathExpression [45-46] [z]
+                  Identifier(z) [45-46] [z]
+          Alias [48-52] [as a]
+            Identifier(a) [51-52] [a]
+      FromClause [53-59] [from T]
+        TablePathExpression [58-59] [T]
+          PathExpression [58-59] [T]
+            Identifier(T) [58-59] [T]
+--
+SELECT
+  array_agg(x
+    ORDER BY x, y NULLS LAST, z) AS a
+FROM
+  T
+==
+
+select array_agg(distinct x order by x) as a from T;
+--
+QueryStatement [0-51] [select array_agg...as a from T]
+  Query [0-51] [select array_agg...as a from T]
+    Select [0-51] [select array_agg...as a from T]
+      SelectList [7-44] [array_agg(...by x) as a]
+        SelectColumn [7-44] [array_agg(...by x) as a]
+          FunctionCall(distinct=true) [7-39] [array_agg(...order by x)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [26-27] [x]
+              Identifier(x) [26-27] [x]
+            OrderBy [28-38] [order by x]
+              OrderingExpression(ASC) [37-38] [x]
+                PathExpression [37-38] [x]
+                  Identifier(x) [37-38] [x]
+          Alias [40-44] [as a]
+            Identifier(a) [43-44] [a]
+      FromClause [45-51] [from T]
+        TablePathExpression [50-51] [T]
+          PathExpression [50-51] [T]
+            Identifier(T) [50-51] [T]
+--
+SELECT
+  array_agg(DISTINCT x
+    ORDER BY x) AS a
+FROM
+  T
+==
+
+select array_agg(x order by x + 1, y + z) as a from T;
+--
+QueryStatement [0-53] [select array_agg...as a from T]
+  Query [0-53] [select array_agg...as a from T]
+    Select [0-53] [select array_agg...as a from T]
+      SelectList [7-46] [array_agg(...+ z) as a]
+        SelectColumn [7-46] [array_agg(...+ z) as a]
+          FunctionCall [7-41] [array_agg(...1, y + z)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            OrderBy [19-40] [order by x + 1, y + z]
+              OrderingExpression(ASC) [28-33] [x + 1]
+                BinaryExpression(+) [28-33] [x + 1]
+                  PathExpression [28-29] [x]
+                    Identifier(x) [28-29] [x]
+                  IntLiteral(1) [32-33] [1]
+              OrderingExpression(ASC) [35-40] [y + z]
+                BinaryExpression(+) [35-40] [y + z]
+                  PathExpression [35-36] [y]
+                    Identifier(y) [35-36] [y]
+                  PathExpression [39-40] [z]
+                    Identifier(z) [39-40] [z]
+          Alias [42-46] [as a]
+            Identifier(a) [45-46] [a]
+      FromClause [47-53] [from T]
+        TablePathExpression [52-53] [T]
+          PathExpression [52-53] [T]
+            Identifier(T) [52-53] [T]
+--
+SELECT
+  array_agg(x
+    ORDER BY x + 1, y + z) AS a
+FROM
+  T
+==
+
+select x, array_agg(distinct y order by y) from T group by x
+--
+QueryStatement [0-60] [select x,...group by x]
+  Query [0-60] [select x,...group by x]
+    Select [0-60] [select x,...group by x]
+      SelectList [7-42] [x, array_agg...order by y)]
+        SelectColumn [7-8] [x]
+          PathExpression [7-8] [x]
+            Identifier(x) [7-8] [x]
+        SelectColumn [10-42] [array_agg(...order by y)]
+          FunctionCall(distinct=true) [10-42] [array_agg(...order by y)]
+            PathExpression [10-19] [array_agg]
+              Identifier(array_agg) [10-19] [array_agg]
+            PathExpression [29-30] [y]
+              Identifier(y) [29-30] [y]
+            OrderBy [31-41] [order by y]
+              OrderingExpression(ASC) [40-41] [y]
+                PathExpression [40-41] [y]
+                  Identifier(y) [40-41] [y]
+      FromClause [43-49] [from T]
+        TablePathExpression [48-49] [T]
+          PathExpression [48-49] [T]
+            Identifier(T) [48-49] [T]
+      GroupBy [50-60] [group by x]
+        GroupingItem [59-60] [x]
+          PathExpression [59-60] [x]
+            Identifier(x) [59-60] [x]
+--
+SELECT
+  x,
+  array_agg(DISTINCT y
+    ORDER BY y)
+FROM
+  T
+GROUP BY x
+==
+
+select x, array_agg(y order by x desc, z desc) from T group by x
+--
+QueryStatement [0-64] [select x,...group by x]
+  Query [0-64] [select x,...group by x]
+    Select [0-64] [select x,...group by x]
+      SelectList [7-46] [x, array_agg...desc, z desc)]
+        SelectColumn [7-8] [x]
+          PathExpression [7-8] [x]
+            Identifier(x) [7-8] [x]
+        SelectColumn [10-46] [array_agg(...desc, z desc)]
+          FunctionCall [10-46] [array_agg(...desc, z desc)]
+            PathExpression [10-19] [array_agg]
+              Identifier(array_agg) [10-19] [array_agg]
+            PathExpression [20-21] [y]
+              Identifier(y) [20-21] [y]
+            OrderBy [22-45] [order by x desc, z desc]
+              OrderingExpression(DESC) [31-37] [x desc]
+                PathExpression [31-32] [x]
+                  Identifier(x) [31-32] [x]
+              OrderingExpression(DESC) [39-45] [z desc]
+                PathExpression [39-40] [z]
+                  Identifier(z) [39-40] [z]
+      FromClause [47-53] [from T]
+        TablePathExpression [52-53] [T]
+          PathExpression [52-53] [T]
+            Identifier(T) [52-53] [T]
+      GroupBy [54-64] [group by x]
+        GroupingItem [63-64] [x]
+          PathExpression [63-64] [x]
+            Identifier(x) [63-64] [x]
+--
+SELECT
+  x,
+  array_agg(y
+    ORDER BY x DESC, z DESC)
+FROM
+  T
+GROUP BY x
+==
+
+select x, string_agg(y order by y collate "en_US" desc) from T group by x
+--
+QueryStatement [0-73] [select x,...group by x]
+  Query [0-73] [select x,...group by x]
+    Select [0-73] [select x,...group by x]
+      SelectList [7-55] [x, string_agg...en_US" desc)]
+        SelectColumn [7-8] [x]
+          PathExpression [7-8] [x]
+            Identifier(x) [7-8] [x]
+        SelectColumn [10-55] [string_agg...en_US" desc)]
+          FunctionCall [10-55] [string_agg...en_US" desc)]
+            PathExpression [10-20] [string_agg]
+              Identifier(string_agg) [10-20] [string_agg]
+            PathExpression [21-22] [y]
+              Identifier(y) [21-22] [y]
+            OrderBy [23-54] [order by y...en_US" desc]
+              OrderingExpression(DESC) [32-54] [y collate "en_US" desc]
+                PathExpression [32-33] [y]
+                  Identifier(y) [32-33] [y]
+                Collate [34-49] [collate "en_US"]
+                  StringLiteral("en_US") [42-49] ["en_US"]
+      FromClause [56-62] [from T]
+        TablePathExpression [61-62] [T]
+          PathExpression [61-62] [T]
+            Identifier(T) [61-62] [T]
+      GroupBy [63-73] [group by x]
+        GroupingItem [72-73] [x]
+          PathExpression [72-73] [x]
+            Identifier(x) [72-73] [x]
+--
+SELECT
+  x,
+  string_agg(y
+    ORDER BY y COLLATE "en_US" DESC)
+FROM
+  T
+GROUP BY x
+==
+
+select count(* order by x) from T;
+--
+QueryStatement [0-33] [select count...x) from T]
+  Query [0-33] [select count...x) from T]
+    Select [0-33] [select count...x) from T]
+      SelectList [7-26] [count(* order by x)]
+        SelectColumn [7-26] [count(* order by x)]
+          FunctionCall [7-26] [count(* order by x)]
+            PathExpression [7-12] [count]
+              Identifier(count) [7-12] [count]
+            Star(*) [13-14] [*]
+            OrderBy [15-25] [order by x]
+              OrderingExpression(ASC) [24-25] [x]
+                PathExpression [24-25] [x]
+                  Identifier(x) [24-25] [x]
+      FromClause [27-33] [from T]
+        TablePathExpression [32-33] [T]
+          PathExpression [32-33] [T]
+            Identifier(T) [32-33] [T]
+--
+SELECT
+  count(*
+    ORDER BY x)
+FROM
+  T
+==
+
+select anon_count(*, 0, 1 order by x) from T;
+--
+QueryStatement [0-44] [select anon_count...x) from T]
+  Query [0-44] [select anon_count...x) from T]
+    Select [0-44] [select anon_count...x) from T]
+      SelectList [7-37] [anon_count(*, 0, 1 order by x)]
+        SelectColumn [7-37] [anon_count(*, 0, 1 order by x)]
+          FunctionCall [7-37] [anon_count(*, 0, 1 order by x)]
+            PathExpression [7-17] [anon_count]
+              Identifier(anon_count) [7-17] [anon_count]
+            Star(*) [18-19] [*]
+            IntLiteral(0) [21-22] [0]
+            IntLiteral(1) [24-25] [1]
+            OrderBy [26-36] [order by x]
+              OrderingExpression(ASC) [35-36] [x]
+                PathExpression [35-36] [x]
+                  Identifier(x) [35-36] [x]
+      FromClause [38-44] [from T]
+        TablePathExpression [43-44] [T]
+          PathExpression [43-44] [T]
+            Identifier(T) [43-44] [T]
+--
+SELECT
+  anon_count(*, 0, 1
+    ORDER BY x)
+FROM
+  T
+==
+
+select x, array_agg(y order@1 by y) from T group by x
+--
+QueryStatement [0-53] [select x,...group by x]
+  Query [0-53] [select x,...group by x]
+    Select [0-53] [select x,...group by x]
+      SelectList [7-35] [x, array_agg(y order@1 by y)]
+        SelectColumn [7-8] [x]
+          PathExpression [7-8] [x]
+            Identifier(x) [7-8] [x]
+        SelectColumn [10-35] [array_agg(y order@1 by y)]
+          FunctionCall [10-35] [array_agg(y order@1 by y)]
+            PathExpression [10-19] [array_agg]
+              Identifier(array_agg) [10-19] [array_agg]
+            PathExpression [20-21] [y]
+              Identifier(y) [20-21] [y]
+            OrderBy [22-34] [order@1 by y]
+              Hint [27-29] [@1]
+                IntLiteral(1) [28-29] [1]
+              OrderingExpression(ASC) [33-34] [y]
+                PathExpression [33-34] [y]
+                  Identifier(y) [33-34] [y]
+      FromClause [36-42] [from T]
+        TablePathExpression [41-42] [T]
+          PathExpression [41-42] [T]
+            Identifier(T) [41-42] [T]
+      GroupBy [43-53] [group by x]
+        GroupingItem [52-53] [x]
+          PathExpression [52-53] [x]
+            Identifier(x) [52-53] [x]
+--
+SELECT
+  x,
+  array_agg(y
+    ORDER @1 BY y)
+FROM
+  T
+GROUP BY x
+==
+
+select count(distinct) from T
+--
+QueryStatement [0-29] [select count(distinct) from T]
+  Query [0-29] [select count(distinct) from T]
+    Select [0-29] [select count(distinct) from T]
+      SelectList [7-22] [count(distinct)]
+        SelectColumn [7-22] [count(distinct)]
+          FunctionCall(distinct=true) [7-22] [count(distinct)]
+            PathExpression [7-12] [count]
+              Identifier(count) [7-12] [count]
+      FromClause [23-29] [from T]
+        TablePathExpression [28-29] [T]
+          PathExpression [28-29] [T]
+            Identifier(T) [28-29] [T]
+--
+SELECT
+  count(DISTINCT)
+FROM
+  T
+==
+
+select anon_count(distinct) from T
+--
+QueryStatement [0-34] [select anon_count...ct) from T]
+  Query [0-34] [select anon_count...ct) from T]
+    Select [0-34] [select anon_count...ct) from T]
+      SelectList [7-27] [anon_count(distinct)]
+        SelectColumn [7-27] [anon_count(distinct)]
+          FunctionCall(distinct=true) [7-27] [anon_count(distinct)]
+            PathExpression [7-17] [anon_count]
+              Identifier(anon_count) [7-17] [anon_count]
+      FromClause [28-34] [from T]
+        TablePathExpression [33-34] [T]
+          PathExpression [33-34] [T]
+            Identifier(T) [33-34] [T]
+--
+SELECT
+  anon_count(DISTINCT)
+FROM
+  T
+==
+
+
+select sort_count(order by Key) as c from T;
+--
+QueryStatement [0-43] [select sort_count...s c from T]
+  Query [0-43] [select sort_count...s c from T]
+    Select [0-43] [select sort_count...s c from T]
+      SelectList [7-36] [sort_count(order by Key) as c]
+        SelectColumn [7-36] [sort_count(order by Key) as c]
+          FunctionCall [7-31] [sort_count(order by Key)]
+            PathExpression [7-17] [sort_count]
+              Identifier(sort_count) [7-17] [sort_count]
+            OrderBy [18-30] [order by Key]
+              OrderingExpression(ASC) [27-30] [Key]
+                PathExpression [27-30] [Key]
+                  Identifier(Key) [27-30] [Key]
+          Alias [32-36] [as c]
+            Identifier(c) [35-36] [c]
+      FromClause [37-43] [from T]
+        TablePathExpression [42-43] [T]
+          PathExpression [42-43] [T]
+            Identifier(T) [42-43] [T]
+--
+SELECT
+  sort_count(
+    ORDER BY Key) AS c
+FROM
+  T
+==
+
+select array_agg(Key order by 1)
+from TestTable
+--
+QueryStatement [0-47] [select array_agg...TestTable]
+  Query [0-47] [select array_agg...TestTable]
+    Select [0-47] [select array_agg...TestTable]
+      SelectList [7-32] [array_agg(Key order by 1)]
+        SelectColumn [7-32] [array_agg(Key order by 1)]
+          FunctionCall [7-32] [array_agg(Key order by 1)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-20] [Key]
+              Identifier(Key) [17-20] [Key]
+            OrderBy [21-31] [order by 1]
+              OrderingExpression(ASC) [30-31] [1]
+                IntLiteral(1) [30-31] [1]
+      FromClause [33-47] [from TestTable]
+        TablePathExpression [38-47] [TestTable]
+          PathExpression [38-47] [TestTable]
+            Identifier(TestTable) [38-47] [TestTable]
+--
+SELECT
+  array_agg(Key
+    ORDER BY 1)
+FROM
+  TestTable
+==
+
+select array_agg(x order by x limit 5) as a from T
+--
+QueryStatement [0-50] [select array_agg...as a from T]
+  Query [0-50] [select array_agg...as a from T]
+    Select [0-50] [select array_agg...as a from T]
+      SelectList [7-43] [array_agg(...limit 5) as a]
+        SelectColumn [7-43] [array_agg(...limit 5) as a]
+          FunctionCall [7-38] [array_agg(...x limit 5)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            OrderBy [19-29] [order by x]
+              OrderingExpression(ASC) [28-29] [x]
+                PathExpression [28-29] [x]
+                  Identifier(x) [28-29] [x]
+            LimitOffset [30-37] [limit 5]
+              IntLiteral(5) [36-37] [5]
+          Alias [39-43] [as a]
+            Identifier(a) [42-43] [a]
+      FromClause [44-50] [from T]
+        TablePathExpression [49-50] [T]
+          PathExpression [49-50] [T]
+            Identifier(T) [49-50] [T]
+--
+SELECT
+  array_agg(x
+    ORDER BY x
+    LIMIT 5) AS a
+FROM
+  T
+==
+
+select array_agg(x order by x limit 5 offset 2) as a from T
+--
+QueryStatement [0-59] [select array_agg...as a from T]
+  Query [0-59] [select array_agg...as a from T]
+    Select [0-59] [select array_agg...as a from T]
+      SelectList [7-52] [array_agg(...offset 2) as a]
+        SelectColumn [7-52] [array_agg(...offset 2) as a]
+          FunctionCall [7-47] [array_agg(...offset 2)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            OrderBy [19-29] [order by x]
+              OrderingExpression(ASC) [28-29] [x]
+                PathExpression [28-29] [x]
+                  Identifier(x) [28-29] [x]
+            LimitOffset [30-46] [limit 5 offset 2]
+              IntLiteral(5) [36-37] [5]
+              IntLiteral(2) [45-46] [2]
+          Alias [48-52] [as a]
+            Identifier(a) [51-52] [a]
+      FromClause [53-59] [from T]
+        TablePathExpression [58-59] [T]
+          PathExpression [58-59] [T]
+            Identifier(T) [58-59] [T]
+--
+SELECT
+  array_agg(x
+    ORDER BY x
+    LIMIT 5 OFFSET 2) AS a
+FROM
+  T
+==
+
+select array_agg(x limit 5) as a from T
+--
+QueryStatement [0-39] [select array_agg...as a from T]
+  Query [0-39] [select array_agg...as a from T]
+    Select [0-39] [select array_agg...as a from T]
+      SelectList [7-32] [array_agg(x limit 5) as a]
+        SelectColumn [7-32] [array_agg(x limit 5) as a]
+          FunctionCall [7-27] [array_agg(x limit 5)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            LimitOffset [19-26] [limit 5]
+              IntLiteral(5) [25-26] [5]
+          Alias [28-32] [as a]
+            Identifier(a) [31-32] [a]
+      FromClause [33-39] [from T]
+        TablePathExpression [38-39] [T]
+          PathExpression [38-39] [T]
+            Identifier(T) [38-39] [T]
+--
+SELECT
+  array_agg(x
+    LIMIT 5) AS a
+FROM
+  T
+==
+
+select x, array_agg(y order by x desc, z desc limit 10) from T group by x
+--
+QueryStatement [0-73] [select x,...group by x]
+  Query [0-73] [select x,...group by x]
+    Select [0-73] [select x,...group by x]
+      SelectList [7-55] [x, array_agg...limit 10)]
+        SelectColumn [7-8] [x]
+          PathExpression [7-8] [x]
+            Identifier(x) [7-8] [x]
+        SelectColumn [10-55] [array_agg(...limit 10)]
+          FunctionCall [10-55] [array_agg(...limit 10)]
+            PathExpression [10-19] [array_agg]
+              Identifier(array_agg) [10-19] [array_agg]
+            PathExpression [20-21] [y]
+              Identifier(y) [20-21] [y]
+            OrderBy [22-45] [order by x desc, z desc]
+              OrderingExpression(DESC) [31-37] [x desc]
+                PathExpression [31-32] [x]
+                  Identifier(x) [31-32] [x]
+              OrderingExpression(DESC) [39-45] [z desc]
+                PathExpression [39-40] [z]
+                  Identifier(z) [39-40] [z]
+            LimitOffset [46-54] [limit 10]
+              IntLiteral(10) [52-54] [10]
+      FromClause [56-62] [from T]
+        TablePathExpression [61-62] [T]
+          PathExpression [61-62] [T]
+            Identifier(T) [61-62] [T]
+      GroupBy [63-73] [group by x]
+        GroupingItem [72-73] [x]
+          PathExpression [72-73] [x]
+            Identifier(x) [72-73] [x]
+--
+SELECT
+  x,
+  array_agg(y
+    ORDER BY x DESC, z DESC
+    LIMIT 10)
+FROM
+  T
+GROUP BY x
+==
+
+select array_agg(x offset 2) as a from T
+--
+ERROR: Syntax error: Expected ")" but got keyword OFFSET [at 1:20]
+select array_agg(x offset 2) as a from T
+                   ^
+==
+
+select ANY_VALUE(true having max 1) as a from T having a;
+--
+QueryStatement [0-56] [select ANY_VALUE...T having a]
+  Query [0-56] [select ANY_VALUE...T having a]
+    Select [0-56] [select ANY_VALUE...T having a]
+      SelectList [7-40] [ANY_VALUE(...max 1) as a]
+        SelectColumn [7-40] [ANY_VALUE(...max 1) as a]
+          FunctionCall [7-35] [ANY_VALUE(true having max 1)]
+            PathExpression [7-16] [ANY_VALUE]
+              Identifier(ANY_VALUE) [7-16] [ANY_VALUE]
+            BooleanLiteral(true) [17-21] [true]
+            HavingModifier [22-34] [having max 1]
+              IntLiteral(1) [33-34] [1]
+          Alias [36-40] [as a]
+            Identifier(a) [39-40] [a]
+      FromClause [41-47] [from T]
+        TablePathExpression [46-47] [T]
+          PathExpression [46-47] [T]
+            Identifier(T) [46-47] [T]
+      Having [48-56] [having a]
+        PathExpression [55-56] [a]
+          Identifier(a) [55-56] [a]
+--
+SELECT
+  ANY_VALUE(true
+    HAVING MAX 1) AS a
+FROM
+  T
+HAVING a
+
+==
+
+# HAVING for aggregation function with *.
+select COUNT(* having max 1) as a from T having a;
+--
+QueryStatement [0-49] [select COUNT...T having a]
+  Query [0-49] [select COUNT...T having a]
+    Select [0-49] [select COUNT...T having a]
+      SelectList [7-33] [COUNT(* having max 1) as a]
+        SelectColumn [7-33] [COUNT(* having max 1) as a]
+          FunctionCall [7-28] [COUNT(* having max 1)]
+            PathExpression [7-12] [COUNT]
+              Identifier(COUNT) [7-12] [COUNT]
+            Star(*) [13-14] [*]
+            HavingModifier [15-27] [having max 1]
+              IntLiteral(1) [26-27] [1]
+          Alias [29-33] [as a]
+            Identifier(a) [32-33] [a]
+      FromClause [34-40] [from T]
+        TablePathExpression [39-40] [T]
+          PathExpression [39-40] [T]
+            Identifier(T) [39-40] [T]
+      Having [41-49] [having a]
+        PathExpression [48-49] [a]
+          Identifier(a) [48-49] [a]
+--
+SELECT
+  COUNT(*
+    HAVING MAX 1) AS a
+FROM
+  T
+HAVING a
+==
+
+# HAVING for aggregation function with *.
+select ANON_COUNT(*, 0, 1 having max 1) as a from T having a;
+--
+QueryStatement [0-60] [select ANON_COUNT...T having a]
+  Query [0-60] [select ANON_COUNT...T having a]
+    Select [0-60] [select ANON_COUNT...T having a]
+      SelectList [7-44] [ANON_COUNT...max 1) as a]
+        SelectColumn [7-44] [ANON_COUNT...max 1) as a]
+          FunctionCall [7-39] [ANON_COUNT...having max 1)]
+            PathExpression [7-17] [ANON_COUNT]
+              Identifier(ANON_COUNT) [7-17] [ANON_COUNT]
+            Star(*) [18-19] [*]
+            IntLiteral(0) [21-22] [0]
+            IntLiteral(1) [24-25] [1]
+            HavingModifier [26-38] [having max 1]
+              IntLiteral(1) [37-38] [1]
+          Alias [40-44] [as a]
+            Identifier(a) [43-44] [a]
+      FromClause [45-51] [from T]
+        TablePathExpression [50-51] [T]
+          PathExpression [50-51] [T]
+            Identifier(T) [50-51] [T]
+      Having [52-60] [having a]
+        PathExpression [59-60] [a]
+          Identifier(a) [59-60] [a]
+--
+SELECT
+  ANON_COUNT(*, 0, 1
+    HAVING MAX 1) AS a
+FROM
+  T
+HAVING a
+==
+
+# HAVING for aggregation function with no arguments.
+select SUM(having max 1) as a from T having a;
+--
+QueryStatement [0-45] [select SUM...T having a]
+  Query [0-45] [select SUM...T having a]
+    Select [0-45] [select SUM...T having a]
+      SelectList [7-29] [SUM(having max 1) as a]
+        SelectColumn [7-29] [SUM(having max 1) as a]
+          FunctionCall [7-24] [SUM(having max 1)]
+            PathExpression [7-10] [SUM]
+              Identifier(SUM) [7-10] [SUM]
+            HavingModifier [11-23] [having max 1]
+              IntLiteral(1) [22-23] [1]
+          Alias [25-29] [as a]
+            Identifier(a) [28-29] [a]
+      FromClause [30-36] [from T]
+        TablePathExpression [35-36] [T]
+          PathExpression [35-36] [T]
+            Identifier(T) [35-36] [T]
+      Having [37-45] [having a]
+        PathExpression [44-45] [a]
+          Identifier(a) [44-45] [a]
+--
+SELECT
+  SUM(
+    HAVING MAX 1) AS a
+FROM
+  T
+HAVING a
+==
+
+select max(max having min max) as a from T having a;
+--
+QueryStatement [0-51] [select max...T having a]
+  Query [0-51] [select max...T having a]
+    Select [0-51] [select max...T having a]
+      SelectList [7-35] [max(max having min max) as a]
+        SelectColumn [7-35] [max(max having min max) as a]
+          FunctionCall [7-30] [max(max having min max)]
+            PathExpression [7-10] [max]
+              Identifier(max) [7-10] [max]
+            PathExpression [11-14] [max]
+              Identifier(max) [11-14] [max]
+            HavingModifier [15-29] [having min max]
+              PathExpression [26-29] [max]
+                Identifier(max) [26-29] [max]
+          Alias [31-35] [as a]
+            Identifier(a) [34-35] [a]
+      FromClause [36-42] [from T]
+        TablePathExpression [41-42] [T]
+          PathExpression [41-42] [T]
+            Identifier(T) [41-42] [T]
+      Having [43-51] [having a]
+        PathExpression [50-51] [a]
+          Identifier(a) [50-51] [a]
+--
+
+SELECT
+  max(max
+    HAVING MIN max) AS a
+FROM
+  T
+HAVING a
+
+==
+
+select array_agg(x having min y order by z limit 1 offset 2) as a from T having a;
+--
+QueryStatement [0-81] [select array_agg...T having a]
+  Query [0-81] [select array_agg...T having a]
+    Select [0-81] [select array_agg...T having a]
+      SelectList [7-65] [array_agg(...offset 2) as a]
+        SelectColumn [7-65] [array_agg(...offset 2) as a]
+          FunctionCall [7-60] [array_agg(...offset 2)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            HavingModifier [19-31] [having min y]
+              PathExpression [30-31] [y]
+                Identifier(y) [30-31] [y]
+            OrderBy [32-42] [order by z]
+              OrderingExpression(ASC) [41-42] [z]
+                PathExpression [41-42] [z]
+                  Identifier(z) [41-42] [z]
+            LimitOffset [43-59] [limit 1 offset 2]
+              IntLiteral(1) [49-50] [1]
+              IntLiteral(2) [58-59] [2]
+          Alias [61-65] [as a]
+            Identifier(a) [64-65] [a]
+      FromClause [66-72] [from T]
+        TablePathExpression [71-72] [T]
+          PathExpression [71-72] [T]
+            Identifier(T) [71-72] [T]
+      Having [73-81] [having a]
+        PathExpression [80-81] [a]
+          Identifier(a) [80-81] [a]
+--
+SELECT
+  array_agg(x
+    HAVING MIN y
+    ORDER BY z
+    LIMIT 1 OFFSET 2) AS a
+FROM
+  T
+HAVING a
+==
+
+select any_value(x having y) as a from T having a;
+--
+ERROR: Syntax error: Expected keyword MAX or keyword MIN but got identifier "y" [at 1:27]
+select any_value(x having y) as a from T having a;
+                          ^
+==
+
+select any_value(x having any_value y) as a from T having a;
+--
+ERROR: Syntax error: Expected keyword MAX or keyword MIN but got identifier "any_value" [at 1:27]
+select any_value(x having any_value y) as a from T having a;
+                          ^
+==
+
+select array_agg(x order by z having min y) as a from T having a;
+--
+ERROR: Syntax error: Expected ")" but got keyword HAVING [at 1:31]
+select array_agg(x order by z having min y) as a from T having a;
+                              ^
+==
+
+select array_agg(x limit 1 offset 2 having min y) as a from T having a;
+--
+ERROR: Syntax error: Expected ")" but got keyword HAVING [at 1:37]
+select array_agg(x limit 1 offset 2 having min y) as a from T having a;
+                                    ^
+==
+
+# CLAMPED BETWEEN with leading identifier or star argument and optionally
+# multiple arguments.
+select array_agg({{*|x}}{{|, y}} clamped between 1 and 2) as a from T;
+--
+ALTERNATION GROUP: *,
+--
+QueryStatement [0-55] [select array_agg...as a from T]
+  Query [0-55] [select array_agg...as a from T]
+    Select [0-55] [select array_agg...as a from T]
+      SelectList [7-48] [array_agg(...and 2) as a]
+        SelectColumn [7-48] [array_agg(...and 2) as a]
+          FunctionCall [7-43] [array_agg(...between 1 and 2)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            Star(*) [17-18] [*]
+            ClampedBetweenModifier [19-42] [clamped between 1 and 2]
+              IntLiteral(1) [35-36] [1]
+              IntLiteral(2) [41-42] [2]
+          Alias [44-48] [as a]
+            Identifier(a) [47-48] [a]
+      FromClause [49-55] [from T]
+        TablePathExpression [54-55] [T]
+          PathExpression [54-55] [T]
+            Identifier(T) [54-55] [T]
+--
+SELECT
+  array_agg(*
+    CLAMPED BETWEEN 1 AND 2) AS a
+FROM
+  T
+--
+ALTERNATION GROUP: *,, y
+--
+QueryStatement [0-58] [select array_agg...as a from T]
+  Query [0-58] [select array_agg...as a from T]
+    Select [0-58] [select array_agg...as a from T]
+      SelectList [7-51] [array_agg(...and 2) as a]
+        SelectColumn [7-51] [array_agg(...and 2) as a]
+          FunctionCall [7-46] [array_agg(...between 1 and 2)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            Star(*) [17-18] [*]
+            PathExpression [20-21] [y]
+              Identifier(y) [20-21] [y]
+            ClampedBetweenModifier [22-45] [clamped between 1 and 2]
+              IntLiteral(1) [38-39] [1]
+              IntLiteral(2) [44-45] [2]
+          Alias [47-51] [as a]
+            Identifier(a) [50-51] [a]
+      FromClause [52-58] [from T]
+        TablePathExpression [57-58] [T]
+          PathExpression [57-58] [T]
+            Identifier(T) [57-58] [T]
+--
+SELECT
+  array_agg(*, y
+    CLAMPED BETWEEN 1 AND 2) AS a
+FROM
+  T
+--
+ALTERNATION GROUP: x,
+--
+QueryStatement [0-55] [select array_agg...as a from T]
+  Query [0-55] [select array_agg...as a from T]
+    Select [0-55] [select array_agg...as a from T]
+      SelectList [7-48] [array_agg(...and 2) as a]
+        SelectColumn [7-48] [array_agg(...and 2) as a]
+          FunctionCall [7-43] [array_agg(...between 1 and 2)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            ClampedBetweenModifier [19-42] [clamped between 1 and 2]
+              IntLiteral(1) [35-36] [1]
+              IntLiteral(2) [41-42] [2]
+          Alias [44-48] [as a]
+            Identifier(a) [47-48] [a]
+      FromClause [49-55] [from T]
+        TablePathExpression [54-55] [T]
+          PathExpression [54-55] [T]
+            Identifier(T) [54-55] [T]
+--
+SELECT
+  array_agg(x
+    CLAMPED BETWEEN 1 AND 2) AS a
+FROM
+  T
+--
+ALTERNATION GROUP: x,, y
+--
+QueryStatement [0-58] [select array_agg...as a from T]
+  Query [0-58] [select array_agg...as a from T]
+    Select [0-58] [select array_agg...as a from T]
+      SelectList [7-51] [array_agg(...and 2) as a]
+        SelectColumn [7-51] [array_agg(...and 2) as a]
+          FunctionCall [7-46] [array_agg(...between 1 and 2)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            PathExpression [20-21] [y]
+              Identifier(y) [20-21] [y]
+            ClampedBetweenModifier [22-45] [clamped between 1 and 2]
+              IntLiteral(1) [38-39] [1]
+              IntLiteral(2) [44-45] [2]
+          Alias [47-51] [as a]
+            Identifier(a) [50-51] [a]
+      FromClause [52-58] [from T]
+        TablePathExpression [57-58] [T]
+          PathExpression [57-58] [T]
+            Identifier(T) [57-58] [T]
+--
+SELECT
+  array_agg(x, y
+    CLAMPED BETWEEN 1 AND 2) AS a
+FROM
+  T
+==
+
+# The first use of CLAMPED BETWEEN is treated as identifier BETWEEN, since use
+# of CLAMPED BETWEEN as a modifier is restricted to functions with arguments as
+# demonstrated with the second use. CLAMPED as an identifier or alias does not
+# require backquoting.
+select array_agg(clamped between 1 and 2{{| clamped between 1 and 2}}) as clamped from T;
+--
+ALTERNATION GROUP: <empty>
+--
+QueryStatement [0-59] [select array_agg...mped from T]
+  Query [0-59] [select array_agg...mped from T]
+    Select [0-59] [select array_agg...mped from T]
+      SelectList [7-52] [array_agg(...as clamped]
+        SelectColumn [7-52] [array_agg(...as clamped]
+          FunctionCall [7-41] [array_agg(...between 1 and 2)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            BetweenExpression(BETWEEN) [25-40] [between 1 and 2]
+              PathExpression [17-24] [clamped]
+                Identifier(clamped) [17-24] [clamped]
+              IntLiteral(1) [33-34] [1]
+              IntLiteral(2) [39-40] [2]
+          Alias [42-52] [as clamped]
+            Identifier(clamped) [45-52] [clamped]
+      FromClause [53-59] [from T]
+        TablePathExpression [58-59] [T]
+          PathExpression [58-59] [T]
+            Identifier(T) [58-59] [T]
+--
+SELECT
+  array_agg(clamped BETWEEN 1 AND 2) AS clamped
+FROM
+  T
+--
+ALTERNATION GROUP:  clamped between 1 and 2
+--
+QueryStatement [0-83] [select array_agg...mped from T]
+  Query [0-83] [select array_agg...mped from T]
+    Select [0-83] [select array_agg...mped from T]
+      SelectList [7-76] [array_agg(...as clamped]
+        SelectColumn [7-76] [array_agg(...as clamped]
+          FunctionCall [7-65] [array_agg(...between 1 and 2)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            BetweenExpression(BETWEEN) [25-40] [between 1 and 2]
+              PathExpression [17-24] [clamped]
+                Identifier(clamped) [17-24] [clamped]
+              IntLiteral(1) [33-34] [1]
+              IntLiteral(2) [39-40] [2]
+            ClampedBetweenModifier [41-64] [clamped between 1 and 2]
+              IntLiteral(1) [57-58] [1]
+              IntLiteral(2) [63-64] [2]
+          Alias [66-76] [as clamped]
+            Identifier(clamped) [69-76] [clamped]
+      FromClause [77-83] [from T]
+        TablePathExpression [82-83] [T]
+          PathExpression [82-83] [T]
+            Identifier(T) [82-83] [T]
+--
+SELECT
+  array_agg(clamped BETWEEN 1 AND 2
+    CLAMPED BETWEEN 1 AND 2) AS clamped
+FROM
+  T
+==
+
+# CLAMPED BETWEEN is ordered between HAVING and ORDER BY
+select array_agg(x having min y clamped between 1 and 2 {{order by z|limit 1 offset 2}}) as a from T;
+--
+ALTERNATION GROUP: order by z
+--
+QueryStatement [0-79] [select array_agg...as a from T]
+  Query [0-79] [select array_agg...as a from T]
+    Select [0-79] [select array_agg...as a from T]
+      SelectList [7-72] [array_agg(...by z) as a]
+        SelectColumn [7-72] [array_agg(...by z) as a]
+          FunctionCall [7-67] [array_agg(...order by z)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            HavingModifier [19-31] [having min y]
+              PathExpression [30-31] [y]
+                Identifier(y) [30-31] [y]
+            ClampedBetweenModifier [32-55] [clamped between 1 and 2]
+              IntLiteral(1) [48-49] [1]
+              IntLiteral(2) [54-55] [2]
+            OrderBy [56-66] [order by z]
+              OrderingExpression(ASC) [65-66] [z]
+                PathExpression [65-66] [z]
+                  Identifier(z) [65-66] [z]
+          Alias [68-72] [as a]
+            Identifier(a) [71-72] [a]
+      FromClause [73-79] [from T]
+        TablePathExpression [78-79] [T]
+          PathExpression [78-79] [T]
+            Identifier(T) [78-79] [T]
+--
+SELECT
+  array_agg(x
+    HAVING MIN y
+    CLAMPED BETWEEN 1 AND 2
+    ORDER BY z) AS a
+FROM
+  T
+--
+ALTERNATION GROUP: limit 1 offset 2
+--
+QueryStatement [0-85] [select array_agg...as a from T]
+  Query [0-85] [select array_agg...as a from T]
+    Select [0-85] [select array_agg...as a from T]
+      SelectList [7-78] [array_agg(...offset 2) as a]
+        SelectColumn [7-78] [array_agg(...offset 2) as a]
+          FunctionCall [7-73] [array_agg(...offset 2)]
+            PathExpression [7-16] [array_agg]
+              Identifier(array_agg) [7-16] [array_agg]
+            PathExpression [17-18] [x]
+              Identifier(x) [17-18] [x]
+            HavingModifier [19-31] [having min y]
+              PathExpression [30-31] [y]
+                Identifier(y) [30-31] [y]
+            ClampedBetweenModifier [32-55] [clamped between 1 and 2]
+              IntLiteral(1) [48-49] [1]
+              IntLiteral(2) [54-55] [2]
+            LimitOffset [56-72] [limit 1 offset 2]
+              IntLiteral(1) [62-63] [1]
+              IntLiteral(2) [71-72] [2]
+          Alias [74-78] [as a]
+            Identifier(a) [77-78] [a]
+      FromClause [79-85] [from T]
+        TablePathExpression [84-85] [T]
+          PathExpression [84-85] [T]
+            Identifier(T) [84-85] [T]
+--
+SELECT
+  array_agg(x
+    HAVING MIN y
+    CLAMPED BETWEEN 1 AND 2
+    LIMIT 1 OFFSET 2) AS a
+FROM
+  T
+==
+
+# Appearance of a leading modifier as a trailing modifier is not allowed.
+select array_agg(x clamped between 1 and 2 having min y) as a from T;
+--
+ERROR: Syntax error: Expected ")" but got keyword HAVING [at 1:44]
+select array_agg(x clamped between 1 and 2 having min y) as a from T;
+                                           ^
+==
+
+# Appearance of a trailing modifier as a leading modifier is not allowed.
+select array_agg({{x order by z|limit 1 offset 2}} clamped between 1 and 2 having min y) as a from T;
+--
+ALTERNATION GROUP: x order by z
+--
+ERROR: Syntax error: Expected ")" but got keyword CLAMPED [at 1:31]
+select array_agg(x order by z clamped between 1 and 2 having min y) as a from T;
+                              ^
+--
+ALTERNATION GROUP: limit 1 offset 2
+--
+ERROR: Syntax error: Expected ")" but got keyword CLAMPED [at 1:35]
+select array_agg(limit 1 offset 2 clamped between 1 and 2 having min y) as a ...
+                                  ^

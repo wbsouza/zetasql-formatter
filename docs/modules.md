@@ -35,14 +35,12 @@ Modules support the following statements:
 
 + `MODULE`
 + `IMPORT MODULE`
-+ `CREATE ( PUBLIC | PRIVATE ) [ TABLE ] FUNCTION`
++ `CREATE ( PUBLIC | PRIVATE ) [ ( TABLE | AGGREGATE ) ] FUNCTION`
 + `CREATE ( PUBLIC | PRIVATE ) CONSTANT`
 
-Modules do not support statements that return results or have side effects.  For
-example, the following statements are not supported inside of modules:
-
-+ `SELECT` statements
-+ `UPDATE` statements
+Modules do not support statements that return results or have side effects.
+Modules only support defining an object once and do not support modifying an
+object after it is defined.
 
 ### Declaring a module
 
@@ -72,6 +70,11 @@ IMPORT MODULE x.y.z;
 ```
 
 The `IMPORT` statement should not include the `.sqlm` file extension.
+
+Note:  If you import module `x.y.z`, ZetaSQL looks for the module at
+`search_path/x/y/z.sqlm`. If the module is not found, ZetaSQL looks for
+the module at `search_path/x/y/z/z.sqlm` and you can import it with either
+`IMPORT MODULE x.y.z` or `IMPORT MODULE x.y.z.z`.
 
 ### Creating objects within modules
 
@@ -289,6 +292,6 @@ IMPORT MODULE x.y.z AS baz;
 CREATE PUBLIC FUNCTION foo(d int) AS (baz.bar(d));
 ```
 
-[user-defined-functions]: https://github.com/google/zetasql/blob/master/docs/user-defined-functions
-[table-valued-functions]: https://github.com/google/zetasql/blob/master/docs/user-defined-functions#tvfs
+[user-defined-functions]: https://github.com/google/zetasql/blob/master/docs/user-defined-functions.md
+[table-valued-functions]: https://github.com/google/zetasql/blob/master/docs/user-defined-functions.md#tvfs
 

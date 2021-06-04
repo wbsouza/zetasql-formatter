@@ -25,6 +25,7 @@
 #include "zetasql/scripting/script_segment.h"
 #include "zetasql/base/statusor.h"
 #include "absl/strings/str_join.h"
+#include "absl/strings/substitute.h"
 #include "zetasql/base/status.h"
 #include "zetasql/base/status_payload.h"
 
@@ -83,6 +84,35 @@ inline zetasql_base::StatusBuilder AssignmentToReadOnlySystemVariable(
   return MakeScriptExceptionAt(assignment->system_variable())
          << "Assignment to read-only system variable @@"
          << assignment->system_variable()->path()->ToIdentifierPathString();
+}
+
+// Returns a handleable error indicating that a script variable does not exist.
+// <ast_var> denotes both the variable name, which will appear in the error
+// message and the location.
+inline absl::Status MakeUndeclaredVariableError(const ASTIdentifier* ast_var) {
+  return MakeScriptExceptionAt(ast_var)
+         << "Undeclared variable: " << ast_var->GetAsString();
+}
+
+inline absl::Status MakeUnknownSystemVariableError(
+    const ASTSystemVariableExpr* expr) {
+  return MakeScriptExceptionAt(expr) << "System variable not found: @@"
+                                     << expr->path()->ToIdentifierPathString();
+}
+
+// Returns OK if <call_statement> contains <num_expected_arguments> arguments.
+// Otherwise, returns an error status indicating that the argument count is
+// incorrect.
+inline absl::Status CheckProcedureArgumentCount(
+    const ASTCallStatement* call_statement, int num_expected_arguments) {
+  if (call_statement->arguments().size() != num_expected_arguments) {
+    return MakeScriptExceptionAt(call_statement->procedure_name())
+           << absl::Substitute(
+                  "Procedure $0 expects $1 argument(s), $2 provided",
+                  call_statement->procedure_name()->ToIdentifierPathString(),
+                  num_expected_arguments, call_statement->arguments().size());
+  }
+  return absl::OkStatus();
 }
 
 }  // namespace zetasql

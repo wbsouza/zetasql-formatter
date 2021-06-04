@@ -16,16 +16,23 @@
 
 #include "zetasql/public/types/simple_type.h"
 
+#include <cstdint>
 #include <string>
 
 #include "zetasql/common/string_util.h"
 #include "zetasql/public/functions/date_time_util.h"
+#include "zetasql/public/interval_value.h"
 #include "zetasql/public/language_options.h"
+#include "zetasql/public/options.pb.h"
 #include "zetasql/public/strings.h"
 #include "zetasql/public/types/internal_utils.h"
+#include "zetasql/public/types/type_parameters.h"
 #include "zetasql/public/types/value_representations.h"
 #include "zetasql/public/value.pb.h"
 #include "zetasql/public/value_content.h"
+#include "absl/status/status.h"
+#include "absl/strings/substitute.h"
+#include "zetasql/base/ret_check.h"
 #include "zetasql/base/time_proto_util.h"
 
 namespace zetasql {
@@ -42,6 +49,12 @@ using TimeValueContentType = int32_t;       // Used with TYPE_TIME.
 using DateTimeValueContentType = int64_t;   // Used with TYPE_DATETIME.
 
 namespace {
+
+// Constants for NUMERIC / BIGNUMERIC type parameters.
+constexpr int kNumericMaxPrecision = 29;
+constexpr int kBigNumericMaxPrecision = 38;
+constexpr int kNumericMaxScale = 9;
+constexpr int kBigNumericMaxScale = 38;
 
 // Specifies the type kind that a type name maps to, and when the type name is
 // enabled. Even when the type name is enabled, the type kind might still be
@@ -76,12 +89,14 @@ const std::map<absl::string_view, TypeNameInfo>& SimpleTypeNameInfoMap() {
       {"timestamp", {TYPE_TIMESTAMP}},
       {"time", {TYPE_TIME}},
       {"datetime", {TYPE_DATETIME}},
+      {"interval", {TYPE_INTERVAL}},
       {"geography", {TYPE_GEOGRAPHY}},
       {"numeric", {TYPE_NUMERIC}},
       {"decimal", {TYPE_NUMERIC, false, FEATURE_V_1_3_DECIMAL_ALIAS}},
       {"bignumeric", {TYPE_BIGNUMERIC}},
       {"bigdecimal", {TYPE_BIGNUMERIC, false, FEATURE_V_1_3_DECIMAL_ALIAS}},
       {"json", {TYPE_JSON}},
+      {"tokenlist", {TYPE_TOKENLIST}},
   };
   return *result;
 }
@@ -112,10 +127,12 @@ const std::map<TypeKind, TypeKindInfo>& SimpleTypeKindInfoMap() {
       {TYPE_TIMESTAMP, {}},
       {TYPE_TIME, {false, FEATURE_V_1_2_CIVIL_TIME}},
       {TYPE_DATETIME, {false, FEATURE_V_1_2_CIVIL_TIME}},
+      {TYPE_INTERVAL, {false, FEATURE_INTERVAL_TYPE}},
       {TYPE_GEOGRAPHY, {false, FEATURE_GEOGRAPHY}},
       {TYPE_NUMERIC, {false, FEATURE_NUMERIC_TYPE}},
       {TYPE_BIGNUMERIC, {false, FEATURE_BIGNUMERIC_TYPE}},
       {TYPE_JSON, {false, FEATURE_JSON_TYPE}},
+      {TYPE_TOKENLIST, {false, FEATURE_TOKENIZED_SEARCH}},
   };
   return *result;
 }
@@ -138,7 +155,7 @@ std::map<absl::string_view, TypeInfo>* BuildSimpleTypeInfoMap() {
     const TypeNameInfo& type_name_info = item.second;
     TypeKind type_kind = type_name_info.type_kind;
     auto itr = type_kind_info_map.find(type_kind);
-    CHECK(itr != type_kind_info_map.end())
+    ZETASQL_CHECK(itr != type_kind_info_map.end())
         << TypeKind_Name(type_kind) << " not found in SimpleTypeKindInfoMap()";
     const TypeKindInfo& type_kind_info = itr->second;
     result->emplace(
@@ -174,6 +191,10 @@ std::string GetJsonString(const ValueContent& value) {
   return value.GetAs<internal::JSONRef*>()->ToString();
 }
 
+const IntervalValue& GetIntervalValue(const ValueContent& value) {
+  return value.GetAs<internal::IntervalRef*>()->value();
+}
+
 std::string AddTypePrefix(absl::string_view value, const Type* type,
                           ProductMode mode) {
   return absl::StrCat(type->TypeName(mode), " ", ToStringLiteral(value));
@@ -203,7 +224,7 @@ bool ReferencedValueLess(const ValueContent& x, const ValueContent& y) {
 
 SimpleType::SimpleType(const TypeFactory* factory, TypeKind kind)
     : Type(factory, kind) {
-  CHECK(IsSimpleType(kind)) << kind;
+  ZETASQL_CHECK(IsSimpleType(kind)) << kind;
 }
 
 SimpleType::~SimpleType() {
@@ -245,6 +266,36 @@ std::string SimpleType::TypeName(ProductMode mode) const {
   return TypeKindToString(kind(), mode);
 }
 
+zetasql_base::StatusOr<std::string> SimpleType::TypeNameWithParameters(
+    const TypeParameters& type_params, ProductMode mode) const {
+  if (type_params.IsStructOrArrayParameters() ||
+      type_params.IsExtendedTypeParameters()) {
+    return MakeSqlError()
+           << "Input type parameter does not correspond to SimpleType";
+  }
+  std::string type_param_name = "";
+  if (type_params.IsNumericTypeParameters()) {
+    if (type_params.numeric_type_parameters().has_is_max_precision()) {
+      type_param_name = "(MAX, ";
+    } else {
+      type_param_name = absl::Substitute(
+          "($0, ", type_params.numeric_type_parameters().precision());
+    }
+    absl::StrAppend(
+        &type_param_name,
+        absl::Substitute("$0)", type_params.numeric_type_parameters().scale()));
+  }
+  if (type_params.IsStringTypeParameters()) {
+    if (type_params.string_type_parameters().has_is_max_length()) {
+      type_param_name = "(MAX)";
+    } else {
+      type_param_name = absl::Substitute(
+          "($0)", type_params.string_type_parameters().max_length());
+    }
+  }
+  return absl::StrCat(TypeName(mode), type_param_name);
+}
+
 TypeKind SimpleType::GetTypeKindIfSimple(
     absl::string_view type_name, ProductMode mode,
     const std::set<LanguageFeature>* language_features) {
@@ -278,6 +329,7 @@ bool SimpleType::SupportsGroupingImpl(const LanguageOptions& language_options,
   const bool supports_grouping =
       !this->IsGeography() &&
       !this->IsJson() &&
+      !this->IsTokenList() &&
       !(this->IsFloatingPoint() && language_options.LanguageFeatureEnabled(
                                        FEATURE_DISALLOW_GROUP_BY_FLOAT));
   if (no_grouping_type != nullptr) {
@@ -296,6 +348,7 @@ static bool DoesValueContentUseSimpleReferenceCounted(TypeKind kind) {
     case TYPE_GEOGRAPHY:
     case TYPE_NUMERIC:
     case TYPE_BIGNUMERIC:
+    case TYPE_INTERVAL:
     case TYPE_JSON:
       return true;
     default:
@@ -303,19 +356,28 @@ static bool DoesValueContentUseSimpleReferenceCounted(TypeKind kind) {
   }
 }
 
-void SimpleType::CopyValueContent(const ValueContent& from,
-                                  ValueContent* to) const {
-  if (DoesValueContentUseSimpleReferenceCounted(kind())) {
+void SimpleType::CopyValueContent(TypeKind kind, const ValueContent& from,
+                                  ValueContent* to) {
+  if (DoesValueContentUseSimpleReferenceCounted(kind)) {
     from.GetAs<zetasql_base::SimpleReferenceCounted*>()->Ref();
   }
 
   *to = from;
 }
 
-void SimpleType::ClearValueContent(const ValueContent& value) const {
-  if (DoesValueContentUseSimpleReferenceCounted(kind())) {
+void SimpleType::CopyValueContent(const ValueContent& from,
+                                  ValueContent* to) const {
+  CopyValueContent(kind(), from, to);
+}
+
+void SimpleType::ClearValueContent(TypeKind kind, const ValueContent& value) {
+  if (DoesValueContentUseSimpleReferenceCounted(kind)) {
     value.GetAs<zetasql_base::SimpleReferenceCounted*>()->Unref();
   }
+}
+
+void SimpleType::ClearValueContent(const ValueContent& value) const {
+  ClearValueContent(kind(), value);
 }
 
 uint64_t SimpleType::GetValueContentExternallyAllocatedByteSize(
@@ -354,9 +416,11 @@ absl::HashState SimpleType::HashValueContent(const ValueContent& value,
     case TYPE_INT64:
       return absl::HashState::combine(std::move(state), value.GetAs<int64_t>());
     case TYPE_UINT32:
-      return absl::HashState::combine(std::move(state), value.GetAs<uint32_t>());
+      return absl::HashState::combine(std::move(state),
+                                      value.GetAs<uint32_t>());
     case TYPE_UINT64:
-      return absl::HashState::combine(std::move(state), value.GetAs<uint64_t>());
+      return absl::HashState::combine(std::move(state),
+                                      value.GetAs<uint64_t>());
     case TYPE_BOOL:
       return absl::HashState::combine(std::move(state), value.GetAs<bool>());
     case TYPE_FLOAT: {
@@ -390,6 +454,9 @@ absl::HashState SimpleType::HashValueContent(const ValueContent& value,
       return absl::HashState::combine(std::move(state),
                                       value.GetAs<DateTimeValueContentType>(),
                                       value.simple_type_extended_content_);
+    case TYPE_INTERVAL:
+      return absl::HashState::combine(std::move(state),
+                                      GetIntervalValue(value));
     case TYPE_NUMERIC:
       return absl::HashState::combine(std::move(state), GetNumericValue(value));
     case TYPE_BIGNUMERIC:
@@ -402,7 +469,7 @@ absl::HashState SimpleType::HashValueContent(const ValueContent& value,
     case TYPE_JSON:
       return absl::HashState::combine(std::move(state), GetJsonString(value));
     default:
-      LOG(DFATAL) << "Unexpected type kind: " << kind();
+      ZETASQL_LOG(DFATAL) << "Unexpected type kind: " << kind();
       return state;
   }
 }
@@ -439,6 +506,8 @@ bool SimpleType::ValueContentEquals(
     case TYPE_DATETIME:
       return ContentEquals<DateTimeValueContentType>(x, y) &&
              x.simple_type_extended_content_ == y.simple_type_extended_content_;
+    case TYPE_INTERVAL:
+      return ReferencedValueEquals<internal::IntervalRef>(x, y);
     case TYPE_NUMERIC:
       return ReferencedValueEquals<internal::NumericRef>(x, y);
     case TYPE_BIGNUMERIC:
@@ -447,7 +516,7 @@ bool SimpleType::ValueContentEquals(
       return GetJsonString(x) == GetJsonString(y);
     }
     default:
-      LOG(FATAL) << "Unexpected simple type kind: " << kind();
+      ZETASQL_LOG(FATAL) << "Unexpected simple type kind: " << kind();
   }
 }
 
@@ -500,12 +569,14 @@ bool SimpleType::ValueContentLess(const ValueContent& x, const ValueContent& y,
              (ContentEquals<DateTimeValueContentType>(x, y) &&
               x.simple_type_extended_content_ <
                   y.simple_type_extended_content_);
+    case TYPE_INTERVAL:
+      return ReferencedValueLess<internal::IntervalRef>(x, y);
     case TYPE_NUMERIC:
       return ReferencedValueLess<internal::NumericRef>(x, y);
     case TYPE_BIGNUMERIC:
       return ReferencedValueLess<internal::BigNumericRef>(x, y);
     default:
-      LOG(DFATAL) << "Cannot compare " << DebugString() << " to "
+      ZETASQL_LOG(DFATAL) << "Cannot compare " << DebugString() << " to "
                   << DebugString();
       return false;
   }
@@ -555,8 +626,8 @@ std::string SimpleType::FormatValueContent(
     case TYPE_INT32:
       return options.as_literal()
                  ? absl::StrCat(value.GetAs<int32_t>())
-                 : internal::GetCastExpressionString(value.GetAs<int32_t>(), this,
-                                                     options.product_mode);
+                 : internal::GetCastExpressionString(
+                       value.GetAs<int32_t>(), this, options.product_mode);
     case TYPE_UINT32:
       return options.as_literal()
                  ? absl::StrCat(value.GetAs<uint32_t>())
@@ -629,6 +700,13 @@ std::string SimpleType::FormatValueContent(
                  ? absl::StrCat("BIGNUMERIC ", ToStringLiteral(s))
                  : s;
     }
+    case TYPE_INTERVAL: {
+      std::string s = GetIntervalValue(value).ToString();
+      return options.mode != FormatValueContentOptions::Mode::kDebug
+                 ? absl::StrCat("INTERVAL ", ToStringLiteral(s),
+                                " YEAR TO SECOND")
+                 : s;
+    }
     case TYPE_JSON: {
       std::string s = GetJsonString(value);
       return options.add_simple_type_prefix()
@@ -636,7 +714,7 @@ std::string SimpleType::FormatValueContent(
                  : s;
     }
     default:
-      LOG(DFATAL) << "Unexpected type kind: " << kind();
+      ZETASQL_LOG(DFATAL) << "Unexpected type kind: " << kind();
       return "<Invalid simple type's value>";
   }
 }
@@ -699,6 +777,10 @@ absl::Status SimpleType::SerializeValueContent(const ValueContent& value,
     }
     case TYPE_TIME:
       value_proto->set_time_value(GetTimeValue(value).Packed64TimeNanos());
+      break;
+    case TYPE_INTERVAL:
+      value_proto->set_interval_value(
+          GetIntervalValue(value).SerializeAsBytes());
       break;
     default:
       return absl::Status(absl::StatusCode::kInternal,
@@ -842,6 +924,16 @@ absl::Status SimpleType::DeserializeValueContent(const ValueProto& value_proto,
       ZETASQL_RETURN_IF_ERROR(SetTimeValue(wrapper, value));
       break;
     }
+    case TYPE_INTERVAL: {
+      if (!value_proto.has_interval_value()) {
+        return TypeMismatchError(value_proto);
+      }
+      ZETASQL_ASSIGN_OR_RETURN(IntervalValue interval_v,
+                       IntervalValue::DeserializeFromBytes(
+                           value_proto.interval_value()));
+      value->set(new internal::IntervalRef(interval_v));
+      break;
+    }
     default:
       return absl::Status(absl::StatusCode::kInternal,
                           absl::StrCat("Unsupported type ", DebugString()));
@@ -912,6 +1004,162 @@ absl::Status SimpleType::SetDateTimeValue(DatetimeValue datetime,
   value->set(seconds);
   value->simple_type_extended_content_ = nanoseconds;
 
+  return absl::OkStatus();
+}
+
+zetasql_base::StatusOr<TypeParameters> SimpleType::ValidateAndResolveTypeParameters(
+    const std::vector<TypeParameterValue>& type_parameter_values,
+    ProductMode mode) const {
+  if (IsString() || IsBytes()) {
+    return ResolveStringBytesTypeParameters(type_parameter_values, mode);
+  }
+  if (IsNumericType() || IsBigNumericType()) {
+    return ResolveNumericBignumericTypeParameters(type_parameter_values, mode);
+  }
+  return MakeSqlError() << ShortTypeName(mode)
+                        << " does not support type parameters";
+}
+
+zetasql_base::StatusOr<TypeParameters> SimpleType::ResolveStringBytesTypeParameters(
+    const std::vector<TypeParameterValue>& type_parameter_values,
+    ProductMode mode) const {
+  if (type_parameter_values.size() != 1) {
+    return MakeSqlError() << ShortTypeName(mode)
+                          << " type can only have one parameter. Found "
+                          << type_parameter_values.size() << " parameters";
+  }
+
+  StringTypeParametersProto type_parameters_proto;
+  TypeParameterValue param = type_parameter_values[0];
+  if (!param.IsSpecialLiteral() && param.GetValue().has_int64_value()) {
+    if (param.GetValue().int64_value() <= 0) {
+      return MakeSqlError()
+             << ShortTypeName(mode) << " length must be greater than 0";
+    }
+    type_parameters_proto.set_max_length(param.GetValue().int64_value());
+    return TypeParameters::MakeStringTypeParameters(type_parameters_proto);
+  }
+  if (param.IsSpecialLiteral() &&
+      param.GetSpecialLiteral() == TypeParameterValue::kMaxLiteral) {
+    type_parameters_proto.set_is_max_length(true);
+    return TypeParameters::MakeStringTypeParameters(type_parameters_proto);
+  }
+  return MakeSqlError()
+         << ShortTypeName(mode)
+         << " length parameter must be an integer or MAX keyword";
+}
+
+zetasql_base::StatusOr<TypeParameters>
+SimpleType::ResolveNumericBignumericTypeParameters(
+    const std::vector<TypeParameterValue>& type_parameter_values,
+    ProductMode mode) const {
+  if (type_parameter_values.size() > 2) {
+    return MakeSqlError() << ShortTypeName(mode)
+                          << " type can only have 1 or 2 parameters. Found "
+                          << type_parameter_values.size() << " parameters";
+  }
+
+  // For both NUMERIC and BIGNUMERIC, scale must be an integer.
+  if (type_parameter_values.size() == 2 &&
+      !type_parameter_values[1].GetValue().has_int64_value()) {
+    return MakeSqlError() << ShortTypeName(mode) << " scale must be an integer";
+  }
+  int64_t scale = type_parameter_values.size() == 2
+                      ? type_parameter_values[1].GetValue().int64_value()
+                      : 0;
+
+  // Validate value range for scale.
+  NumericTypeParametersProto type_parameters_proto;
+  const int max_scale =
+      IsNumericType() ? kNumericMaxScale : kBigNumericMaxScale;
+  if (scale < 0 || scale > max_scale) {
+    return MakeSqlError() << "In " << ShortTypeName(mode)
+                          << "(P, S), S must be within range [0, " << max_scale
+                          << "]";
+  }
+  type_parameters_proto.set_scale(scale);
+
+  // For NUMERIC, precision can only be an integer.
+  // For BIGNUMERIC, precision can be an integer or MAX literal.
+  TypeParameterValue precision_param = type_parameter_values[0];
+  if (!precision_param.IsSpecialLiteral() &&
+      precision_param.GetValue().has_int64_value()) {
+    const int max_precision =
+        IsNumericType() ? kNumericMaxPrecision : kBigNumericMaxPrecision;
+    int64_t precision = type_parameter_values[0].GetValue().int64_value();
+    if (precision < std::max(int64_t{1}, scale) ||
+        precision > max_precision + scale) {
+      if (type_parameter_values.size() == 1) {
+        return MakeSqlError()
+               << "In " << ShortTypeName(mode)
+               << "(P), P must be within range [1, " << max_precision << "]";
+      }
+      return MakeSqlError() << "In " << ShortTypeName(mode)
+                            << "(P, S), P must be within range [max(S,1), "
+                            << max_precision << "+S]";
+    }
+    type_parameters_proto.set_precision(precision);
+    return TypeParameters::MakeNumericTypeParameters(type_parameters_proto);
+  }
+  if (precision_param.IsSpecialLiteral() &&
+      precision_param.GetSpecialLiteral() == TypeParameterValue::kMaxLiteral &&
+      IsBigNumericType()) {
+    type_parameters_proto.set_is_max_precision(true);
+    return TypeParameters::MakeNumericTypeParameters(type_parameters_proto);
+  }
+
+  // Error out for invalid precision parameter input.
+  if (IsNumericType()) {
+    return MakeSqlError() << ShortTypeName(mode)
+                          << " precision must be an integer";
+  }
+  return MakeSqlError() << ShortTypeName(mode)
+                        << " precision must be an integer or MAX keyword";
+}
+
+absl::Status SimpleType::ValidateResolvedTypeParameters(
+    const TypeParameters& type_parameters, ProductMode mode) const {
+  if (type_parameters.IsEmpty()) {
+    return absl::OkStatus();
+  }
+  if (IsString() || IsBytes()) {
+    ZETASQL_RET_CHECK(type_parameters.IsStringTypeParameters());
+    return TypeParameters::ValidateStringTypeParameters(
+        type_parameters.string_type_parameters());
+  }
+  if (IsNumericType() || IsBigNumericType()) {
+    ZETASQL_RET_CHECK(type_parameters.IsNumericTypeParameters());
+    return ValidateNumericTypeParameters(
+        type_parameters.numeric_type_parameters(), mode);
+  }
+  ZETASQL_RET_CHECK_FAIL() << ShortTypeName(mode)
+                   << " does not support type parameters";
+}
+
+absl::Status SimpleType::ValidateNumericTypeParameters(
+    const NumericTypeParametersProto& numeric_param, ProductMode mode) const {
+  // Validate value range for scale.
+  int max_scale = IsNumericType() ? kNumericMaxScale : kBigNumericMaxScale;
+  int64_t scale = numeric_param.scale();
+  ZETASQL_RET_CHECK(scale >= 0 && scale <= max_scale)
+      << "In " << ShortTypeName(mode) << "(P, S), S must be within range [0, "
+      << max_scale << "], actual scale: " << scale;
+
+  // Validate value range for precision.
+  if (numeric_param.has_is_max_precision()) {
+    ZETASQL_RET_CHECK(IsBigNumericType());
+    ZETASQL_RET_CHECK(numeric_param.is_max_precision())
+        << "is_max_precision should either be unset or true";
+  } else {
+    int64_t precision = numeric_param.precision();
+    int max_precision =
+        IsNumericType() ? kNumericMaxPrecision : kBigNumericMaxPrecision;
+    ZETASQL_RET_CHECK(precision >= std::max(int64_t{1}, scale) &&
+              precision <= max_precision + scale)
+        << "In " << ShortTypeName(mode)
+        << "(P, S), P must be within range [max(S,1), " << max_precision
+        << "+S], actual precision: " << precision;
+  }
   return absl::OkStatus();
 }
 

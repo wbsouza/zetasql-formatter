@@ -38,7 +38,10 @@
 #include "zetasql/resolved_ast/sql_builder.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <memory>
 #include <set>
+#include <string>
 #include <type_traits>
 
 #include "zetasql/base/atomic_sequence_num.h"
@@ -59,15 +62,19 @@
 #include "zetasql/resolved_ast/resolved_ast_deep_copy_visitor.h"
 #include "zetasql/resolved_ast/resolved_ast_enums.pb.h"
 #include "zetasql/resolved_ast/resolved_node_kind.pb.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "zetasql/base/statusor.h"
 #include "absl/strings/ascii.h"
 #include "zetasql/base/case.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "absl/strings/str_replace.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "absl/strings/strip.h"
 #include "absl/strings/substitute.h"
 #include "zetasql/base/map_util.h"
 #include "zetasql/base/source_location.h"
@@ -95,14 +102,14 @@ std::string SQLBuilder::GetColumnAlias(const ResolvedColumn& column) {
     return zetasql_base::FindOrDie(computed_column_alias_, column.column_id());
   }
 
-  const std::string alias = absl::StrCat("a_", GetUniqueId());
+  const std::string alias = GenerateUniqueAliasName();
   zetasql_base::InsertOrDie(&computed_column_alias_, column.column_id(), alias);
   return alias;
 }
 
 std::string SQLBuilder::UpdateColumnAlias(const ResolvedColumn& column) {
   auto it = computed_column_alias_.find(column.column_id());
-  CHECK(it != computed_column_alias_.end())
+  ZETASQL_CHECK(it != computed_column_alias_.end())
       << "Alias does not exist for " << column.DebugString();
   computed_column_alias_.erase(it);
   return GetColumnAlias(column);
@@ -205,7 +212,7 @@ void SQLBuilder::DumpQueryFragmentStack() {
 
 void SQLBuilder::PushQueryFragment(
     std::unique_ptr<QueryFragment> query_fragment) {
-  DCHECK(query_fragment != nullptr);
+  ZETASQL_DCHECK(query_fragment != nullptr);
   // We generate sql_ at once in the end, i.e. after the complete traversal of
   // the given ResolvedAST. Whenever a new QueryFragment is pushed, that means
   // we would need to incorporate it in the final sql which renders any
@@ -225,7 +232,7 @@ void SQLBuilder::PushQueryFragment(const ResolvedNode* node,
 }
 
 std::unique_ptr<SQLBuilder::QueryFragment> SQLBuilder::PopQueryFragment() {
-  DCHECK(!query_fragments_.empty());
+  ZETASQL_DCHECK(!query_fragments_.empty());
   std::unique_ptr<SQLBuilder::QueryFragment> f =
       std::move(query_fragments_.back());
   query_fragments_.pop_back();
@@ -251,8 +258,9 @@ static std::string AddExplicitCast(const std::string& sql, const Type* type,
 // because the run_analyzer_test infrastructure doesn't know how to properly
 // compare the 'shapes' of query OPTIONS/HINTS when the original query
 // option is a constant while the unparsed query options is a CAST expression.
-// If we resolve the run_analyzer_test infrastructure problem, we could
-// remove <is_constant_value> from here.
+// TODO: The run_analyzer_test infrastructure no longer compares the
+// option/hint expression shapes, and only compares their types, so we should
+// remove the <is_constant_value> hack from this method.
 zetasql_base::StatusOr<std::string> SQLBuilder::GetSQL(const Value& value,
                                                ProductMode mode,
                                                bool is_constant_value) {
@@ -346,7 +354,7 @@ zetasql_base::StatusOr<std::string> SQLBuilder::GetSQL(const Value& value,
       field_types.push_back(
           absl::StrCat(field_name, field_type.type->TypeName(mode)));
     }
-    DCHECK_EQ(type->AsStruct()->num_fields(), fields_sql.size());
+    ZETASQL_DCHECK_EQ(type->AsStruct()->num_fields(), fields_sql.size());
     if (has_explicit_field_name) {
       return absl::StrCat("STRUCT<", absl::StrJoin(field_types, ", "), ">(",
                           absl::StrJoin(fields_sql, ", "), ")");
@@ -364,9 +372,43 @@ zetasql_base::StatusOr<std::string> SQLBuilder::GetSQL(const Value& value,
     return absl::StrCat(type->TypeName(mode), "[",
                         absl::StrJoin(elements_sql, ", "), "]");
   }
+  if (type->IsExtendedType()) {
+    return value.GetSQL(mode);
+  }
 
   return ::zetasql_base::InvalidArgumentErrorBuilder()
          << "Value has unknown type: " << type->DebugString();
+}
+
+absl::Status SQLBuilder::VisitResolvedCloneDataStmt(
+    const ResolvedCloneDataStmt* node) {
+  std::string sql;
+  absl::StrAppend(&sql, "CLONE DATA INTO ");
+  absl::StrAppend(&sql,
+                  ToIdentifierLiteral(node->target_table()->table()->Name()),
+                  " FROM ");
+  if (node->clone_from()->node_kind() == RESOLVED_SET_OPERATION_SCAN) {
+    const ResolvedSetOperationScan* set =
+        node->clone_from()->GetAs<ResolvedSetOperationScan>();
+    set->op_type();
+    set->column_list();
+    set->input_item_list(0)->output_column_list();
+    ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> source,
+                     ProcessNode(set->input_item_list(0)->scan()));
+    ZETASQL_RETURN_IF_ERROR(
+        AppendCloneDataSource(set->input_item_list(0)->scan(), &sql));
+    for (int i = 1; i < set->input_item_list_size(); i++) {
+      set->input_item_list(i)->output_column_list();
+      absl::StrAppend(&sql, " UNION ALL ");
+      ZETASQL_RET_CHECK_EQ(set->op_type(), ResolvedSetOperationScan::UNION_ALL);
+      ZETASQL_RETURN_IF_ERROR(
+          AppendCloneDataSource(set->input_item_list(i)->scan(), &sql));
+    }
+  } else {
+    ZETASQL_RETURN_IF_ERROR(AppendCloneDataSource(node->clone_from(), &sql));
+  }
+  PushQueryFragment(node, sql);
+  return absl::OkStatus();
 }
 
 absl::Status SQLBuilder::VisitResolvedExpressionColumn(
@@ -400,7 +442,16 @@ static std::string GetFunctionCallSQL(
       std::move(inputs), &function_call->signature());
   if (function_call->error_mode() ==
       ResolvedNonScalarFunctionCallBase::SAFE_ERROR_MODE) {
-    sql = absl::StrCat("SAFE.", sql);
+    absl::string_view function_name = function_call->function()->Name();
+    if (function_name == "$subscript_with_offset") {
+      sql = absl::StrReplaceAll(sql, {{"OFFSET", "SAFE_OFFSET"}});
+    } else if (function_name == "$subscript_with_key") {
+      sql = absl::StrReplaceAll(sql, {{"KEY", "SAFE_KEY"}});
+    } else if (function_name == "$subscript_with_ordinal") {
+      sql = absl::StrReplaceAll(sql, {{"ORDINAL", "SAFE_ORDINAL"}});
+    } else {
+      sql = absl::StrCat("SAFE.", sql);
+    }
   }
   return sql;
 }
@@ -419,6 +470,20 @@ absl::Status SQLBuilder::VisitResolvedFunctionCall(
                      ProcessNode(argument.get()));
     inputs.push_back(result->GetSQL());
   }
+  for (const auto& argument : node->generic_argument_list()) {
+    if (argument->expr() != nullptr) {
+      ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
+                       ProcessNode(argument->expr()));
+      inputs.push_back(result->GetSQL());
+    } else if (argument->inline_lambda() != nullptr) {
+      ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
+                       ProcessNode(argument->inline_lambda()));
+      inputs.push_back(result->GetSQL());
+    } else {
+      ZETASQL_RET_CHECK_FAIL() << "Unexpected function call argument: "
+                       << argument->DebugString();
+    }
+  }
 
   // Getting the SQL for a function given string arguments is not itself
   // sensitive to the ProductMode.
@@ -426,8 +491,87 @@ absl::Status SQLBuilder::VisitResolvedFunctionCall(
   return absl::OkStatus();
 }
 
+absl::Status SQLBuilder::VisitResolvedInlineLambda(
+    const ResolvedInlineLambda* node) {
+  ZETASQL_DCHECK(node->body());
+
+  std::string args_list =
+      absl::StrJoin(node->argument_list(), ",",
+                    [this](std::string* out, const ResolvedColumn& col) {
+                      *out += GetColumnAlias(col);
+                    });
+
+  // Skip the parentheses for single argument case.
+  if (node->argument_list_size() != 1) {
+    args_list = absl::StrCat("(", args_list, ")");
+  }
+
+  ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> expr_fragment,
+                   ProcessNode(node->body()));
+  std::string lambda_sql =
+      absl::StrCat(args_list, " -> ", expr_fragment->GetSQL());
+  PushQueryFragment(node, lambda_sql);
+
+  // Dummy access on the parameter list so as to pass the final
+  // CheckFieldsAccessed() on a statement level before building the sql.
+  for (const auto& parameter : node->parameter_list()) {
+    parameter->column();
+  }
+  return absl::OkStatus();
+}
+
 absl::Status SQLBuilder::VisitResolvedAggregateFunctionCall(
     const ResolvedAggregateFunctionCall* node) {
+  std::string with_group_rows;
+  if (node->with_group_rows_subquery() != nullptr) {
+    std::unique_ptr<QueryExpression> subquery_result;
+    // While resolving a subquery in WITH GROUP_ROWS we should start with a
+    // fresh scope, i.e. it should not see any columns (except which are
+    // correlated) outside the query. To ensure that, we clear the
+    // pending_columns_ after maintaining a copy of it locally. We then copy it
+    // back once we have processed the subquery. NOTE: For correlated aggregate
+    // columns we are expected to print the column path and not the sql to
+    // compute the column. So clearing the pending_aggregate_columns here would
+    // not have any side effects.
+    std::map<int, std::string> previous_pending_aggregate_columns;
+    previous_pending_aggregate_columns.swap(pending_columns_);
+    auto cleanup =
+        absl::MakeCleanup([this, &previous_pending_aggregate_columns]() {
+          previous_pending_aggregate_columns.swap(pending_columns_);
+        });
+
+    ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
+                     ProcessNode(node->with_group_rows_subquery()));
+    subquery_result = std::move(result->query_expression);
+    ZETASQL_RETURN_IF_ERROR(
+        AddSelectListIfNeeded(node->with_group_rows_subquery()->column_list(),
+                              subquery_result.get()));
+
+    // Make sure column paths are set without table alias. Otherwise incorrect
+    // path will be used inside function call. Example of incorrect SQL that
+    // would be generated if the existing full path is used. Simplified example:
+    //              Unrecognized name: grouprowsscan_6 (in COUNT())
+    //              v
+    // SELECT COUNT(grouprowsscan_6.a_5) WITH GROUP_ROWS(
+    //     SELECT grouprowsscan_6.a_5 AS a_5
+    //     FROM (SELECT a_1 AS a_5 FROM GROUP_ROWS()) AS grouprowsscan_6
+    //    )
+    // FROM testtable_4
+    for (const ResolvedColumn& column :
+         node->with_group_rows_subquery()->column_list()) {
+      SetPathForColumn(column, ToIdentifierLiteral(GetColumnAlias(column)));
+    }
+
+    // Dummy access the referenced columns to satisfy the final
+    // CheckFieldsAccessed() on a statement level before building the sql.
+    for (const std::unique_ptr<const ResolvedColumnRef>& ref :
+         node->with_group_rows_parameter_list()) {
+      ref->column();
+    }
+
+    with_group_rows =
+        absl::StrCat(" WITH GROUP_ROWS (", subquery_result->GetSQLQuery(), ")");
+  }
   std::vector<std::string> inputs;
   if (node->argument_list_size() > 0) {
     for (const auto& argument : node->argument_list()) {
@@ -483,8 +627,12 @@ absl::Status SQLBuilder::VisitResolvedAggregateFunctionCall(
                      ProcessNode(node->limit()));
     absl::StrAppend(&inputs.back(), " LIMIT ", result->GetSQL());
   }
+  std::string text = GetFunctionCallSQL(node, std::move(inputs));
 
-  PushQueryFragment(node, GetFunctionCallSQL(node, std::move(inputs)));
+  absl::StrAppend(&text, with_group_rows);
+
+  PushQueryFragment(node, text);
+
   return absl::OkStatus();
 }
 
@@ -549,8 +697,8 @@ absl::Status SQLBuilder::VisitResolvedAnalyticFunctionCall(
   if (node->window_frame() != nullptr) {
     ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                      ProcessNode(node->window_frame()));
-    analytic_function_info->set_window(
-        node->distinct() ? "" : result->GetSQL());
+    analytic_function_info->set_window(node->distinct() ? ""
+                                                        : result->GetSQL());
   }
 
   ZETASQL_RET_CHECK(pending_analytic_function_ == nullptr);
@@ -765,9 +913,8 @@ static zetasql_base::StatusOr<bool> IsRawFieldExtraction(
          (node->type()->IsSimpleType() &&
           node->expr()->type()->AsProto()->descriptor()->file()->syntax() !=
               google::protobuf::FileDescriptor::SYNTAX_PROTO3 &&
-             !ProtoType::GetUseDefaultsExtension(node->field_descriptor()) &&
-             node->default_value().is_valid() &&
-             !node->default_value().is_null());
+          !ProtoType::GetUseDefaultsExtension(node->field_descriptor()) &&
+          node->default_value().is_valid() && !node->default_value().is_null());
 }
 
 absl::Status SQLBuilder::VisitResolvedGetProtoField(
@@ -839,12 +986,11 @@ absl::Status SQLBuilder::VisitResolvedGetProtoField(
   return absl::OkStatus();
 }
 
-absl::Status SQLBuilder::VisitResolvedFlatten(
-    const ResolvedFlatten* node) {
-  std::string text = "FLATTEN(";
+absl::Status SQLBuilder::VisitResolvedFlatten(const ResolvedFlatten* node) {
+  std::string text = "FLATTEN((";
   ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                    ProcessNode(node->expr()));
-  absl::StrAppend(&text, result->GetSQL());
+  absl::StrAppend(&text, result->GetSQL(), ")");
   for (const std::unique_ptr<const ResolvedExpr>& get_field :
        node->get_field_list()) {
     ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> get_field_fragment,
@@ -860,6 +1006,33 @@ absl::Status SQLBuilder::VisitResolvedFlattenedArg(
     const ResolvedFlattenedArg* node) {
   // Does not add to generated SQL. Artifact to point at argument.
   PushQueryFragment(node, "");
+  return absl::OkStatus();
+}
+
+absl::Status SQLBuilder::VisitResolvedFilterField(
+    const ResolvedFilterField* node) {
+  std::string text;
+  absl::StrAppend(&text, "FILTER_FIELDS(");
+  ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> proto_expr,
+                   ProcessNode(node->expr()));
+  absl::StrAppend(&text, proto_expr->GetSQL(), ",");
+  absl::StrAppend(
+      &text, absl::StrJoin(
+                 node->filter_field_arg_list(), ",",
+                 [](std::string* out, const auto& arg) {
+                   out->append(arg->include() ? "+" : "-");
+                   out->append(absl::StrJoin(
+                       arg->field_descriptor_path(), ".",
+                       [](std::string* out, const google::protobuf::FieldDescriptor* fd) {
+                         if (fd->is_extension()) {
+                           out->append(absl::StrCat("(", fd->full_name(), ")"));
+                         } else {
+                           out->append(fd->name());
+                         }
+                       }));
+                 }));
+  absl::StrAppend(&text, ")");
+  PushQueryFragment(node, text);
   return absl::OkStatus();
 }
 
@@ -928,10 +1101,28 @@ absl::Status SQLBuilder::VisitResolvedColumnRef(const ResolvedColumnRef* node) {
 absl::Status SQLBuilder::VisitResolvedCast(const ResolvedCast* node) {
   ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                    ProcessNode(node->expr()));
+
+  ZETASQL_ASSIGN_OR_RETURN(std::string type_name,
+                   node->type()->TypeNameWithParameters(node->type_parameters(),
+                                                        options_.product_mode));
+
+  std::string format_clause;
+  if (node->format() != nullptr) {
+    ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> format,
+                     ProcessNode(node->format()));
+    format_clause = absl::StrCat(" FORMAT ", format->GetSQL());
+
+    if (node->time_zone() != nullptr) {
+      ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> time_zone,
+                       ProcessNode(node->time_zone()));
+      absl::StrAppend(&format_clause, " AT TIME ZONE ", time_zone->GetSQL());
+    }
+  }
+
   PushQueryFragment(
-      node, absl::StrCat(node->return_null_on_error() ? "SAFE_CAST(" : "CAST(",
-                         result->GetSQL(), " AS ",
-                         node->type()->TypeName(options_.product_mode), ")"));
+      node,
+      absl::StrCat(node->return_null_on_error() ? "SAFE_CAST(" : "CAST(",
+                   result->GetSQL(), " AS ", type_name, format_clause, ")"));
   return absl::OkStatus();
 }
 
@@ -947,6 +1138,10 @@ absl::Status SQLBuilder::VisitResolvedSubqueryExpr(
   std::map<int, std::string> previous_pending_aggregate_columns;
   previous_pending_aggregate_columns.swap(pending_columns_);
 
+  auto cleanup =
+      absl::MakeCleanup([this, &previous_pending_aggregate_columns]() {
+        previous_pending_aggregate_columns.swap(pending_columns_);
+      });
   std::string text;
   switch (node->subquery_type()) {
     case ResolvedSubqueryExpr::SCALAR:
@@ -957,14 +1152,36 @@ absl::Status SQLBuilder::VisitResolvedSubqueryExpr(
     case ResolvedSubqueryExpr::EXISTS:
       absl::StrAppend(&text, "EXISTS");
       break;
-    case ResolvedSubqueryExpr::IN:
+    case ResolvedSubqueryExpr::IN: {
       ZETASQL_RET_CHECK(node->in_expr() != nullptr)
           << "ResolvedSubqueryExpr of IN type does not have an associated "
-             "in_expr:\n" << node->DebugString();
+             "in_expr:\n"
+          << node->DebugString();
       ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                        ProcessNode(node->in_expr()));
       absl::StrAppend(&text, "((", result->GetSQL(), ") IN");
       break;
+    }
+    case ResolvedSubqueryExpr::LIKE_ANY: {
+      ZETASQL_RET_CHECK(node->in_expr() != nullptr)
+          << "ResolvedSubqueryExpr of LIKE ANY|SOME type does not have an "
+             "associated left hand side expression (in_expr):\n"
+          << node->DebugString();
+      ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> like_result,
+                       ProcessNode(node->in_expr()));
+      absl::StrAppend(&text, "((", like_result->GetSQL(), ") LIKE ANY");
+      break;
+    }
+    case ResolvedSubqueryExpr::LIKE_ALL: {
+      ZETASQL_RET_CHECK(node->in_expr() != nullptr)
+          << "ResolvedSubqueryExpr of LIKE ALL type does not have an "
+             "associated left hand side expression (in_expr):\n"
+          << node->DebugString();
+      ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> like_result,
+                       ProcessNode(node->in_expr()));
+      absl::StrAppend(&text, "((", like_result->GetSQL(), ") LIKE ALL");
+      break;
+    }
   }
 
   ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
@@ -985,7 +1202,22 @@ absl::Status SQLBuilder::VisitResolvedSubqueryExpr(
   }
 
   PushQueryFragment(node, text);
-  previous_pending_aggregate_columns.swap(pending_columns_);
+  return absl::OkStatus();
+}
+
+absl::Status SQLBuilder::VisitResolvedTableAndColumnInfo(
+    const ResolvedTableAndColumnInfo* node) {
+  std::string sql;
+  absl::StrAppend(&sql, TableNameToIdentifierLiteral(node->table()->Name()));
+  std::vector<std::string> column_name_list;
+  column_name_list.reserve(node->column_index_list().size());
+  for (const int column_index : node->column_index_list()) {
+    column_name_list.push_back(node->table()->GetColumn(column_index)->Name());
+  }
+  if (!column_name_list.empty()) {
+    absl::StrAppend(&sql, " (", absl::StrJoin(column_name_list, ","), ") ");
+  }
+  PushQueryFragment(node, sql);
   return absl::OkStatus();
 }
 
@@ -993,7 +1225,7 @@ absl::Status SQLBuilder::AppendColumnSchema(
     const Type* type, bool is_hidden,
     const ResolvedColumnAnnotations* annotations,
     const ResolvedGeneratedColumnInfo* generated_column_info,
-    std::string* text) {
+    const ResolvedExpr* default_expression, std::string* text) {
   ZETASQL_RET_CHECK(text != nullptr);
   if (type != nullptr) {
     if (type->IsStruct()) {
@@ -1011,7 +1243,8 @@ absl::Status SQLBuilder::AppendColumnSchema(
                 : nullptr;
         ZETASQL_RETURN_IF_ERROR(AppendColumnSchema(
             field.type, /*is_hidden=*/false, child_annotations,
-            /*generated_column_info=*/nullptr, text));
+            /*generated_column_info=*/nullptr, /*default_expression=*/nullptr,
+            text));
       }
       absl::StrAppend(text, ">");
     } else if (type->IsArray()) {
@@ -1024,25 +1257,41 @@ absl::Status SQLBuilder::AppendColumnSchema(
       ZETASQL_RETURN_IF_ERROR(AppendColumnSchema(array_type->element_type(),
                                          /*is_hidden=*/false, child_annotations,
                                          /*generated_column_info=*/nullptr,
-                                         text));
+                                         /*default_expression=*/nullptr, text));
       absl::StrAppend(text, ">");
     } else {
-      absl::StrAppend(text, type->TypeName(options_.product_mode));
+      if (annotations != nullptr && !annotations->type_parameters().IsEmpty()) {
+        ZETASQL_ASSIGN_OR_RETURN(
+            std::string typename_with_parameters,
+            type->TypeNameWithParameters(annotations->type_parameters(),
+                                         options_.product_mode));
+        absl::StrAppend(text, typename_with_parameters);
+      } else {
+        absl::StrAppend(text, type->TypeName(options_.product_mode));
+      }
     }
   }
   if (generated_column_info != nullptr) {
     ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                      ProcessNode(generated_column_info->expression()));
 
-    if (generated_column_info->is_on_write()) {
-      absl::StrAppend(text, " GENERATED ON WRITE");
-    }
-
     absl::StrAppend(text, " AS (", result->GetSQL(), ")");
 
-    if (generated_column_info->is_stored()) {
-      absl::StrAppend(text, " STORED");
+    switch (generated_column_info->stored_mode()) {
+      case ASTGeneratedColumnInfo::NON_STORED:
+        break;
+      case ASTGeneratedColumnInfo::STORED:
+        absl::StrAppend(text, " STORED");
+        break;
+      case ASTGeneratedColumnInfo::STORED_VOLATILE:
+        absl::StrAppend(text, " STORED VOLATILE");
+        break;
     }
+  }
+  if (default_expression != nullptr) {
+    ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
+                     ProcessNode(default_expression));
+    absl::StrAppend(text, " DEFAULT ", result->GetSQL());
   }
   if (is_hidden) {
     absl::StrAppend(text, " HIDDEN");
@@ -1240,6 +1489,7 @@ absl::Status SQLBuilder::VisitResolvedMakeStruct(
 
 absl::Status SQLBuilder::VisitResolvedGetStructField(
     const ResolvedGetStructField* node) {
+  ZETASQL_RET_CHECK(node->expr()->type()->IsStruct());
   std::string text;
   ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                    ProcessNode(node->expr()));
@@ -1260,6 +1510,8 @@ absl::Status SQLBuilder::VisitResolvedGetStructField(
   // if system variables "@@a" and "@@a.b" both exist, it is not possible to
   // assign to field b of system variable "@@a".
   //
+  const StructType* struct_type = node->expr()->type()->AsStruct();
+  std::string field_alias = struct_type->field(node->field_idx()).name;
   if (result_sql != kEmptyAlias) {
     if (node->expr()->node_kind() == RESOLVED_CONSTANT ||
         (node->expr()->node_kind() == RESOLVED_SYSTEM_VARIABLE &&
@@ -1269,11 +1521,53 @@ absl::Status SQLBuilder::VisitResolvedGetStructField(
       // "foo.bar" (accessing named constant bar in namespace foo).
       result_sql = absl::StrCat("(", result_sql, ")");
     }
+
+    bool is_ambiguous;
+    // FindField returns nullptr for unnamed fields.
+    if (struct_type->FindField(field_alias, &is_ambiguous) == nullptr ||
+        is_ambiguous) {
+      // Today there is no way to directly refer to a field by position in SQL.
+      // Instead we cast the original STRUCT to the STRUCT of same SCHEMA type,
+      // giving the nameless referenced field a name. Then this name used right
+      // here.
+      result_sql = absl::StrCat("CAST(", result_sql, " AS STRUCT<");
+      for (int field_idx = 0; field_idx < struct_type->num_fields();
+           ++field_idx) {
+        if (field_idx > 0) {
+          absl::StrAppend(&result_sql, ", ");
+        }
+        if (field_idx == node->field_idx()) {
+          field_alias = "field_ref";
+          absl::StrAppend(&result_sql, field_alias, " ");
+        }
+        ZETASQL_RETURN_IF_ERROR(
+            AppendColumnSchema(struct_type->field(field_idx).type,
+                               /*is_hidden=*/false, /*annotations=*/nullptr,
+                               /*generated_column_info=*/nullptr,
+                               /*default_expression=*/nullptr, &result_sql));
+      }
+      ZETASQL_RET_CHECK_NE(field_alias, "");
+      absl::StrAppend(&result_sql, ">)");
+    }
     absl::StrAppend(&text, result_sql, ".");
   }
-  const std::string& field_name =
-      node->expr()->type()->AsStruct()->field(node->field_idx()).name;
-  absl::StrAppend(&text, ToIdentifierLiteral(field_name));
+  absl::StrAppend(&text, ToIdentifierLiteral(field_alias));
+  PushQueryFragment(node, text);
+  return absl::OkStatus();
+}
+
+absl::Status SQLBuilder::VisitResolvedGetJsonField(
+    const ResolvedGetJsonField* node) {
+  ZETASQL_RET_CHECK(node->type()->IsJson());
+
+  std::string text;
+  ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
+                   ProcessNode(node->expr()));
+  std::string result_sql = result->GetSQL();
+  ZETASQL_RET_CHECK(result_sql != kEmptyAlias);
+
+  const std::string& field_name = node->field_name();
+  absl::StrAppend(&text, result_sql, ".", ToIdentifierLiteral(field_name));
   PushQueryFragment(node, text);
   return absl::OkStatus();
 }
@@ -1292,7 +1586,7 @@ absl::Status SQLBuilder::GetSelectList(
     const std::map<int64_t, const ResolvedExpr*>& col_to_expr_map,
     const ResolvedScan* parent_scan, QueryExpression* query_expression,
     std::vector<std::pair<std::string, std::string>>* select_list) {
-  DCHECK(select_list != nullptr);
+  ZETASQL_DCHECK(select_list != nullptr);
 
   std::map<int, std::string>* group_by_list =
       query_expression->MutableGroupByList();
@@ -1308,7 +1602,7 @@ absl::Status SQLBuilder::GetSelectList(
     //    in the query. See GetColumnAlias().
     // This avoids ambiguity in selecting that column outside the subquery
     if (zetasql_base::ContainsKey(has_alias, col.column_id())) {
-      alias = absl::StrCat("a_", GetUniqueId());
+      alias = GenerateUniqueAliasName();
     } else {
       alias = GetColumnAlias(col);
       // This alias has already been used in the SELECT, so create a new one.
@@ -1400,14 +1694,28 @@ absl::Status SQLBuilder::VisitResolvedTableScan(const ResolvedTableScan* node) {
   ZETASQL_RET_CHECK(query_expression->TrySetFromClause(from));
 
   std::vector<std::pair<std::string, std::string>> select_list;
+  // column_index_list should be preferred, but is not always available
+  // (if not set after a ResolvedTableScan is created).
+  // TODO: Remove the case use_column_index_list=false
+  const bool use_column_index_list =
+      node->column_index_list_size() == node->column_list_size();
   for (int i = 0; i < node->column_list_size(); ++i) {
     const ResolvedColumn& column = node->column_list(i);
     if (node->table()->IsValueTable() && node->column_index_list(i) == 0) {
       ZETASQL_RETURN_IF_ERROR(AddValueTableAliasForVisitResolvedTableScan(
           table_alias, column, &select_list));
     } else {
+      std::string column_name;
+      if (use_column_index_list) {
+        const Column* table_column =
+            node->table()->GetColumn(node->column_index_list(i));
+        ZETASQL_RET_CHECK(table_column != nullptr);
+        column_name = table_column->Name();
+      } else {
+        column_name = column.name();
+      }
       select_list.push_back(std::make_pair(
-          absl::StrCat(table_alias, ".", ToIdentifierLiteral(column.name())),
+          absl::StrCat(table_alias, ".", ToIdentifierLiteral(column_name)),
           GetColumnAlias(column)));
     }
   }
@@ -1425,6 +1733,73 @@ absl::Status SQLBuilder::VisitResolvedSingleRowScan(
   ZETASQL_RET_CHECK(query_expression->TrySetSelectClause(
       {std::make_pair("1", "" /* no select_alias */)}, "" /* no hints */));
   PushSQLForQueryExpression(node, query_expression.release());
+  return absl::OkStatus();
+}
+
+absl::Status SQLBuilder::VisitResolvedPivotScan(const ResolvedPivotScan* node) {
+  // Generate SQL for the input scan.
+  ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> input,
+                   ProcessNode(node->input_scan()));
+  std::unique_ptr<QueryExpression> query_expr =
+      std::move(input->query_expression);
+  ZETASQL_RETURN_IF_ERROR(WrapQueryExpression(node->input_scan(), query_expr.get()));
+
+  // Generate SQL for each pivot expression and create a unique alias for it.
+  std::vector<std::string> pivot_expr_aliases;
+  std::vector<std::string> pivot_expr_sql;
+  for (const auto& resolved_pivot_expr : node->pivot_expr_list()) {
+    const std::string alias = GenerateUniqueAliasName();
+    pivot_expr_aliases.push_back(alias);
+
+    std::unique_ptr<QueryFragment> pivot_expr_fragment;
+    ZETASQL_ASSIGN_OR_RETURN(pivot_expr_fragment,
+                     ProcessNode(resolved_pivot_expr.get()));
+    pivot_expr_sql.push_back(absl::StrCat(pivot_expr_fragment->GetSQL(), " AS ",
+                                          ToIdentifierLiteral(alias)));
+  }
+
+  // Generate SQL for the FOR expression
+  std::unique_ptr<QueryFragment> for_expr_fragment;
+  ZETASQL_ASSIGN_OR_RETURN(for_expr_fragment, ProcessNode(node->for_expr()));
+
+  // Generate SQL for each IN expression and create a unique alias for it.
+  std::vector<std::string> in_expr_sql;
+  std::vector<std::string> in_expr_aliases;
+  for (int i = 0; i < node->pivot_value_list_size(); ++i) {
+    const ResolvedExpr* resolved_in_expr = node->pivot_value_list(i);
+
+    const std::string alias = GenerateUniqueAliasName();
+    in_expr_aliases.push_back(alias);
+
+    std::unique_ptr<QueryFragment> in_expr_fragment;
+    ZETASQL_ASSIGN_OR_RETURN(in_expr_fragment, ProcessNode(resolved_in_expr));
+    in_expr_sql.push_back(absl::StrCat(in_expr_fragment->GetSQL(), " AS ",
+                                       ToIdentifierLiteral(alias)));
+  }
+
+  // Put everything together to generate the PIVOT clause text.
+  query_expr->TrySetPivotClause(absl::Substitute(
+      " PIVOT($0 FOR ($1) IN ($2))", absl::StrJoin(pivot_expr_sql, ", "),
+      for_expr_fragment->GetSQL(), absl::StrJoin(in_expr_sql, ", ")));
+  PushSQLForQueryExpression(node, query_expr.release());
+
+  // Remember the column aliases of the pivot scan's output columns for when
+  // they are referenced later.
+  for (const auto& col : node->pivot_column_list()) {
+    std::string pivot_expr_alias = pivot_expr_aliases[col->pivot_expr_index()];
+    std::string pivot_value_alias = in_expr_aliases[col->pivot_value_index()];
+    computed_column_alias_[col->column().column_id()] =
+        absl::StrCat(pivot_expr_alias, "_", pivot_value_alias);
+  }
+
+  for (const auto& groupby_expr : node->group_by_list()) {
+    const ResolvedColumn& output_column = groupby_expr->column();
+    const ResolvedColumn& input_column =
+        groupby_expr->expr()->GetAs<ResolvedColumnRef>()->column();
+    computed_column_alias_[output_column.column_id()] =
+        GetColumnAlias(input_column);
+  }
+
   return absl::OkStatus();
 }
 
@@ -1451,8 +1826,8 @@ absl::Status SQLBuilder::VisitResolvedProjectScan(
                             expr->expr());
   }
   std::vector<std::pair<std::string, std::string>> select_list;
-  ZETASQL_RETURN_IF_ERROR(GetSelectList(node->column_list(), col_to_expr_map,
-                                node, query_expression.get(), &select_list));
+  ZETASQL_RETURN_IF_ERROR(GetSelectList(node->column_list(), col_to_expr_map, node,
+                                query_expression.get(), &select_list));
 
   std::string select_hints;
   ZETASQL_RETURN_IF_ERROR(AppendHintsIfPresent(node->hint_list(), &select_hints));
@@ -1591,7 +1966,8 @@ absl::Status SQLBuilder::VisitResolvedTVFScan(const ResolvedTVFScan* node) {
       // provided input table if necessary.
       std::vector<std::string> arg_col_list_select_items;
       ZETASQL_RET_CHECK_EQ(argument->argument_column_list_size(),
-                   relation.num_columns()) << relation.DebugString();
+                   relation.num_columns())
+          << relation.DebugString();
       for (int i = 0; i < argument->argument_column_list_size(); ++i) {
         const ResolvedColumn& col = argument->argument_column_list(i);
         const std::string* alias =
@@ -1637,12 +2013,17 @@ absl::Status SQLBuilder::VisitResolvedTVFScan(const ResolvedTVFScan* node) {
   bool is_value_table = node->signature()->result_schema().is_value_table();
   for (int i = 0; i < node->column_list_size(); ++i) {
     const ResolvedColumn& column = node->column_list(i);
-    std::string column_name;
     if (i == 0 && is_value_table) {
       zetasql_base::InsertOrDie(&pending_columns_, column.column_id(), tvf_scan_alias);
     } else {
-      // If this TVF simply forwards the schema of the input relation in its
-      // first argument to the TVF's output relation, reuse the column names.
+      std::string column_name;
+      // If this TVF has this particular implementation, then we pull the
+      // column names from the input schema because the signature result
+      // schema does not contain the expected column names.
+      //
+      // TODO: Figure out what's going on here, the signature's
+      // result schema should always have appropriate column names and it's
+      // unclear why this one does not.
       if (node->tvf()->Is<ForwardInputSchemaToOutputSchemaTVF>()) {
         ZETASQL_RET_CHECK(node->signature()->argument(0).is_relation());
         column_name = node->signature()->argument(0).relation().column(i).name;
@@ -1651,7 +2032,12 @@ absl::Status SQLBuilder::VisitResolvedTVFScan(const ResolvedTVFScan* node) {
           column_name = output_aliases[i];
         }
       } else {
-        column_name = column.name();
+        // Otherwise, get the TVF column names from its output result schema.
+        ZETASQL_RET_CHECK_LT(i, node->column_index_list().size());
+        const TVFRelation& signature_result_schema =
+            node->signature()->result_schema();
+        column_name =
+            signature_result_schema.column(node->column_index_list(i)).name;
       }
       zetasql_base::InsertOrDie(&pending_columns_, column.column_id(), column_name);
     }
@@ -1707,9 +2093,10 @@ absl::Status SQLBuilder::VisitResolvedFilterScan(
   if (simple_table_scan != nullptr) {
     // Make columns from the input_scan available to filter_expr node processing
     // below.
-    SetPathForColumnsInScan(
+    ZETASQL_RETURN_IF_ERROR(SetPathForColumnsInScan(
         simple_table_scan,
-        zetasql_base::FindWithDefault(table_alias_map_, simple_table_scan->table(), ""));
+        zetasql_base::FindWithDefault(table_alias_map_, simple_table_scan->table(),
+                             "")));
     // Remove the underlying TableScan's select list, to let the ProjectScan
     // just above this FilterScan to install its select list without wrapping
     // this fragment.
@@ -1748,6 +2135,75 @@ absl::Status SQLBuilder::VisitResolvedAnalyticScan(
       AddSelectListIfNeeded(node->column_list(), query_expression.get()));
 
   PushSQLForQueryExpression(node, query_expression.release());
+  return absl::OkStatus();
+}
+
+absl::Status SQLBuilder::VisitResolvedGroupRowsScan(
+    const ResolvedGroupRowsScan* node) {
+  auto query_expression = absl::make_unique<QueryExpression>();
+
+  std::string from = "GROUP_ROWS()";
+
+  if (node->hint_list_size() > 0) {
+    absl::StrAppend(&from, " ");
+    ZETASQL_RETURN_IF_ERROR(AppendHintsIfPresent(node->hint_list(), &from));
+  }
+
+  const std::string group_rows_alias = GetScanAlias(node);
+  absl::StrAppend(&from, " AS ", group_rows_alias);
+
+  ZETASQL_RET_CHECK(query_expression->TrySetFromClause(from));
+
+  std::map<int64_t, const ResolvedExpr*> col_to_expr_map;
+  for (const auto& col : node->input_column_list()) {
+    zetasql_base::InsertIfNotPresent(&col_to_expr_map, col->column().column_id(),
+                            col->expr());
+    if (col->expr()->Is<ResolvedMakeStruct>()) {
+      const ResolvedMakeStruct* make_struct =
+          col->expr()->GetAs<ResolvedMakeStruct>();
+
+      const StructType* struct_type = make_struct->type()->AsStruct();
+      if (struct_type->num_fields() != make_struct->field_list_size()) {
+        return ::zetasql_base::InvalidArgumentErrorBuilder()
+               << "In GROUP_ROWS(): the number of fields of ResolvedMakeStruct "
+                  "and its corresponding StructType, do not match\n:"
+               << node->DebugString() << "\nStructType:\n"
+               << struct_type->DebugString();
+      }
+      for (int i = 0; i < struct_type->num_fields(); ++i) {
+        // Dummy access the column to satisfy the final
+        // CheckFieldsAccessed() on a statement level before building the sql.
+        make_struct->field_list(i)->GetAs<ResolvedColumnRef>()->column();
+      }
+      continue;
+    }
+    // Define new aliases for all columns to repoint them to group_rows_alias.
+    const ResolvedColumnRef* ref = col->expr()->GetAs<ResolvedColumnRef>();
+    std::string alias;
+
+    // Filter operator might decide to reset the column path to the original
+    // column name even when the column has already an associated internal
+    // alias. We take this case into account to keep generated query valid.
+    std::string current_path = GetColumnPath(ref->column());
+    bool aliased_to_self = absl::EndsWith(current_path, ref->column().name());
+    if (!aliased_to_self &&
+        zetasql_base::ContainsKey(computed_column_alias_, ref->column().column_id())) {
+      alias = GetColumnAlias(ref->column());
+    } else {
+      alias = ref->column().name();
+    }
+    SetPathForColumn(ref->column(), absl::StrCat(group_rows_alias, ".",
+                                                 ToIdentifierLiteral(alias)));
+  }
+  std::vector<std::pair<std::string, std::string>> select_list;
+  ZETASQL_RETURN_IF_ERROR(GetSelectList(node->column_list(), col_to_expr_map, node,
+                                query_expression.get(), &select_list));
+
+  ZETASQL_RET_CHECK(query_expression->TrySetSelectClause(select_list,
+                                                 /*select_hints=*/""));
+
+  PushSQLForQueryExpression(node, query_expression.release());
+
   return absl::OkStatus();
 }
 
@@ -1812,9 +2268,9 @@ int64_t SQLBuilder::GetUniqueId() {
   int64_t id = scan_id_sequence_.GetNext();
   if (id == 0) {  // Avoid using scan id 0.
     id = scan_id_sequence_.GetNext();
-    DCHECK_NE(id, 0);
+    ZETASQL_DCHECK_NE(id, 0);
   }
-  DCHECK_LE(id, std::numeric_limits<int32_t>::max());
+  ZETASQL_DCHECK_LE(id, std::numeric_limits<int32_t>::max());
   return id;
 }
 
@@ -1830,26 +2286,54 @@ void SQLBuilder::SetPathForColumnList(const ResolvedColumnList& column_list,
   }
 }
 
-void SQLBuilder::SetPathForColumnsInScan(const ResolvedScan* scan,
-                                         const std::string& alias) {
-  if (scan->node_kind() == RESOLVED_TABLE_SCAN &&
-      scan->GetAs<ResolvedTableScan>()->table()->IsValueTable()) {
-    if (scan->column_list_size() > 0) {
-      // This code is wrong.  See http://b/37291554.
-      const Table* table = scan->GetAs<ResolvedTableScan>()->table();
+absl::Status SQLBuilder::SetPathForColumnsInScan(const ResolvedScan* scan,
+                                                 const std::string& alias) {
+  if (scan->node_kind() == RESOLVED_TABLE_SCAN) {
+    const auto* table_scan = scan->GetAs<ResolvedTableScan>();
+    if (table_scan->table()->IsValueTable()) {
+      if (scan->column_list_size() > 0) {
+        // This code is wrong.  See http://b/37291554.
+        const Table* table = table_scan->table();
+        std::string table_name =
+            alias.empty() ? ToIdentifierLiteral(table->Name()) : alias;
+        SetPathForColumn(scan->column_list(0), table_name);
+      }
+      return absl::OkStatus();
+    }
+    // While column_index_list should always match to column_list, it's not
+    // always the case. When it does, use column_index_list to retrieve column
+    // names, otherwise fallback to using ResolvedColumn outside this
+    // if-block.
+    // See the class comment on `ResolvedTableScan` and ResolvedTableScan
+    // generation code in gen_resolved_ast.py
+    // TODO: Remove this if() and always use column_index_list
+    // to handle ResolvedTableScan.
+    if (table_scan->column_index_list_size() > 0) {
+      ZETASQL_RET_CHECK_EQ(table_scan->column_index_list_size(),
+                   table_scan->column_list_size());
+      const Table* table = table_scan->table();
       std::string table_name =
           alias.empty() ? ToIdentifierLiteral(table->Name()) : alias;
-      SetPathForColumn(scan->column_list(0), table_name);
-    }
-  } else {
-    for (const ResolvedColumn& column : scan->column_list()) {
-      std::string table_name =
-          alias.empty() ? ToIdentifierLiteral(column.table_name()) : alias;
-      SetPathForColumn(
-          column,
-          absl::StrCat(table_name, ".", ToIdentifierLiteral(column.name())));
+      for (int i = 0; i < table_scan->column_index_list_size(); ++i) {
+        const Column* column =
+            table->GetColumn(table_scan->column_index_list(i));
+        ZETASQL_RET_CHECK_NE(column, nullptr);
+        SetPathForColumn(
+            scan->column_list(i),
+            absl::StrCat(table_name, ".", ToIdentifierLiteral(column->Name())));
+      }
+      return absl::OkStatus();
     }
   }
+  // Use ResolvedColumn::name() for non-table scans and table scans where
+  // column_index_list does not match in length column_list.
+  for (const ResolvedColumn& column : scan->column_list()) {
+    std::string table_name =
+        alias.empty() ? ToIdentifierLiteral(column.table_name()) : alias;
+    SetPathForColumn(column, absl::StrCat(table_name, ".",
+                                          ToIdentifierLiteral(column.name())));
+  }
+  return absl::OkStatus();
 }
 
 absl::Status SQLBuilder::VisitResolvedJoinScan(const ResolvedJoinScan* node) {
@@ -1949,8 +2433,8 @@ absl::Status SQLBuilder::VisitResolvedLimitOffsetScan(
                         : node->offset()->GetAs<ResolvedCast>()->expr()));
     ZETASQL_RET_CHECK(query_expression->TrySetOffsetClause(result->GetSQL()));
   }
-  ZETASQL_RETURN_IF_ERROR(AddSelectListIfNeeded(node->column_list(),
-                                        query_expression.get()));
+  ZETASQL_RETURN_IF_ERROR(
+      AddSelectListIfNeeded(node->column_list(), query_expression.get()));
   PushSQLForQueryExpression(node, query_expression.release());
   return absl::OkStatus();
 }
@@ -1988,32 +2472,30 @@ absl::Status SQLBuilder::VisitResolvedSetOperationScan(
   std::unique_ptr<QueryExpression> query_expression(new QueryExpression);
   std::vector<std::unique_ptr<QueryExpression>> set_op_scan_list;
   for (const auto& input_item : node->input_item_list()) {
-    DCHECK_EQ(input_item->output_column_list_size(),
-              node->column_list_size());
+    ZETASQL_DCHECK_EQ(input_item->output_column_list_size(), node->column_list_size());
     const ResolvedScan* scan = input_item->scan();
     ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result, ProcessNode(scan));
     set_op_scan_list.push_back(std::move(result->query_expression));
-    ZETASQL_RETURN_IF_ERROR(AddSelectListIfNeeded(
-        input_item->output_column_list(), set_op_scan_list.back().get()));
+    ZETASQL_RETURN_IF_ERROR(AddSelectListIfNeeded(input_item->output_column_list(),
+                                          set_op_scan_list.back().get()));
 
     // If the query's column list doesn't exactly match the input to the
     // union, then add a wrapper query to make sure we have the right number
     // of columns and they have unique aliases.
     if (input_item->output_column_list() != scan->column_list()) {
-      ZETASQL_RETURN_IF_ERROR(WrapQueryExpression(
-          scan, set_op_scan_list.back().get()));
-      ZETASQL_RETURN_IF_ERROR(AddSelectListIfNeeded(
-          input_item->output_column_list(), set_op_scan_list.back().get()));
+      ZETASQL_RETURN_IF_ERROR(WrapQueryExpression(scan, set_op_scan_list.back().get()));
+      ZETASQL_RETURN_IF_ERROR(AddSelectListIfNeeded(input_item->output_column_list(),
+                                            set_op_scan_list.back().get()));
     }
   }
 
   // In a SetOperation scan, output columns use the column names from the first
   // subquery.
-  DCHECK_GT(set_op_scan_list.size(), 0);
+  ZETASQL_DCHECK_GT(set_op_scan_list.size(), 0);
   const std::vector<std::pair<std::string, std::string>>& first_select_list =
       set_op_scan_list[0]->SelectList();
   // If node->column_list() was empty, first_select_list will have a NULL added.
-  DCHECK_EQ(first_select_list.size(),
+  ZETASQL_DCHECK_EQ(first_select_list.size(),
             std::max<std::size_t>(node->column_list_size(), 1));
   for (int i = 0; i < node->column_list_size(); i++) {
     zetasql_base::InsertOrDie(&computed_column_alias_, node->column_list(i).column_id(),
@@ -2044,6 +2526,9 @@ absl::Status SQLBuilder::VisitResolvedOrderByItem(
                      ProcessNode(node->collation_name()));
     absl::StrAppend(&text, " COLLATE ", collation->GetSQL());
   }
+
+  // Mark field accessed. Collation doesn't have its own SQL clause.
+  node->collation();
 
   absl::StrAppend(&text, node->is_descending() ? " DESC" : "");
   if (node->null_order() != ResolvedOrderByItemEnums::ORDER_UNSPECIFIED) {
@@ -2113,6 +2598,12 @@ absl::Status SQLBuilder::ProcessAggregateScanBase(
                      result->GetSQL());
   }
 
+  for (const auto& collation : node->collation_list()) {
+    // Mark collation_list field as accessed, because collation doesn't have its
+    // own SQL clause.
+    collation.CollationName();
+  }
+
   for (const auto& computed_col : node->aggregate_list()) {
     ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                      ProcessNode(computed_col->expr()));
@@ -2158,6 +2649,35 @@ absl::Status SQLBuilder::VisitResolvedAggregateScan(
   ZETASQL_RETURN_IF_ERROR(ProcessAggregateScanBase(node, rollup_column_id_list,
                                            query_expression.get()));
   PushSQLForQueryExpression(node, query_expression.release());
+  return absl::OkStatus();
+}
+
+absl::Status SQLBuilder::VisitResolvedAnonymizedAggregateScan(
+    const ResolvedAnonymizedAggregateScan* node) {
+  ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> input_result,
+                   ProcessNode(node->input_scan()));
+  std::unique_ptr<QueryExpression> query_expression(
+      input_result->query_expression.release());
+
+  ZETASQL_RETURN_IF_ERROR(ProcessAggregateScanBase(node, /*rollup_column_id_list=*/{},
+                                           query_expression.get()));
+
+  // We handle the WITH ANONYMIZATION clause *after* processing the
+  // AggregateScan, because the AggregateScan might introduce a new
+  // QueryExpression and we need to ensure that this clause is added
+  // to the QueryExpression related to the AggregateScan.
+  std::string anonymization_options_sql = "WITH ANONYMIZATION ";
+  ZETASQL_RETURN_IF_ERROR(AppendOptions(node->anonymization_option_list(),
+                                &anonymization_options_sql));
+  ZETASQL_RET_CHECK(query_expression->TrySetWithAnonymizationClause(
+      anonymization_options_sql));
+
+  PushSQLForQueryExpression(node, query_expression.release());
+
+  // The k_threshold is not mapped back to sql, so we can safely ignore it.
+  if (node->k_threshold_expr() != nullptr) {
+    node->k_threshold_expr()->column();
+  }
   return absl::OkStatus();
 }
 
@@ -2289,10 +2809,10 @@ absl::Status SQLBuilder::VisitResolvedSampleScan(
       // they can be referenced in the PARTITION BY).
       const ResolvedTableScan* resolved_table_scan =
           node->input_scan()->GetAs<ResolvedTableScan>();
-      SetPathForColumnsInScan(
+      ZETASQL_RETURN_IF_ERROR(SetPathForColumnsInScan(
           node->input_scan(),
-          zetasql_base::FindWithDefault(table_alias_map_,
-                               resolved_table_scan->table(), ""));
+          zetasql_base::FindWithDefault(table_alias_map_, resolved_table_scan->table(),
+                               "")));
       break;
     }
     case RESOLVED_JOIN_SCAN:
@@ -2315,8 +2835,8 @@ absl::Status SQLBuilder::VisitResolvedSampleScan(
       break;
     }
     default: {
-      ZETASQL_RETURN_IF_ERROR(WrapQueryExpression(node->input_scan(),
-                                          query_expression.get()));
+      ZETASQL_RETURN_IF_ERROR(
+          WrapQueryExpression(node->input_scan(), query_expression.get()));
       from_clause = query_expression->FromClause();
     }
   }
@@ -2432,9 +2952,8 @@ absl::Status SQLBuilder::VisitResolvedQueryStmt(const ResolvedQueryStmt* node) {
     output_col->column();
   }
 
-  ZETASQL_ASSIGN_OR_RETURN(
-      QueryExpression* query_result,
-      ProcessQuery(node->query(), node->output_column_list()));
+  ZETASQL_ASSIGN_OR_RETURN(QueryExpression * query_result,
+                   ProcessQuery(node->query(), node->output_column_list()));
   std::unique_ptr<QueryExpression> query_expression(query_result);
 
   std::string sql;
@@ -2461,7 +2980,7 @@ absl::Status SQLBuilder::VisitResolvedExplainStmt(
     absl::StrAppend(&sql, " ");
   }
 
-  DCHECK(node->statement() != nullptr);
+  ZETASQL_DCHECK(node->statement() != nullptr);
   ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                    ProcessNode(node->statement()));
   absl::StrAppend(&sql, "EXPLAIN ", result->GetSQL());
@@ -2497,6 +3016,20 @@ static std::string GetDeterminismLevelSql(
       return " STABLE";
     case ResolvedCreateStatementEnums::DETERMINISM_VOLATILE:
       return " VOLATILE";
+  }
+}
+
+void SQLBuilder::GetOptionalColumnNameList(const ResolvedCreateViewBase* node,
+                                           std::string* sql) {
+  if (node->has_explicit_columns()) {
+    absl::StrAppend(sql, "(");
+    absl::StrAppend(sql, absl::StrJoin(node->output_column_list(), ", ",
+                                       [](std::string* out, const auto& c) {
+                                         absl::StrAppend(
+                                             out,
+                                             ToIdentifierLiteral(c->name()));
+                                       }));
+    absl::StrAppend(sql, ")");
   }
 }
 
@@ -2561,6 +3094,7 @@ absl::Status SQLBuilder::GetCreateViewStatement(
 
   std::string sql;
   ZETASQL_RETURN_IF_ERROR(GetCreateStatementPrefix(node, view_type, &sql));
+  GetOptionalColumnNameList(node, &sql);
 
   absl::StrAppend(&sql, GetSqlSecuritySql(node->sql_security()));
 
@@ -2599,6 +3133,9 @@ absl::Status SQLBuilder::GetCreateStatementPrefix(
     if (create_index->is_unique()) {
       absl::StrAppend(sql, "UNIQUE ");
     }
+    if (create_index->is_search()) {
+      absl::StrAppend(sql, "SEARCH ");
+    }
   } else {
     switch (node->create_scope()) {
       case ResolvedCreateStatement::CREATE_PRIVATE:
@@ -2632,13 +3169,29 @@ absl::Status SQLBuilder::GetCreateStatementPrefix(
 absl::Status SQLBuilder::GetPartitionByListString(
     const std::vector<std::unique_ptr<const ResolvedExpr>>& partition_by_list,
     std::string* sql) {
-  DCHECK(!partition_by_list.empty());
+  ZETASQL_DCHECK(!partition_by_list.empty());
 
   std::vector<std::string> expressions;
   expressions.reserve(partition_by_list.size());
   for (const auto& partition_by_expr : partition_by_list) {
     ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> expr,
                      ProcessNode(partition_by_expr.get()));
+    expressions.push_back(expr->GetSQL());
+  }
+  absl::StrAppend(sql, absl::StrJoin(expressions, ","));
+
+  return absl::OkStatus();
+}
+
+absl::Status SQLBuilder::GetTableAndColumnInfoList(
+    const std::vector<std::unique_ptr<const ResolvedTableAndColumnInfo>>&
+        table_and_column_info_list,
+    std::string* sql) {
+  std::vector<std::string> expressions;
+  expressions.reserve(table_and_column_info_list.size());
+  for (const auto& table_and_column_info : table_and_column_info_list) {
+    ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> expr,
+                     ProcessNode(table_and_column_info.get()));
     expressions.push_back(expr->GetSQL());
   }
   absl::StrAppend(sql, absl::StrJoin(expressions, ","));
@@ -2687,6 +3240,11 @@ absl::Status SQLBuilder::VisitResolvedCreateDatabaseStmt(
 }
 
 static std::string GetColumnListSql(
+    const std::vector<std::string>& column_names) {
+  return absl::StrCat("(", absl::StrJoin(column_names, ","), ")");
+}
+
+static std::string GetColumnListSql(
     const std::vector<int>& column_index_list,
     const std::function<std::string(int)>& get_name) {
   std::vector<std::string> column_names;
@@ -2694,7 +3252,7 @@ static std::string GetColumnListSql(
   for (auto index : column_index_list) {
     column_names.push_back(get_name(index));
   }
-  return absl::StrCat("(", absl::StrJoin(column_names, ","), ")");
+  return GetColumnListSql(column_names);
 }
 
 static std::string GetForeignKeyMatchSql(ResolvedForeignKey::MatchMode mode) {
@@ -2722,6 +3280,66 @@ static std::string GetForeignKeyActionSql(
   }
 }
 
+zetasql_base::StatusOr<std::string> SQLBuilder::ProcessForeignKey(
+    const ResolvedForeignKey* foreign_key, bool is_if_not_exists) {
+  // We don't need the referencing column offsets here.
+  foreign_key->MarkFieldsAccessed();
+  std::string sql;
+  if (!foreign_key->constraint_name().empty()) {
+    absl::StrAppend(&sql, "CONSTRAINT ");
+    if (is_if_not_exists) {
+      absl::StrAppend(&sql, " IF NOT EXISTS ");
+    }
+    absl::StrAppend(&sql, foreign_key->constraint_name(), " ");
+  }
+  std::vector<std::string> referencing_columns;
+  for (const std::string& referencing_column :
+       foreign_key->referencing_column_list()) {
+    referencing_columns.push_back(referencing_column);
+  }
+  absl::StrAppend(&sql, "FOREIGN KEY", GetColumnListSql(referencing_columns),
+                  " ");
+  absl::StrAppend(
+      &sql, "REFERENCES ", foreign_key->referenced_table()->Name(),
+      GetColumnListSql(
+          foreign_key->referenced_column_offset_list(),
+          [&foreign_key](int i) {
+            return foreign_key->referenced_table()->GetColumn(i)->Name();
+          }),
+      " ");
+  absl::StrAppend(&sql, "MATCH ",
+                  GetForeignKeyMatchSql(foreign_key->match_mode()), " ");
+  absl::StrAppend(&sql, "ON UPDATE ",
+                  GetForeignKeyActionSql(foreign_key->update_action()), " ");
+  absl::StrAppend(&sql, "ON DELETE ",
+                  GetForeignKeyActionSql(foreign_key->delete_action()), " ");
+  if (!foreign_key->enforced()) {
+    absl::StrAppend(&sql, "NOT ");
+  }
+  absl::StrAppend(&sql, "ENFORCED");
+  ZETASQL_RETURN_IF_ERROR(AppendOptionsIfPresent(foreign_key->option_list(), &sql));
+
+  return sql;
+}
+
+zetasql_base::StatusOr<std::string> SQLBuilder::ProcessPrimaryKey(
+    const ResolvedPrimaryKey* resolved_primary_key) {
+  ZETASQL_RET_CHECK(resolved_primary_key != nullptr);
+  // We don't access column_offset_list here.
+  resolved_primary_key->MarkFieldsAccessed();
+
+  std::string primary_key = "PRIMARY KEY";
+  absl::StrAppend(&primary_key,
+                  GetColumnListSql(resolved_primary_key->column_name_list()));
+  if (resolved_primary_key->unenforced()) {
+    absl::StrAppend(&primary_key, " NOT ENFORCED");
+  }
+  ZETASQL_RETURN_IF_ERROR(AppendOptionsIfPresent(resolved_primary_key->option_list(),
+                                         &primary_key));
+
+  return primary_key;
+}
+
 absl::Status SQLBuilder::ProcessTableElementsBase(
     std::string* sql,
     const std::vector<std::unique_ptr<const ResolvedColumnDefinition>>&
@@ -2731,61 +3349,27 @@ absl::Status SQLBuilder::ProcessTableElementsBase(
         foreign_key_list,
     const std::vector<std::unique_ptr<const ResolvedCheckConstraint>>&
         check_constraint_list) {
-  absl::StrAppend(sql, "(");
+  if (!column_definition_list.empty()) {
+    absl::StrAppend(sql, "(");
+  }
   std::vector<std::string> table_elements;
   // Go through each column and generate the SQL corresponding to it.
   for (const auto& c : column_definition_list) {
     std::string table_element =
         absl::StrCat(ToIdentifierLiteral(c->name()), " ");
-    ZETASQL_RETURN_IF_ERROR(
-        AppendColumnSchema(c->type(), c->is_hidden(), c->annotations(),
-                           c->generated_column_info(), &table_element));
+    ZETASQL_RETURN_IF_ERROR(AppendColumnSchema(
+        c->type(), c->is_hidden(), c->annotations(), c->generated_column_info(),
+        c->default_expression(), &table_element));
     table_elements.push_back(std::move(table_element));
   }
   if (resolved_primary_key != nullptr) {
-    const auto* pk = resolved_primary_key;
-    std::string primary_key = "PRIMARY KEY";
-    absl::StrAppend(&primary_key,
-                    GetColumnListSql(pk->column_offset_list(),
-                                     [&column_definition_list](int i) {
-                                       return column_definition_list[i]->name();
-                                     }),
-                    " ");
-    if (pk->unenforced()) {
-      absl::StrAppend(&primary_key, " NOT ENFORCED");
-    }
-    ZETASQL_RETURN_IF_ERROR(AppendOptionsIfPresent(pk->option_list(), &primary_key));
+    ZETASQL_ASSIGN_OR_RETURN(std::string primary_key,
+                     ProcessPrimaryKey(resolved_primary_key));
     table_elements.push_back(primary_key);
   }
   for (const auto& fk : foreign_key_list) {
-    std::string foreign_key;
-    if (!fk->constraint_name().empty()) {
-      absl::StrAppend(&foreign_key, "CONSTRAINT ", fk->constraint_name(), " ");
-    }
-    absl::StrAppend(&foreign_key, "FOREIGN KEY",
-                    GetColumnListSql(fk->referencing_column_offset_list(),
-                                     [&column_definition_list](int i) {
-                                       return column_definition_list[i]->name();
-                                     }),
-                    " ");
-    absl::StrAppend(
-        &foreign_key, "REFERENCES ", fk->referenced_table()->Name(),
-        GetColumnListSql(fk->referenced_column_offset_list(),
-                         [&fk](int i) {
-                           return fk->referenced_table()->GetColumn(i)->Name();
-                         }),
-        " ");
-    absl::StrAppend(&foreign_key, "MATCH ",
-                    GetForeignKeyMatchSql(fk->match_mode()), " ");
-    absl::StrAppend(&foreign_key, "ON UPDATE ",
-                    GetForeignKeyActionSql(fk->update_action()), " ");
-    absl::StrAppend(&foreign_key, "ON DELETE ",
-                    GetForeignKeyActionSql(fk->delete_action()), " ");
-    if (!fk->enforced()) {
-      absl::StrAppend(&foreign_key, "NOT ");
-    }
-    absl::StrAppend(&foreign_key, "ENFORCED");
-    ZETASQL_RETURN_IF_ERROR(AppendOptionsIfPresent(fk->option_list(), &foreign_key));
+    ZETASQL_ASSIGN_OR_RETURN(std::string foreign_key,
+                     ProcessForeignKey(fk.get(), /*is_if_not_exists=*/false));
     table_elements.push_back(foreign_key);
   }
   for (const auto& check_constraint : check_constraint_list) {
@@ -2807,7 +3391,9 @@ absl::Status SQLBuilder::ProcessTableElementsBase(
     table_elements.push_back(check_constraint_sql);
   }
   absl::StrAppend(sql, absl::StrJoin(table_elements, ", "));
-  absl::StrAppend(sql, ")");
+  if (!column_definition_list.empty()) {
+    absl::StrAppend(sql, ")");
+  }
   return absl::OkStatus();
 }
 
@@ -2817,6 +3403,17 @@ zetasql_base::StatusOr<std::string> SQLBuilder::ProcessCreateTableStmtBase(
   std::string sql;
 
   ZETASQL_RETURN_IF_ERROR(GetCreateStatementPrefix(node, table_type, &sql));
+
+  const bool like_table_name_empty = node->like_table() == nullptr;
+  if (!like_table_name_empty) {
+    // Dummy access the column_definition_list
+    for (const auto& column_definition : node->column_definition_list()) {
+      column_definition->type();
+    }
+
+    absl::StrAppend(&sql, "LIKE ");
+    absl::StrAppend(&sql, node->like_table()->Name());
+  }
   // Make column aliases available for PARTITION BY, CLUSTER BY and table
   // constraints.
   for (const auto& column_definition : node->column_definition_list()) {
@@ -2826,7 +3423,7 @@ zetasql_base::StatusOr<std::string> SQLBuilder::ProcessCreateTableStmtBase(
   for (const ResolvedColumn& column : node->pseudo_column_list()) {
     computed_column_alias_[column.column_id()] = column.name();
   }
-  if (process_column_definitions) {
+  if (process_column_definitions && like_table_name_empty) {
     ZETASQL_RETURN_IF_ERROR(ProcessTableElementsBase(
         &sql, node->column_definition_list(), node->primary_key(),
         node->foreign_key_list(), node->check_constraint_list()));
@@ -2848,12 +3445,26 @@ absl::Status SQLBuilder::VisitResolvedCreateSchemaStmt(
   return absl::OkStatus();
 }
 
+absl::Status SQLBuilder::AppendCloneDataSource(const ResolvedScan* source,
+                                               std::string* sql) {
+  ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result, ProcessNode(source));
+  std::string from = result->GetSQL();
+  // Strip away the " FROM " generated by QueryExpression::GetSQLQuery()
+  absl::StrAppend(sql, absl::StripPrefix(from, kFrom));
+  return absl::OkStatus();
+}
+
 absl::Status SQLBuilder::VisitResolvedCreateTableStmt(
     const ResolvedCreateTableStmt* node) {
   ZETASQL_ASSIGN_OR_RETURN(
       std::string sql,
       ProcessCreateTableStmtBase(node, /*process_column_definitions=*/true,
                                  /*table_type=*/"TABLE"));
+
+  if (node->clone_from() != nullptr) {
+    absl::StrAppend(&sql, " CLONE ");
+    ZETASQL_RETURN_IF_ERROR(AppendCloneDataSource(node->clone_from(), &sql));
+  }
 
   if (!node->partition_by_list().empty()) {
     absl::StrAppend(&sql, " PARTITION BY ");
@@ -2874,6 +3485,24 @@ absl::Status SQLBuilder::VisitResolvedCreateTableStmt(
   return absl::OkStatus();
 }
 
+absl::Status SQLBuilder::VisitResolvedCreateSnapshotTableStmt(
+    const ResolvedCreateSnapshotTableStmt* node) {
+  std::string sql;
+
+  ZETASQL_RETURN_IF_ERROR(GetCreateStatementPrefix(node, "SNAPSHOT TABLE", &sql));
+
+  absl::StrAppend(&sql, " CLONE ");
+  ZETASQL_RETURN_IF_ERROR(AppendCloneDataSource(node->clone_from(), &sql));
+
+  if (!node->option_list().empty()) {
+    ZETASQL_ASSIGN_OR_RETURN(const std::string options_string,
+                     GetHintListString(node->option_list()));
+    absl::StrAppend(&sql, " OPTIONS(", options_string, ") ");
+  }
+  PushQueryFragment(node, sql);
+  return absl::OkStatus();
+}
+
 absl::Status SQLBuilder::VisitResolvedCreateTableAsSelectStmt(
     const ResolvedCreateTableAsSelectStmt* node) {
   // Dummy access on the fields so as to pass the final CheckFieldsAccessed() on
@@ -2883,9 +3512,8 @@ absl::Status SQLBuilder::VisitResolvedCreateTableAsSelectStmt(
     output_col->column();
   }
 
-  ZETASQL_ASSIGN_OR_RETURN(
-      QueryExpression* query_result,
-      ProcessQuery(node->query(), node->output_column_list()));
+  ZETASQL_ASSIGN_OR_RETURN(QueryExpression * query_result,
+                   ProcessQuery(node->query(), node->output_column_list()));
   std::unique_ptr<QueryExpression> query_expression(query_result);
 
   // Print the column definition list only if it contains more information
@@ -2897,9 +3525,9 @@ absl::Status SQLBuilder::VisitResolvedCreateTableAsSelectStmt(
     for (const auto& column_def : node->column_definition_list()) {
       column_def->name();  // Mark accessed.
       column_def->type();  // Mark accessed.
-      if (column_def->annotations() != nullptr ||
-          column_def->is_hidden() ||
-          column_def->generated_column_info() != nullptr) {
+      if (column_def->annotations() != nullptr || column_def->is_hidden() ||
+          column_def->generated_column_info() != nullptr ||
+          column_def->default_expression() != nullptr) {
         process_column_definitions = true;
         break;
       }
@@ -2962,9 +3590,9 @@ absl::Status SQLBuilder::VisitResolvedCreateModelStmt(
 
   // Restore TRANSFORM clause.
   if (!node->transform_list().empty()) {
-    DCHECK_EQ(node->transform_list_size(),
+    ZETASQL_DCHECK_EQ(node->transform_list_size(),
               node->transform_output_column_list_size());
-    DCHECK_EQ(node->output_column_list_size(),
+    ZETASQL_DCHECK_EQ(node->output_column_list_size(),
               node->transform_input_column_list_size());
     absl::flat_hash_map<std::string, /*column_id=*/int>
         query_column_name_id_map;
@@ -3067,7 +3695,7 @@ absl::Status SQLBuilder::VisitResolvedCreateIndexStmt(
   if (!node->unnest_expressions_list().empty()) {
     absl::StrAppend(&sql, "\n");
     for (const auto& index_unnest_expression :
-        node->unnest_expressions_list()) {
+         node->unnest_expressions_list()) {
       ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                        ProcessNode(index_unnest_expression->array_expr()));
       absl::StrAppend(&sql, "UNNEST(", result->GetSQL(), ") ",
@@ -3080,7 +3708,8 @@ absl::Status SQLBuilder::VisitResolvedCreateIndexStmt(
         absl::StrAppend(
             &sql, " WITH OFFSET ",
             ToIdentifierLiteral(index_unnest_expression->array_offset_column()
-                                    ->column().name()));
+                                    ->column()
+                                    .name()));
         SetPathForColumn(
             index_unnest_expression->array_offset_column()->column(),
             ToIdentifierLiteral(index_unnest_expression->array_offset_column()
@@ -3167,6 +3796,7 @@ absl::Status SQLBuilder::VisitResolvedCreateMaterializedViewStmt(
 
   std::string sql;
   ZETASQL_RETURN_IF_ERROR(GetCreateStatementPrefix(node, "VIEW", &sql));
+  GetOptionalColumnNameList(node, &sql);
 
   // Make column aliases available for PARTITION BY, CLUSTER BY.
   for (const auto& column_definition : node->column_definition_list()) {
@@ -3210,14 +3840,15 @@ absl::Status SQLBuilder::ProcessWithPartitionColumns(
     for (const auto& c : node->column_definition_list()) {
       std::string table_element =
           absl::StrCat(ToIdentifierLiteral(c->name()), " ");
-      ZETASQL_RETURN_IF_ERROR(
-          AppendColumnSchema(c->type(), c->is_hidden(), c->annotations(),
-                             c->generated_column_info(), &table_element));
+      ZETASQL_RETURN_IF_ERROR(AppendColumnSchema(
+          c->type(), c->is_hidden(), c->annotations(),
+          c->generated_column_info(), c->default_expression(), &table_element));
       table_elements.push_back(std::move(table_element));
     }
     absl::StrAppend(sql, absl::StrJoin(table_elements, ", "));
     absl::StrAppend(sql, ")");
   }
+  absl::StrAppend(sql, " ");
 
   return absl::OkStatus();
 }
@@ -3235,6 +3866,12 @@ absl::Status SQLBuilder::VisitResolvedCreateExternalTableStmt(
   if (node->with_partition_columns() != nullptr) {
     ZETASQL_RETURN_IF_ERROR(
         ProcessWithPartitionColumns(&sql, node->with_partition_columns()));
+  }
+
+  if (node->connection() != nullptr) {
+    const std::string connection_alias =
+        ToIdentifierLiteral(node->connection()->connection()->Name());
+    absl::StrAppend(&sql, "WITH CONNECTION ", connection_alias, " ");
   }
 
   ZETASQL_ASSIGN_OR_RETURN(const std::string options_string,
@@ -3262,8 +3899,7 @@ zetasql_base::StatusOr<std::string> SQLBuilder::GetFunctionArgListString(
           absl::StrCat(FunctionEnums::ProcedureArgumentMode_Name(mode), " ");
     }
     arg_list_sql.push_back(absl::StrCat(
-        procedure_argument_mode,
-        arg_name_list[i], " ",
+        procedure_argument_mode, arg_name_list[i], " ",
         signature.argument(i).GetSQLDeclaration(options_.product_mode),
         signature.argument(i).options().is_not_aggregate() ? " NOT AGGREGATE"
                                                            : ""));
@@ -3274,8 +3910,7 @@ zetasql_base::StatusOr<std::string> SQLBuilder::GetFunctionArgListString(
 absl::Status SQLBuilder::VisitResolvedCreateConstantStmt(
     const ResolvedCreateConstantStmt* node) {
   std::string sql;
-  ZETASQL_RETURN_IF_ERROR(GetCreateStatementPrefix(
-      node, "CONSTANT", &sql));
+  ZETASQL_RETURN_IF_ERROR(GetCreateStatementPrefix(node, "CONSTANT", &sql));
   ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> expr_fragment,
                    ProcessNode(node->expr()));
   absl::StrAppend(&sql, " = ", expr_fragment->GetSQL());
@@ -3351,7 +3986,8 @@ absl::Status SQLBuilder::VisitResolvedCreateTableFunctionStmt(
     absl::StrAppend(&sql, " OPTIONS(", options_string, ") ");
   }
   bool is_sql_language = zetasql_base::CaseEqual(node->language(), "SQL");
-  bool is_undeclared_language = zetasql_base::CaseEqual(node->language(), "UNDECLARED");
+  bool is_undeclared_language =
+      zetasql_base::CaseEqual(node->language(), "UNDECLARED");
   bool is_external_language = !is_sql_language && !is_undeclared_language;
   if (is_external_language) {
     absl::StrAppend(&sql, " LANGUAGE ", ToIdentifierLiteral(node->language()));
@@ -3360,8 +3996,7 @@ absl::Status SQLBuilder::VisitResolvedCreateTableFunctionStmt(
 
   if (node->query() != nullptr) {
     ZETASQL_ASSIGN_OR_RETURN(QueryExpression * query_result,
-                     ProcessQuery(node->query(),
-                                  node->output_column_list()));
+                     ProcessQuery(node->query(), node->output_column_list()));
     std::unique_ptr<QueryExpression> query_expression(query_result);
     absl::StrAppend(&sql, " AS ", query_expression->GetSQLQuery());
   } else if (!node->code().empty()) {
@@ -3433,9 +4068,8 @@ absl::Status SQLBuilder::VisitResolvedExportDataStmt(
     output_col->column();
   }
 
-  ZETASQL_ASSIGN_OR_RETURN(
-      QueryExpression* query_result,
-      ProcessQuery(node->query(), node->output_column_list()));
+  ZETASQL_ASSIGN_OR_RETURN(QueryExpression * query_result,
+                   ProcessQuery(node->query(), node->output_column_list()));
   std::unique_ptr<QueryExpression> query_expression(query_result);
 
   std::string sql;
@@ -3537,8 +4171,7 @@ absl::Status SQLBuilder::VisitResolvedDescribeStmt(
   return absl::OkStatus();
 }
 
-absl::Status SQLBuilder::VisitResolvedShowStmt(
-    const ResolvedShowStmt* node) {
+absl::Status SQLBuilder::VisitResolvedShowStmt(const ResolvedShowStmt* node) {
   std::string sql;
   absl::StrAppend(&sql, "SHOW ", ToIdentifierLiteral(node->identifier()));
   if (!node->name_path().empty()) {
@@ -3555,8 +4188,7 @@ absl::Status SQLBuilder::VisitResolvedShowStmt(
   return absl::OkStatus();
 }
 
-absl::Status SQLBuilder::VisitResolvedBeginStmt(
-    const ResolvedBeginStmt* node) {
+absl::Status SQLBuilder::VisitResolvedBeginStmt(const ResolvedBeginStmt* node) {
   std::string sql;
   absl::StrAppend(&sql, "BEGIN TRANSACTION");
   std::vector<std::string> modes;
@@ -3648,7 +4280,7 @@ absl::Status SQLBuilder::VisitResolvedAbortBatchStmt(
 
 absl::Status SQLBuilder::VisitResolvedAssignmentStmt(
     const ResolvedAssignmentStmt* node) {
-  CHECK_EQ(in_set_lhs_, false);
+  ZETASQL_CHECK_EQ(in_set_lhs_, false);
   in_set_lhs_ = true;
   ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> target_sql,
                    ProcessNode(node->target()));
@@ -3659,6 +4291,22 @@ absl::Status SQLBuilder::VisitResolvedAssignmentStmt(
   std::string sql;
   absl::StrAppend(&sql, "SET ", target_sql->GetSQL(), " = ",
                   expr_sql->GetSQL());
+  PushQueryFragment(node, sql);
+  return absl::OkStatus();
+}
+
+absl::Status SQLBuilder::VisitResolvedAnalyzeStmt(
+    const ResolvedAnalyzeStmt* node) {
+  std::string sql = "ANALYZE ";
+  if (node->option_list_size() > 0) {
+    ZETASQL_ASSIGN_OR_RETURN(const std::string options_string,
+                     GetHintListString(node->option_list()));
+    absl::StrAppend(&sql, " OPTIONS(", options_string, ")");
+  }
+  std::string table_and_column_index_list;
+  ZETASQL_RETURN_IF_ERROR(GetTableAndColumnInfoList(node->table_and_column_index_list(),
+                                            &table_and_column_index_list));
+  absl::StrAppend(&sql, table_and_column_index_list);
   PushQueryFragment(node, sql);
   return absl::OkStatus();
 }
@@ -3737,17 +4385,80 @@ absl::Status SQLBuilder::VisitResolvedDeleteStmt(
                      ProcessNode(node->assert_rows_modified()));
     absl::StrAppend(&sql, " ", assert_rows_modified->GetSQL());
   }
+  if (node->returning() != nullptr) {
+    ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> returning,
+                     ProcessNode(node->returning()));
+    absl::StrAppend(&sql, " ", returning->GetSQL());
+  }
 
   PushQueryFragment(node, sql);
   return absl::OkStatus();
 }
 
-absl::Status SQLBuilder::VisitResolvedDropStmt(
-    const ResolvedDropStmt* node) {
+absl::Status SQLBuilder::VisitResolvedReturningClause(
+    const ResolvedReturningClause* node) {
+  for (int i = 0; i < node->output_column_list_size(); i++) {
+    const ResolvedOutputColumn* output_col = node->output_column_list(i);
+    // Dummy access on the output_column_list so as to pass the final
+    // CheckFieldsAccessed() on a statement level before building the sql.
+    output_col->column();
+  }
+
+  std::string sql = "THEN RETURN";
+  bool has_action_column = node->action_column() != nullptr;
+
+  if (has_action_column) {
+    std::string action_alias = node->action_column()->column().name();
+    absl::StrAppend(&sql, " WITH ACTION AS ", action_alias);
+  }
+
+  size_t output_size =
+      node->output_column_list_size() - (has_action_column ? 1 : 0);
+
+  absl::flat_hash_map</*column_id=*/int64_t, const ResolvedExpr*>
+      col_to_expr_map;
+  for (const auto& expr : node->expr_list()) {
+    zetasql_base::InsertIfNotPresent(&col_to_expr_map, expr->column().column_id(),
+                            expr->expr());
+  }
+
+  for (int i = 0; i < output_size; i++) {
+    const ResolvedOutputColumn* col = node->output_column_list(i);
+    if (col_to_expr_map.contains(col->column().column_id())) {
+      const ResolvedExpr* expr =
+          zetasql_base::FindOrDie(col_to_expr_map, col->column().column_id());
+      ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
+                       ProcessNode(expr));
+      absl::StrAppend(&sql, " ", result->GetSQL(), " AS");
+    }
+    absl::StrAppend(&sql, " ", ToIdentifierLiteral(col->name()));
+
+    if (i != output_size - 1) {
+      absl::StrAppend(&sql, ",");
+    }
+  }
+
+  PushQueryFragment(node, sql);
+  return absl::OkStatus();
+}
+
+static std::string GetDropModeSQL(ResolvedDropStmtEnums::DropMode mode) {
+  switch (mode) {
+    case ResolvedDropStmtEnums::DROP_MODE_UNSPECIFIED:
+      return "";
+    case ResolvedDropStmtEnums::RESTRICT:
+      return "RESTRICT";
+    case ResolvedDropStmtEnums::CASCADE:
+      return "CASCADE";
+  }
+}
+
+absl::Status SQLBuilder::VisitResolvedDropStmt(const ResolvedDropStmt* node) {
   std::string sql;
   absl::StrAppend(&sql, "DROP ", ToIdentifierLiteral(node->object_type()),
                   node->is_if_exists() ? " IF EXISTS " : " ",
                   IdentifierPathToString(node->name_path()));
+  absl::StrAppend(&sql, GetDropModeSQL(node->drop_mode()));
   PushQueryFragment(node, sql);
   return absl::OkStatus();
 }
@@ -3766,10 +4477,30 @@ absl::Status SQLBuilder::VisitResolvedDropFunctionStmt(
   return absl::OkStatus();
 }
 
+absl::Status SQLBuilder::VisitResolvedDropTableFunctionStmt(
+    const ResolvedDropTableFunctionStmt* node) {
+  std::string sql;
+  absl::StrAppend(&sql, "DROP TABLE FUNCTION ",
+                  node->is_if_exists() ? " IF EXISTS " : " ",
+                  IdentifierPathToString(node->name_path()));
+  PushQueryFragment(node, sql);
+  return absl::OkStatus();
+}
+
 absl::Status SQLBuilder::VisitResolvedDropMaterializedViewStmt(
     const ResolvedDropMaterializedViewStmt* node) {
   std::string sql;
   absl::StrAppend(&sql, "DROP MATERIALIZED VIEW",
+                  node->is_if_exists() ? " IF EXISTS " : " ",
+                  IdentifierPathToString(node->name_path()));
+  PushQueryFragment(node, sql);
+  return absl::OkStatus();
+}
+
+absl::Status SQLBuilder::VisitResolvedDropSnapshotTableStmt(
+    const ResolvedDropSnapshotTableStmt* node) {
+  std::string sql;
+  absl::StrAppend(&sql, "DROP SNAPSHOT TABLE",
                   node->is_if_exists() ? " IF EXISTS " : " ",
                   IdentifierPathToString(node->name_path()));
   PushQueryFragment(node, sql);
@@ -3789,6 +4520,20 @@ absl::Status SQLBuilder::VisitResolvedDropRowAccessPolicyStmt(
   }
   absl::StrAppend(&sql, " ON ",
                   IdentifierPathToString(node->target_name_path()));
+  PushQueryFragment(node, sql);
+  return absl::OkStatus();
+}
+
+absl::Status SQLBuilder::VisitResolvedDropSearchIndexStmt(
+    const ResolvedDropSearchIndexStmt* node) {
+  std::string sql;
+  absl::StrAppend(&sql, "DROP SEARCH INDEX");
+  absl::StrAppend(&sql, node->is_if_exists() ? " IF EXISTS " : " ",
+                  ToIdentifierLiteral(node->name()));
+  if (!node->table_name_path().empty()) {
+    absl::StrAppend(&sql, " ON ",
+                    IdentifierPathToString(node->table_name_path()));
+  }
   PushQueryFragment(node, sql);
   return absl::OkStatus();
 }
@@ -3823,8 +4568,7 @@ absl::Status SQLBuilder::VisitResolvedDMLDefault(
   return absl::OkStatus();
 }
 
-absl::Status SQLBuilder::VisitResolvedDMLValue(
-    const ResolvedDMLValue* node) {
+absl::Status SQLBuilder::VisitResolvedDMLValue(const ResolvedDMLValue* node) {
   ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                    ProcessNode(node->value()));
   PushQueryFragment(node, result->GetSQL());
@@ -3979,7 +4723,7 @@ absl::Status SQLBuilder::VisitResolvedUpdateStmt(
     // Always use a table alias. If we have the FROM clause, the alias might
     // appear in the FROM scan.
     const std::string alias = GetScanAlias(node->table_scan());
-    SetPathForColumnsInScan(node->table_scan(), alias);
+    ZETASQL_RETURN_IF_ERROR(SetPathForColumnsInScan(node->table_scan(), alias));
     absl::StrAppend(
         &target_sql,
         TableNameToIdentifierLiteral(node->table_scan()->table()->Name()),
@@ -4003,7 +4747,7 @@ absl::Status SQLBuilder::VisitResolvedUpdateStmt(
 
   std::string from_sql;
   if (node->from_scan() != nullptr) {
-    SetPathForColumnsInScan(node->from_scan(), "");
+    ZETASQL_RETURN_IF_ERROR(SetPathForColumnsInScan(node->from_scan(), ""));
     ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> from,
                      ProcessNode(node->from_scan()));
     std::unique_ptr<QueryExpression> query_expression(
@@ -4028,6 +4772,11 @@ absl::Status SQLBuilder::VisitResolvedUpdateStmt(
     ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> assert_rows_modified,
                      ProcessNode(node->assert_rows_modified()));
     absl::StrAppend(&sql, " ", assert_rows_modified->GetSQL());
+  }
+  if (node->returning() != nullptr) {
+    ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> returning,
+                     ProcessNode(node->returning()));
+    absl::StrAppend(&sql, " ", returning->GetSQL());
   }
 
   PushQueryFragment(node, sql);
@@ -4105,10 +4854,10 @@ absl::Status SQLBuilder::VisitResolvedInsertStmt(
     // generates a final output query with columns in the wrong order, which
     // is fixed if I force this block to run.  I don't understand it though.
     if (node->query_output_column_list() != node->query()->column_list()) {
-      ZETASQL_RETURN_IF_ERROR(WrapQueryExpression(
-          node->query(), result->query_expression.get()));
-      ZETASQL_RETURN_IF_ERROR(AddSelectListIfNeeded(
-          node->query_output_column_list(), result->query_expression.get()));
+      ZETASQL_RETURN_IF_ERROR(
+          WrapQueryExpression(node->query(), result->query_expression.get()));
+      ZETASQL_RETURN_IF_ERROR(AddSelectListIfNeeded(node->query_output_column_list(),
+                                            result->query_expression.get()));
     }
 
     // Dummy access to the query parameter list for
@@ -4126,6 +4875,15 @@ absl::Status SQLBuilder::VisitResolvedInsertStmt(
                      ProcessNode(node->assert_rows_modified()));
     absl::StrAppend(&sql, " ", assert_rows_modified->GetSQL());
   }
+  if (node->returning() != nullptr) {
+    // Prepares the visible columns for the returning clause
+    ZETASQL_RET_CHECK_NE(node->table_scan(), nullptr);
+    ZETASQL_RETURN_IF_ERROR(SetPathForColumnsInScan(node->table_scan(), target_sql));
+
+    ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> returning,
+                     ProcessNode(node->returning()));
+    absl::StrAppend(&sql, " ", returning->GetSQL());
+  }
 
   PushQueryFragment(node, sql);
   return absl::OkStatus();
@@ -4137,7 +4895,7 @@ absl::Status SQLBuilder::VisitResolvedMergeStmt(const ResolvedMergeStmt* node) {
   // Creates alias for the target table, because its column names may appear in
   // the source scan.
   std::string alias = GetScanAlias(node->table_scan());
-  SetPathForColumnsInScan(node->table_scan(), alias);
+  ZETASQL_RETURN_IF_ERROR(SetPathForColumnsInScan(node->table_scan(), alias));
   absl::StrAppend(
       &sql, TableNameToIdentifierLiteral(node->table_scan()->table()->Name()),
       " AS ", alias);
@@ -4221,11 +4979,15 @@ absl::Status SQLBuilder::VisitResolvedAlterDatabaseStmt(
   return GetResolvedAlterObjectStmtSQL(node, "DATABASE");
 }
 
+absl::Status SQLBuilder::VisitResolvedAlterSchemaStmt(
+    const ResolvedAlterSchemaStmt* node) {
+  return GetResolvedAlterObjectStmtSQL(node, "SCHEMA");
+}
+
 absl::Status SQLBuilder::VisitResolvedAlterTableSetOptionsStmt(
     const ResolvedAlterTableSetOptionsStmt* node) {
   std::string sql = "ALTER TABLE ";
-  absl::StrAppend(&sql,
-                  node->is_if_exists() ? "IF EXISTS " : "",
+  absl::StrAppend(&sql, node->is_if_exists() ? "IF EXISTS " : "",
                   IdentifierPathToString(node->name_path()), " ");
   ZETASQL_ASSIGN_OR_RETURN(const std::string options_string,
                    GetHintListString(node->option_list()));
@@ -4285,7 +5047,8 @@ zetasql_base::StatusOr<std::string> SQLBuilder::GetAlterActionSQL(
         ZETASQL_RETURN_IF_ERROR(AppendColumnSchema(
             column_definition->type(), column_definition->is_hidden(),
             column_definition->annotations(),
-            column_definition->generated_column_info(), &add_column));
+            column_definition->generated_column_info(),
+            column_definition->default_expression(), &add_column));
         alter_action_sql.push_back(std::move(add_column));
       } break;
       case RESOLVED_DROP_COLUMN_ACTION: {
@@ -4331,9 +5094,105 @@ zetasql_base::StatusOr<std::string> SQLBuilder::GetAlterActionSQL(
       } break;
       case RESOLVED_SET_AS_ACTION: {
         auto* set_as_action = alter_action->GetAs<ResolvedSetAsAction>();
-        alter_action_sql.push_back(
-            absl::StrCat("SET AS JSON ",
-                         ToStringLiteral(set_as_action->entity_body_json())));
+        if (!set_as_action->entity_body_json().empty()) {
+          alter_action_sql.push_back(
+              absl::StrCat("SET AS JSON ",
+                           ToStringLiteral(set_as_action->entity_body_json())));
+        }
+        if (!set_as_action->entity_body_text().empty()) {
+          alter_action_sql.push_back(absl::StrCat(
+              "SET AS ", ToStringLiteral(set_as_action->entity_body_text())));
+        }
+      } break;
+      case RESOLVED_ADD_CONSTRAINT_ACTION: {
+        auto* action = alter_action->GetAs<ResolvedAddConstraintAction>();
+        action->MarkFieldsAccessed();
+        switch (action->constraint()->node_kind()) {
+          case RESOLVED_FOREIGN_KEY: {
+            auto* foreign_key =
+                action->constraint()->GetAs<ResolvedForeignKey>();
+            ZETASQL_ASSIGN_OR_RETURN(
+                std::string action_sql,
+                ProcessForeignKey(foreign_key, action->is_if_not_exists()));
+            alter_action_sql.push_back(absl::StrCat("ADD ", action_sql));
+          } break;
+          case RESOLVED_PRIMARY_KEY: {
+            auto* primary_key =
+                action->constraint()->GetAs<ResolvedPrimaryKey>();
+
+            std::string action_sql = "ADD ";
+            if (!primary_key->constraint_name().empty()) {
+              absl::StrAppend(&action_sql, "CONSTRAINT ");
+              if (action->is_if_not_exists()) {
+                absl::StrAppend(&action_sql, "IF NOT EXISTS ");
+              }
+              absl::StrAppend(&action_sql, primary_key->constraint_name(), " ");
+            }
+
+            ZETASQL_ASSIGN_OR_RETURN(std::string primary_key_sql,
+                             ProcessPrimaryKey(primary_key));
+            absl::StrAppend(&action_sql, primary_key_sql);
+            alter_action_sql.push_back(action_sql);
+          } break;
+          default:
+            ZETASQL_RET_CHECK_FAIL() << "Unexpected constraint: "
+                             << action->constraint()->node_kind();
+        }
+      } break;
+      case RESOLVED_DROP_CONSTRAINT_ACTION: {
+        auto* action = alter_action->GetAs<ResolvedDropConstraintAction>();
+        std::string action_sql = "DROP CONSTRAINT ";
+        if (action->is_if_exists()) {
+          absl::StrAppend(&action_sql, "IF EXISTS ");
+        }
+        absl::StrAppend(&action_sql, action->name());
+        alter_action_sql.push_back(action_sql);
+      } break;
+      case RESOLVED_DROP_PRIMARY_KEY_ACTION: {
+        auto* action = alter_action->GetAs<ResolvedDropPrimaryKeyAction>();
+        std::string action_sql = "DROP PRIMARY KEY";
+        if (action->is_if_exists()) {
+          absl::StrAppend(&action_sql, " IF EXISTS");
+        }
+        alter_action_sql.push_back(action_sql);
+      } break;
+      case RESOLVED_ALTER_COLUMN_OPTIONS_ACTION: {
+        auto* action = alter_action->GetAs<ResolvedAlterColumnOptionsAction>();
+        std::string action_sql = absl::StrCat(
+            "ALTER COLUMN ", action->is_if_exists() ? "IF EXISTS " : "");
+        absl::StrAppend(&action_sql, action->column());
+        ZETASQL_ASSIGN_OR_RETURN(const std::string options_string,
+                         GetHintListString(action->option_list()));
+        absl::StrAppend(&action_sql, " SET OPTIONS(", options_string, ") ");
+        alter_action_sql.push_back(action_sql);
+      } break;
+      case RESOLVED_ALTER_COLUMN_SET_DATA_TYPE_ACTION: {
+        const auto* action =
+            alter_action->GetAs<ResolvedAlterColumnSetDataTypeAction>();
+        std::string action_sql = "ALTER COLUMN ";
+        if (action->is_if_exists()) {
+          absl::StrAppend(&action_sql, "IF EXISTS ");
+        }
+        absl::StrAppend(&action_sql, action->column());
+        absl::StrAppend(&action_sql, " SET DATA TYPE ");
+        if (action->updated_type_parameters().IsEmpty()) {
+          absl::StrAppend(&action_sql, action->updated_type()->TypeName(
+                                           options_.product_mode));
+        } else {
+          ZETASQL_ASSIGN_OR_RETURN(
+              auto type_with_params,
+              action->updated_type()->TypeNameWithParameters(
+                  action->updated_type_parameters(), options_.product_mode));
+          absl::StrAppend(&action_sql, type_with_params);
+        }
+        alter_action_sql.push_back(action_sql);
+      } break;
+      case RESOLVED_ALTER_COLUMN_DROP_NOT_NULL_ACTION: {
+        auto* action =
+            alter_action->GetAs<ResolvedAlterColumnDropNotNullAction>();
+        alter_action_sql.push_back(absl::StrCat(
+            "ALTER COLUMN ", action->is_if_exists() ? "IF EXISTS " : "",
+            action->column(), " DROP NOT NULL"));
       } break;
       default:
         ZETASQL_RET_CHECK_FAIL() << "Unexpected AlterAction: "
@@ -4366,19 +5225,19 @@ zetasql_base::StatusOr<std::string> SQLBuilder::GetGranteeListSQL(
     const std::string& prefix, const std::vector<std::string>& grantee_list,
     const std::vector<std::unique_ptr<const ResolvedExpr>>& grantee_expr_list) {
   std::string sql;
-  // We CHECK the expected invariant that only one of grantee_list or
+  // We ZETASQL_CHECK the expected invariant that only one of grantee_list or
   // grantee_expr_list is empty.
   if (!grantee_list.empty()) {
     ZETASQL_RET_CHECK(grantee_expr_list.empty());
-    absl::StrAppend(&sql, prefix,
-                    absl::StrJoin(grantee_list, ", ",
-                                  EscapeFormatter(ToStringLiteral)));
+    absl::StrAppend(
+        &sql, prefix,
+        absl::StrJoin(grantee_list, ", ", EscapeFormatter(ToStringLiteral)));
   }
   if (!grantee_expr_list.empty()) {
     ZETASQL_RET_CHECK(grantee_list.empty());
     std::vector<std::string> grantee_string_list;
     for (const std::unique_ptr<const ResolvedExpr>& grantee :
-             grantee_expr_list) {
+         grantee_expr_list) {
       ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<QueryFragment> result,
                        ProcessNode(grantee.get()));
       grantee_string_list.push_back(result->GetSQL());
@@ -4460,8 +5319,7 @@ absl::Status SQLBuilder::VisitResolvedAggregateHavingModifier(
   return absl::OkStatus();
 }
 
-absl::Status SQLBuilder::VisitResolvedGrantStmt(
-    const ResolvedGrantStmt* node) {
+absl::Status SQLBuilder::VisitResolvedGrantStmt(const ResolvedGrantStmt* node) {
   std::string sql, privileges_string;
 
   ZETASQL_RETURN_IF_ERROR(GetPrivilegesString(node, &privileges_string));
@@ -4515,10 +5373,10 @@ std::string SQLBuilder::sql() {
     }
 
     std::unique_ptr<QueryFragment> query_fragment = PopQueryFragment();
-    DCHECK(query_fragments_.empty());
+    ZETASQL_DCHECK(query_fragments_.empty());
     sql_ = query_fragment->GetSQL();
-    ZETASQL_DCHECK_OK(query_fragment->node->CheckFieldsAccessed())
-        << "sql is\n" << sql_;
+    ZETASQL_DCHECK_OK(query_fragment->node->CheckFieldsAccessed()) << "sql is\n"
+                                                           << sql_;
   }
   return sql_;
 }
@@ -4720,6 +5578,10 @@ std::string SQLBuilder::GetTableAliasForVisitResolvedTableScan(
   return table_alias;
 }
 
+std::string SQLBuilder::GenerateUniqueAliasName() {
+  return absl::StrCat("a_", GetUniqueId());
+}
+
 absl::Status SQLBuilder::VisitResolvedRecursiveScan(
     const ResolvedRecursiveScan* node) {
   std::unique_ptr<QueryExpression> query_expression(new QueryExpression);
@@ -4742,7 +5604,7 @@ absl::Status SQLBuilder::VisitResolvedRecursiveScan(
           first_select_list = set_op_scan_list[0]->SelectList();
       // If node->column_list() was empty, first_select_list will have a NULL
       // added.
-      DCHECK_EQ(first_select_list.size(),
+      ZETASQL_DCHECK_EQ(first_select_list.size(),
                 std::max<std::size_t>(node->column_list_size(), 1));
       for (int i = 0; i < node->column_list_size(); i++) {
         if (zetasql_base::ContainsKey(computed_column_alias_,
@@ -4827,6 +5689,10 @@ absl::Status SQLBuilder::VisitResolvedCreateEntityStmt(
   if (!node->entity_body_json().empty()) {
     absl::StrAppend(&sql, "AS JSON ",
                     ToStringLiteral(node->entity_body_json()));
+  }
+
+  if (!node->entity_body_text().empty()) {
+    absl::StrAppend(&sql, "AS ", ToStringLiteral(node->entity_body_text()));
   }
 
   PushQueryFragment(node, sql);

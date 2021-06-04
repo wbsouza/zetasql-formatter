@@ -17,6 +17,8 @@
 #ifndef ZETASQL_PUBLIC_TYPES_ARRAY_TYPE_H_
 #define ZETASQL_PUBLIC_TYPES_ARRAY_TYPE_H_
 
+#include <cstdint>
+
 #include "zetasql/public/types/type.h"
 
 namespace zetasql {
@@ -47,6 +49,12 @@ class ArrayType : public Type {
   std::string ShortTypeName(ProductMode mode) const override;
   std::string TypeName(ProductMode mode) const override;
 
+  // Same as above, but if <type_params> is not empty, any nested SimpleTypes
+  // include their type parameters within parenthesis appended to their SQL
+  // name.
+  zetasql_base::StatusOr<std::string> TypeNameWithParameters(
+      const TypeParameters& type_params, ProductMode mode) const override;
+
   bool UsingFeatureV12CivilTimeType() const override {
     return element_type_->UsingFeatureV12CivilTimeType();
   }
@@ -56,6 +64,15 @@ class ArrayType : public Type {
   int nesting_depth() const override {
     return element_type_->nesting_depth() + 1;
   }
+
+  // Validate and resolve type parameters for array type, currently always
+  // return error since array type itself doesn't support type parameters.
+  zetasql_base::StatusOr<TypeParameters> ValidateAndResolveTypeParameters(
+      const std::vector<TypeParameterValue>& type_parameter_values,
+      ProductMode mode) const override;
+  // Validates resolved type parameters for array element recursively.
+  absl::Status ValidateResolvedTypeParameters(
+      const TypeParameters& type_parameters, ProductMode mode) const override;
 
  protected:
   bool EqualsForSameKind(const Type* that, bool equivalent) const override;

@@ -255,6 +255,9 @@ std::vector<FunctionTestCall> GetFunctionTestsTranslate() {
       // map to the same target character).
       {"translate", {"abcde", "aba", "xyz"}, NullString(), OUT_OF_RANGE},
       {"translate", {"abcde", "aba", "xyx"}, NullString(), OUT_OF_RANGE},
+      // Non valid UTF-8 characters are not allowed
+      {"translate", {"abcde", "a\xC0", "bc"}, NullString(), OUT_OF_RANGE},
+      {"translate", {"abcde", "ab", "b\xC0"}, NullString(), OUT_OF_RANGE},
       // Source characters without a corresponding target character are removed
       // from the input.
       {"translate", {"abcde", "ad", "x"}, "xbce"},
@@ -470,7 +473,7 @@ std::vector<FunctionTestCall> GetFunctionTestsNormalize() {
   // normalize mode (default/NFC, NFC, NFKC, NFD, NFKD), respectively.
   std::vector<FunctionTestCall> ret;
   for (const NormalizeTestCase& test_case : GetNormalizeTestCases()) {
-    CHECK_EQ(functions::NormalizeMode_ARRAYSIZE, test_case.expected_nfs.size());
+    ZETASQL_CHECK_EQ(functions::NormalizeMode_ARRAYSIZE, test_case.expected_nfs.size());
     const std::string function_name =
         test_case.is_casefold ? "normalize_and_casefold" : "normalize";
     ret.push_back(

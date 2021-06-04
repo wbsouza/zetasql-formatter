@@ -25,13 +25,14 @@ import com.google.zetasql.LocalService.ExtractTableNamesFromNextStatementRequest
 import com.google.zetasql.LocalService.ExtractTableNamesFromNextStatementResponse;
 import com.google.zetasql.LocalService.ExtractTableNamesFromStatementRequest;
 import com.google.zetasql.LocalService.ExtractTableNamesFromStatementResponse;
-import com.google.zetasql.LocalService.RegisteredParseResumeLocationProto;
 import com.google.zetasql.resolvedast.ResolvedNodes.ResolvedExpr;
 import com.google.zetasql.resolvedast.ResolvedNodes.ResolvedStatement;
 import io.grpc.StatusRuntimeException;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** The Analyzer class provides static methods to analyze ZetaSQL statements or expressions. */
 public class Analyzer implements Serializable {
@@ -94,12 +95,16 @@ public class Analyzer implements Serializable {
    */
   public static String buildExpression(ResolvedExpr expression, SimpleCatalog catalog) {
 
+    Map<DescriptorPool, Long> registeredDescriptorPoolIds = new LinkedHashMap<>();
     BuildSqlRequest.Builder request = BuildSqlRequest.newBuilder();
     FileDescriptorSetsBuilder fileDescriptorSetsBuilder =
-        AnalyzerHelper.serializeSimpleCatalog(catalog, request);
+        AnalyzerHelper.serializeSimpleCatalog(catalog, request, registeredDescriptorPoolIds);
     AnyResolvedExprProto.Builder resolvedExpr = AnyResolvedExprProto.newBuilder();
     expression.serialize(fileDescriptorSetsBuilder, resolvedExpr);
     request.setResolvedExpression(resolvedExpr.build());
+    request.setDescriptorPoolList(
+        DescriptorPoolSerializer.createDescriptorPoolListWithRegisteredIds(
+            fileDescriptorSetsBuilder, registeredDescriptorPoolIds));
 
     BuildSqlResponse response;
     try {
@@ -121,11 +126,15 @@ public class Analyzer implements Serializable {
    */
   public static String buildStatement(ResolvedStatement statement, SimpleCatalog catalog) {
     BuildSqlRequest.Builder request = BuildSqlRequest.newBuilder();
+    Map<DescriptorPool, Long> registeredDescriptorPoolIds = new LinkedHashMap<>();
     FileDescriptorSetsBuilder fileDescriptorSetsBuilder =
-        AnalyzerHelper.serializeSimpleCatalog(catalog, request);
+        AnalyzerHelper.serializeSimpleCatalog(catalog, request, registeredDescriptorPoolIds);
     AnyResolvedStatementProto.Builder resolvedStatement = AnyResolvedStatementProto.newBuilder();
     statement.serialize(fileDescriptorSetsBuilder, resolvedStatement);
     request.setResolvedStatement(resolvedStatement.build());
+    request.setDescriptorPoolList(
+        DescriptorPoolSerializer.createDescriptorPoolListWithRegisteredIds(
+            fileDescriptorSetsBuilder, registeredDescriptorPoolIds));
 
     BuildSqlResponse response;
     try {
@@ -196,18 +205,8 @@ public class Analyzer implements Serializable {
     FileDescriptorSetsBuilder fileDescriptorSetsBuilder;
     AnalyzeResponse response;
     synchronized (parseResumeLocation) {
-      AnalyzeRequest.Builder request;
-      if (parseResumeLocation.isRegistered()) {
-        RegisteredParseResumeLocationProto location =
-            RegisteredParseResumeLocationProto.newBuilder()
-                .setRegisteredId(parseResumeLocation.getRegisteredId())
-                .setBytePosition(parseResumeLocation.getBytePosition())
-                .build();
-        request = AnalyzeRequest.newBuilder().setRegisteredParseResumeLocation(location);
-      } else {
-        request =
-            AnalyzeRequest.newBuilder().setParseResumeLocation(parseResumeLocation.serialize());
-      }
+      AnalyzeRequest.Builder request =
+          AnalyzeRequest.newBuilder().setParseResumeLocation(parseResumeLocation.serialize());
 
       fileDescriptorSetsBuilder = AnalyzerHelper.serializeSimpleCatalog(catalog, options, request);
 
@@ -234,11 +233,6 @@ public class Analyzer implements Serializable {
       ParseResumeLocation parseResumeLocation, AnalyzerOptions options) {
     ExtractTableNamesFromNextStatementResponse response;
     synchronized (parseResumeLocation) {
-      if (parseResumeLocation.isRegistered()) {
-        throw new UnsupportedOperationException(
-            "extractTableNamesFromNextStatement does not support registered ParseResumeLocation.");
-      }
-
       ExtractTableNamesFromNextStatementRequest request =
           ExtractTableNamesFromNextStatementRequest.newBuilder()
               .setParseResumeLocation(parseResumeLocation.serialize())

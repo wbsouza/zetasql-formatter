@@ -17,6 +17,7 @@
 #include "zetasql/parser/keywords.h"
 
 #include <cctype>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <unordered_map>
@@ -55,7 +56,9 @@ constexpr KeywordInfoPOD kAllKeywords[] = {
     {"aggregate", KW_AGGREGATE},
     {"all", KW_ALL, KeywordInfo::kReserved},
     {"alter", KW_ALTER},
+    {"analyze", KW_ANALYZE},
     {"and", KW_AND, KeywordInfo::kReserved},
+    {"anonymization", KW_ANONYMIZATION},
     {"any", KW_ANY, KeywordInfo::kReserved},
     {"array", KW_ARRAY, KeywordInfo::kReserved},
     {"as", KW_AS, KeywordInfo::kReserved},
@@ -75,6 +78,7 @@ constexpr KeywordInfoPOD kAllKeywords[] = {
     {"case", KW_CASE, KeywordInfo::kReserved},
     {"cast", KW_CAST, KeywordInfo::kReserved},
     {"check", KW_CHECK},
+    {"clamped", KW_CLAMPED},
     {"cluster", KW_CLUSTER},
     {"collate", KW_COLLATE, KeywordInfo::kReserved},
     {"column", KW_COLUMN},
@@ -85,6 +89,8 @@ constexpr KeywordInfoPOD kAllKeywords[] = {
     {"constraint", KW_CONSTRAINT},
     {"contains", KW_CONTAINS, KeywordInfo::kReserved},
     {"continue", KW_CONTINUE},
+    {"clone", KW_CLONE},
+    {"copy", KW_COPY},
     {"create", KW_CREATE, KeywordInfo::kReserved},
     {"cross", KW_CROSS, KeywordInfo::kReserved},
     {"cube", KW_CUBE, KeywordInfo::kReserved},
@@ -131,6 +137,7 @@ constexpr KeywordInfoPOD kAllKeywords[] = {
     {"following", KW_FOLLOWING, KeywordInfo::kReserved},
     {"for", KW_FOR, KeywordInfo::kReserved},
     {"foreign", KW_FOREIGN},
+    {"format", KW_FORMAT},
     {"from", KW_FROM, KeywordInfo::kReserved},
     {"full", KW_FULL, KeywordInfo::kReserved},
     {"function", KW_FUNCTION},
@@ -149,6 +156,7 @@ constexpr KeywordInfoPOD kAllKeywords[] = {
     {"immutable", KW_IMMUTABLE},
     {"import", KW_IMPORT},
     {"in", KW_IN, KeywordInfo::kReserved},
+    {"include", KW_INCLUDE},
     {"inout", KW_INOUT},
     {"index", KW_INDEX},
     {"inner", KW_INNER, KeywordInfo::kReserved},
@@ -201,6 +209,8 @@ constexpr KeywordInfoPOD kAllKeywords[] = {
     {"over", KW_OVER, KeywordInfo::kReserved},
     {"partition", KW_PARTITION, KeywordInfo::kReserved},
     {"percent", KW_PERCENT},
+    {"pivot", KW_PIVOT},
+    {"unpivot", KW_UNPIVOT},
     {"policies", KW_POLICIES},
     {"policy", KW_POLICY},
     {"primary", KW_PRIMARY},
@@ -210,12 +220,14 @@ constexpr KeywordInfoPOD kAllKeywords[] = {
     {"privileges", KW_PRIVILEGES},
     {"proto", KW_PROTO, KeywordInfo::kReserved},
     {"public", KW_PUBLIC},
+    {"qualify", KW_QUALIFY},
     {"raise", KW_RAISE},
     {"range", KW_RANGE, KeywordInfo::kReserved},
     {"read", KW_READ},
     {"recursive", KW_RECURSIVE, KeywordInfo::kReserved},
     {"references", KW_REFERENCES},
     {"rename", KW_RENAME},
+    {"repeat", KW_REPEAT},
     {"repeatable", KW_REPEATABLE},
     {"replace", KW_REPLACE},
     {"replace_fields", KW_REPLACE_FIELDS},
@@ -232,11 +244,13 @@ constexpr KeywordInfoPOD kAllKeywords[] = {
     {"run", KW_RUN},
     {"safe_cast", KW_SAFE_CAST},
     {"schema", KW_SCHEMA},
+    {"search", KW_SEARCH},
     {"security", KW_SECURITY},
     {"select", KW_SELECT, KeywordInfo::kReserved},
     {"set", KW_SET, KeywordInfo::kReserved},
     {"show", KW_SHOW},
     {"simple", KW_SIMPLE},
+    {"snapshot", KW_SNAPSHOT},
     {"some", KW_SOME, KeywordInfo::kReserved},
     {"source", KW_SOURCE},
     {"storing", KW_STORING},
@@ -266,6 +280,7 @@ constexpr KeywordInfoPOD kAllKeywords[] = {
     {"union", KW_UNION, KeywordInfo::kReserved},
     {"unnest", KW_UNNEST, KeywordInfo::kReserved},
     {"unique", KW_UNIQUE},
+    {"until", KW_UNTIL},
     {"update", KW_UPDATE},
     {"using", KW_USING, KeywordInfo::kReserved},
     {"value", KW_VALUE},
@@ -303,18 +318,18 @@ class CaseInsensitiveAsciiAlphaTrie {
   void Insert(absl::string_view key, const ValueType* value) {
     int node_index = 0;
     for (int i = 0; i < key.size(); ++i) {
-      CHECK(isalpha(key[i]) || key[i] == '_') << key;
+      ZETASQL_CHECK(isalpha(key[i]) || key[i] == '_') << key;
       unsigned char c = absl::ascii_toupper(key[i]) - '0';
       int next_node_index = nodes_[node_index].children[c];
       if (next_node_index == 0) {
-        CHECK_LT(nodes_.size(), std::numeric_limits<uint16_t>::max());
+        ZETASQL_CHECK_LT(nodes_.size(), std::numeric_limits<uint16_t>::max());
         next_node_index = nodes_.size();
         nodes_[node_index].children[c] = next_node_index;
         nodes_.emplace_back();
       }
       node_index = next_node_index;
     }
-    CHECK(nodes_[node_index].value == nullptr) << "Duplicate key " << key;
+    ZETASQL_CHECK(nodes_[node_index].value == nullptr) << "Duplicate key " << key;
     nodes_[node_index].value = value;
   }
 

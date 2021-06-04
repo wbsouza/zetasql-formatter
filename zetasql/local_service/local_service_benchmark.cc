@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+#include <cstdint>
+
 #include "zetasql/base/logging.h"
 #include "zetasql/base/testing/status_matchers.h"
 #include "zetasql/local_service/local_service.h"
@@ -39,7 +41,7 @@ static void BM_EvaluatePrepared(::benchmark::State& state) {
 
     EvaluateResponse evaluate_response;
     ZETASQL_CHECK_OK(service->Evaluate(evaluate_request, &evaluate_response));
-    return evaluate_response.prepared_expression_id();
+    return evaluate_response.prepared().prepared_expression_id();
   }();
 
   EvaluateRequest evaluate_request;

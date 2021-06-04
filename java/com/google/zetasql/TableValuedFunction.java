@@ -70,7 +70,7 @@ public abstract class TableValuedFunction implements Serializable {
   /** Deserializes a table-valued function from a protocol buffer. */
   public static TableValuedFunction deserialize(
       TableValuedFunctionProto proto,
-      ImmutableList<ZetaSQLDescriptorPool> pools,
+      ImmutableList<? extends DescriptorPool> pools,
       TypeFactory typeFactory) {
     switch (proto.getType()) {
       case FIXED_OUTPUT_SCHEMA_TVF:
@@ -115,7 +115,7 @@ public abstract class TableValuedFunction implements Serializable {
           relationBuilder.addColumn(
               TVFRelationColumnProto.newBuilder()
                   .setName(column.getName())
-                  .setType(column.getType().serialize())
+                  .setType(column.getType().serialize(fileDescriptorSetsBuilder))
                   .build());
         }
         builder.setCustomContext(new String(relationBuilder.build().toByteArray(), UTF_8));
@@ -202,7 +202,7 @@ public abstract class TableValuedFunction implements Serializable {
     /** Deserializes this table-valued function from a protocol buffer. */
     public static FixedOutputSchemaTVF deserialize(
         TableValuedFunctionProto proto,
-        ImmutableList<ZetaSQLDescriptorPool> pools,
+        ImmutableList<? extends DescriptorPool> pools,
         TypeFactory typeFactory) {
       ImmutableList<String> namePath = ImmutableList.copyOf(proto.getNamePathList());
       FunctionSignature signature = FunctionSignature.deserialize(proto.getSignature(), pools);
@@ -248,7 +248,7 @@ public abstract class TableValuedFunction implements Serializable {
     /** Deserializes this table-valued function from a protocol buffer. */
     public static ForwardInputSchemaToOutputSchemaTVF deserialize(
         TableValuedFunctionProto proto,
-        ImmutableList<ZetaSQLDescriptorPool> pools,
+        ImmutableList<? extends DescriptorPool> pools,
         TypeFactory typeFactory) {
       Preconditions.checkArgument(
           proto.getType()
@@ -304,7 +304,7 @@ public abstract class TableValuedFunction implements Serializable {
     /** Deserializes this table-valued function from a protocol buffer. */
     public static TemplatedSQLTVF deserialize(
         TableValuedFunctionProto proto,
-        ImmutableList<ZetaSQLDescriptorPool> pools,
+        ImmutableList<? extends DescriptorPool> pools,
         TypeFactory typeFactory) {
       Preconditions.checkArgument(
           proto.getType() == FunctionEnums.TableValuedFunctionType.TEMPLATED_SQL_TVF, proto);
@@ -327,14 +327,14 @@ public abstract class TableValuedFunction implements Serializable {
         ImmutableList<String> namePath,
         FunctionSignature signature,
         ImmutableList<TVFRelation.Column> columns,
-        String customContext,
-        Volatility volatility) {
+        @Nullable String customContext,
+        @Nullable Volatility volatility) {
       super(namePath, signature, columns, customContext, volatility);
     }
 
     public static ForwardInputSchemaToOutputSchemaWithAppendedColumnTVF deserialize(
         TableValuedFunctionProto proto,
-        ImmutableList<ZetaSQLDescriptorPool> pools,
+        ImmutableList<? extends DescriptorPool> pools,
         TypeFactory typeFactory) {
       Preconditions.checkArgument(
           proto.getType()

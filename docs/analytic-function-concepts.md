@@ -1,7 +1,7 @@
 
 <!-- This file is auto-generated. DO NOT EDIT.                               -->
 
-# Analytic functions concepts
+# Analytic function concepts
 
 An analytic function computes values over a group of rows and returns a
 single result for _each_ row. This is different from an aggregate function,
@@ -20,7 +20,8 @@ The following functions can be used as analytic functions:
 [numbering functions][numbering-functions-reference], and
 [aggregate analytic functions][aggregate-analytic-functions-reference]
 
-## Analytic function syntax {: #syntax }
+## Analytic function syntax 
+<a id="syntax"></a>
 
 <pre>
 analytic_function_name ( [ argument_list ] ) OVER over_clause
@@ -94,7 +95,8 @@ aggregate functions can be used as input operands to analytic functions.
 
 A single result for each row in the input.
 
-### Defining the `OVER` clause {: #def_over_clause }
+### Defining the `OVER` clause 
+<a id="def_over_clause"></a>
 
 ```zetasql
 analytic_function_name ( [ argument_list ] ) OVER over_clause
@@ -134,7 +136,8 @@ These queries use a named window:
 +  [Get the last value in a range][analytic-functions-get-last-value-range]
 +  [Use a named window in a window frame clause][analytic-functions-use-named-window]
 
-### Defining the window specification {: #def_window_spec }
+### Defining the window specification 
+<a id="def_window_spec"></a>
 
 ```zetasql
 window_specification:
@@ -262,7 +265,8 @@ These queries define how rows are ordered in a partition:
 +  [Compute rank][analytic-functions-compute-rank]
 +  [Use a named window in a window frame clause][analytic-functions-use-named-window]
 
-### Defining the window frame clause {: #def_window_frame }
+### Defining the window frame clause 
+<a id="def_window_frame"></a>
 
 ```zetasql
 window_frame_clause:
@@ -277,6 +281,7 @@ frame_between:
     | BETWEEN numeric_preceding AND frame_end_a
     | BETWEEN current_row AND frame_end_b
     | BETWEEN numeric_following AND frame_end_c
+  }
 
 frame_start:
   { unbounded_preceding | numeric_preceding | [ current_row ] }
@@ -402,7 +407,8 @@ These queries compute values with the current row as a boundary:
 +  [Compute a subtotal][analytic-functions-compute-subtotal]
 +  [Compute a cumulative sum][analytic-functions-compute-cumulative-sum]
 
-### Referencing a named window {: #ref_named_window }
+### Referencing a named window 
+<a id="ref_named_window"></a>
 
 ```zetasql
 SELECT query_expr,
@@ -510,6 +516,13 @@ Like their aggregate function counterparts, these analytic functions perform
 aggregations, but specifically over the relevant window frame for each row.
 The result data types of these analytic functions are the same as their
 aggregate function counterparts.
+
+## Filtering results with the QUALIFY clause 
+<a id="filter_analytic_results"></a>
+
+The `QUALIFY` clause can be used to filter the results of an analytic function.
+For more information and examples, see the
+[`QUALIFY` clause][analytic-functions-link-to-qualify].
 
 ## Analytic function examples
 
@@ -931,7 +944,8 @@ FROM Employees;
 +--------------------------------------------+
 ```
 
-### Use a named window in a window frame clause {: #def_use_named_window }
+### Use a named window in a window frame clause 
+<a id="def_use_named_window"></a>
 
 You can define some of your logic in a named window and some of it in a
 window frame clause. This logic is combined. Here is an example, using the
@@ -1015,10 +1029,11 @@ WINDOW item_window AS (
 [analytic-functions-get-last-value-range]: #get_the_last_value_in_a_range
 [analytic-functions-compute-rank]: #compute_rank
 [analytic-functions-use-named-window]: #def_use_named_window
-[analytic-functions-link-to-window]: https://github.com/google/zetasql/blob/master/docs/query-syntax#window_clause
-[analytic-functions-link-to-hints]: https://github.com/google/zetasql/blob/master/docs/lexical#hints
+[analytic-functions-link-to-window]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#window_clause
+[analytic-functions-link-to-qualify]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#qualify_clause
+[analytic-functions-link-to-hints]: https://github.com/google/zetasql/blob/master/docs/lexical.md#hints
 
-[navigation-functions-reference]: https://github.com/google/zetasql/blob/master/docs/navigation_functions
-[numbering-functions-reference]: https://github.com/google/zetasql/blob/master/docs/numbering_functions
-[aggregate-analytic-functions-reference]: https://github.com/google/zetasql/blob/master/docs/aggregate_analytic_functions
+[navigation-functions-reference]: https://github.com/google/zetasql/blob/master/docs/navigation_functions.md
+[numbering-functions-reference]: https://github.com/google/zetasql/blob/master/docs/numbering_functions.md
+[aggregate-analytic-functions-reference]: https://github.com/google/zetasql/blob/master/docs/aggregate_analytic_functions.md
 

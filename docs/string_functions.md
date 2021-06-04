@@ -440,7 +440,8 @@ FROM items;
 +---------+
 ```
 
-### FORMAT {: #format_string }
+### FORMAT 
+<a id="format_string"></a>
 
 ZetaSQL supports a `FORMAT()` function for formatting strings. This
 function is similar to the C `printf` function. It produces a `STRING` from a
@@ -601,7 +602,7 @@ Deviations from printf() are identified in <em>italics</em>.
     inf<br/>
     nan</td>
     <td>
-    <span> NUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
+    <span> NUMERIC</span><br><span> BIGNUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
     </td>
  </tr>
  <tr>
@@ -612,7 +613,7 @@ Deviations from printf() are identified in <em>italics</em>.
     INF<br/>
     NAN</td>
     <td>
-    <span> NUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
+    <span> NUMERIC</span><br><span> BIGNUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
     </td>
  </tr>
  <tr>
@@ -622,7 +623,7 @@ Deviations from printf() are identified in <em>italics</em>.
     inf<br/>
     nan</td>
     <td>
-    <span> NUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
+    <span>NUMERIC</span><br><span>BIGNUMERIC</span><br><span>FLOAT</span><br><span>DOUBLE</span>
     </td>
  </tr>
  <tr>
@@ -632,7 +633,7 @@ Deviations from printf() are identified in <em>italics</em>.
     INF<br/>
     NAN</td>
     <td>
-    <span> NUMERIC</span><br><span> FLOAT</span><br><span> DOUBLE</span>
+    <span>NUMERIC</span><br><span>BIGNUMERIC</span><br><span>FLOAT</span><br><span>DOUBLE</span>
     </td>
  </tr>
  <tr>
@@ -645,7 +646,7 @@ Deviations from printf() are identified in <em>italics</em>.
     inf<br/>
     nan</td>
     <td>
-    <span> FLOAT</span><br><span> DOUBLE</span>
+    <span>NUMERIC</span><br><span>BIGNUMERIC</span><br><span>FLOAT</span><br><span>DOUBLE</span>
     </td>
  </tr>
  <tr>
@@ -662,7 +663,7 @@ Deviations from printf() are identified in <em>italics</em>.
       NAN
     </td>
     <td>
-    <span> FLOAT</span><br><span> DOUBLE</span>
+    <span>NUMERIC</span><br><span>BIGNUMERIC</span><br><span>FLOAT</span><br><span>DOUBLE</span>
     </td>
  </tr>
 
@@ -870,7 +871,8 @@ flags are not relevant for some element type, they are ignored.
   </tr>
 </table>
 
-#### %g and %G behavior {: #g_and_g_behavior }
+#### %g and %G behavior 
+<a id="g_and_g_behavior"></a>
 The `%g` and `%G` format specifiers choose either the decimal notation (like
 the `%f` and `%F` specifiers) or the scientific notation (like the `%e` and `%E`
 specifiers), depending on the input value's exponent and the specified
@@ -887,7 +889,8 @@ Unless [`#` flag](#flags) is present, the trailing zeros after the decimal point
 are removed, and the decimal point is also removed if there is no digit after
 it.
 
-#### %t and %T behavior {: #t_and_t_behavior }
+#### %t and %T behavior 
+<a id="t_and_t_behavior"></a>
 
 The `%t` and `%T` format specifiers are defined for all types. The
 [width](#width), [precision](#precision), and [flags](#flags) act as they do
@@ -913,8 +916,8 @@ The `STRING` is formatted as follows:
   </tr>
   <tr>
     <td><code>NULL</code> of any type</td>
-    <td><code>NULL</code></td>
-    <td><code>NULL</code></td>
+    <td>NULL</td>
+    <td>NULL</td>
   </tr>
   <tr>
     <td><span> INT32</span><br><span> INT64</span><br><span> UINT32</span><br><span> UINT64</span><br></td>
@@ -1103,6 +1106,11 @@ Converts the base64-encoded input `string_expr` into
 `BYTES` to a base64-encoded `STRING`,
 use [TO_BASE64][string-link-to-base64].
 
+There are several base64 encodings in common use that vary in exactly which
+alphabet of 65 ASCII characters are used to encode the 64 digits and padding.
+See [RFC 4648](https://tools.ietf.org/html/rfc4648#section-4) for details. This
+function expects the alphabet `[A-Za-z0-9+/=]`.
+
 **Return type**
 
 `BYTES`
@@ -1110,13 +1118,29 @@ use [TO_BASE64][string-link-to-base64].
 **Example**
 
 ```sql
-SELECT FROM_BASE64('3q2+7w==') AS byte_data;
+SELECT FROM_BASE64('/+A=') AS byte_data;
 
-+------------------+
-| byte_data        |
-+------------------+
-| \xde\xad\xbe\xef |
-+------------------+
++------------+
+| byte_data |
++-----------+
+| \377\340  |
++-----------+
+```
+
+To work with an encoding using a different base64 alphabet, you might need to
+compose `FROM_BASE64` with the `REPLACE` function. For instance, the
+`base64url` url-safe and filename-safe encoding commonly used in web programming
+uses `-_=` as the last characters rather than `+/=`. To decode a
+`base64url`-encoded string, replace `+` and `/` with `-` and `_` respectively.
+
+```sql
+SELECT FROM_BASE64(REPLACE(REPLACE("_-A=", "-", "+"), "_", "/")) AS binary;
+
++-----------+
+| binary    |
++-----------+
+| \377\340  |
++-----------+
 ```
 
 ### FROM_HEX
@@ -1303,8 +1327,8 @@ LEFT(value, length)
 Returns a `STRING` or `BYTES` value that consists of the specified
 number of leftmost characters or bytes from `value`. The `length` is an
 `INT64` that specifies the length of the returned
-value. If `value` is of type `BYTES`, `length` is the number of leftmost bytes to
-return. If `value` is `STRING`, `length` is the number of leftmost characters
+value. If `value` is of type `BYTES`, `length` is the number of leftmost bytes
+to return. If `value` is `STRING`, `length` is the number of leftmost characters
 to return.
 
 If `length` is 0, an empty `STRING` or `BYTES` value will be
@@ -2675,13 +2699,13 @@ FROM items;
 ### STRPOS
 
 ```sql
-STRPOS(string, substring)
+STRPOS(value1, value2)
 ```
 
 **Description**
 
-Returns the 1-based index of the first occurrence of `substring` inside
-`string`. Returns `0` if `substring` is not found.
+Takes two `STRING` or `BYTES` values. Returns the 1-based index of the first
+occurrence of `value2` inside `value1`. Returns `0` if `value2` is not found.
 
 **Return type**
 
@@ -2856,6 +2880,11 @@ TO_BASE64(bytes_expr)
 Converts a sequence of `BYTES` into a base64-encoded `STRING`. To convert a
 base64-encoded `STRING` into `BYTES`, use [FROM_BASE64][string-link-to-from-base64].
 
+There are several base64 encodings in common use that vary in exactly which
+alphabet of 65 ASCII characters are used to encode the 64 digits and padding.
+See [RFC 4648](https://tools.ietf.org/html/rfc4648#section-4) for details. This
+function adds padding and uses the alphabet `[A-Za-z0-9+/=]`.
+
 **Return type**
 
 `STRING`
@@ -2863,13 +2892,29 @@ base64-encoded `STRING` into `BYTES`, use [FROM_BASE64][string-link-to-from-base
 **Example**
 
 ```sql
-SELECT TO_BASE64(b'\xde\xad\xbe\xef') AS base64_string;
+SELECT TO_BASE64(b'\377\340') AS base64_string;
 
 +---------------+
 | base64_string |
 +---------------+
-| 3q2+7w==      |
+| /+A=          |
 +---------------+
+```
+
+To work with an encoding using a different base64 alphabet, you might need to
+compose `TO_BASE64` with the `REPLACE` function. For instance, the
+`base64url` url-safe and filename-safe encoding commonly used in web programming
+uses `-_=` as the last characters rather than `+/=`. To encode a
+`base64url`-encoded string, replace `-` and `_` with `+` and `/` respectively.
+
+```sql
+SELECT REPLACE(REPLACE(TO_BASE64(b"\377\340"), "+", "-"), "/", "_") as websafe_base64;
+
++----------------+
+| websafe_base64 |
++----------------+
+| _-A=           |
++----------------+
 ```
 
 ### TO_CODE_POINTS
@@ -2992,9 +3037,9 @@ TRANSLATE(expression, source_characters, target_characters)
 
 **Description**
 
-In `expression`, replaces the characters in `source_characters` with the
-characters in `target_characters`. All inputs must be the same type, either
-`STRING` or `BYTES`.
+In `expression`, replaces each character in `source_characters` with the
+corresponding character in `target_characters`. All inputs must be the same
+type, either `STRING` or `BYTES`.
 
 + Each character in `expression` is translated at most once.
 + A character in `expression` that is not present in `source_characters` is left
@@ -3212,5 +3257,5 @@ FROM items;
 [string-link-to-from-hex]: #from_hex
 [string-link-to-to-hex]: #to_hex
 
-[string-link-to-operators]: https://github.com/google/zetasql/blob/master/docs/operators
+[string-link-to-operators]: https://github.com/google/zetasql/blob/master/docs/operators.md
 

@@ -20,6 +20,7 @@
 #include <time.h>
 
 #include <cctype>
+#include <cstdint>
 #include <limits>
 #include <string>
 
@@ -27,6 +28,7 @@
 #include "zetasql/common/errors.h"
 #include "zetasql/public/functions/date_time_util.h"
 #include "zetasql/public/functions/datetime.pb.h"
+#include "zetasql/public/functions/parse_date_time_utils.h"
 #include "zetasql/public/strings.h"
 #include "zetasql/public/type.h"
 #include <cstdint>
@@ -46,6 +48,10 @@ namespace functions {
 
 namespace {
 
+using parse_date_time_utils::ConvertTimeToTimestamp;
+using parse_date_time_utils::ParseInt;
+using parse_date_time_utils::ParseSubSeconds;
+
 constexpr int64_t kNumMillisPerSecond = 1000;
 
 static std::string TimeZoneOffsetToString(int minutes_offset) {
@@ -58,71 +64,15 @@ static std::string TimeZoneOffsetToString(int minutes_offset) {
   return offset_string;
 }
 
-// Converts Time to int64_t microseconds and validates the value is within
-// the supported ZetaSQL range.
-static bool ConvertTimeToTimestamp(absl::Time time, int64_t* timestamp) {
-  *timestamp = absl::ToUnixMicros(time);
-  return IsValidTimestamp(*timestamp, kMicroseconds);
-}
-
-static const char kDigits[] = "0123456789";
-
-// The input const char* 'dp' must be not nullptr and it must be smaller than
-// 'end_of_data'. Otherwise, nullptr will be returned.
-// The returned const char* can be nullptr or an address that in
-// ['dp', 'end_of_data']. When it is in ('dp', 'end_of_data'], which means the
-// integer is parsed successfully. Especially, when the returned const char* is
-// 'end_of_data', it means that all the 'timestamp_string' is parsed.
-template <typename T>
-static const char* ParseInt(const char* dp, const char* end_of_data,
-                            int max_width, T min, T max, T* vp) {
-  if (dp == nullptr || dp >= end_of_data) {
+// Verify that the <data> is exactly equal to <chr> and increment past it;
+// reuturns null otherwise.
+static const char* ExpectChar(const char* data, const char* end_of_data,
+                              char chr) {
+  if (data != nullptr && data != end_of_data && *data == chr) {
+    return data + 1;
+  } else {
     return nullptr;
   }
-
-  const T kmin = std::numeric_limits<T>::min();
-  bool neg = false;
-  T value = 0;
-  if (*dp == '-') {
-    neg = true;
-    if (max_width <= 0 || --max_width != 0) {
-      ++dp;
-    } else {
-      return nullptr;  // max_width was 1
-    }
-  }
-  if (const char* const bp = dp) {
-    const char* cp;
-    while (dp < end_of_data && (cp = strchr(kDigits, *dp))) {
-      int d = static_cast<int>(cp - kDigits);
-      if (d >= 10) break;
-      if (ABSL_PREDICT_FALSE(value < kmin / 10)) {
-        return nullptr;
-      }
-      value *= 10;
-      if (ABSL_PREDICT_FALSE(value < kmin + d)) {
-        return nullptr;
-      }
-      value -= d;
-      dp += 1;
-      if (max_width > 0 && --max_width == 0) break;
-    }
-    if (dp != bp && (neg || value != kmin)) {
-      if (!neg || value != 0) {
-        if (!neg) value = -value;  // make positive
-        if (min <= value && value <= max) {
-          *vp = value;
-        } else {
-          return nullptr;
-        }
-      } else {
-        return nullptr;
-      }
-    } else {
-      return nullptr;
-    }
-  }
-  return dp;
 }
 
 // Returns an offset in minutes.
@@ -155,58 +105,24 @@ static const char* ParseZone(const char* dp, std::string* zone,
                              const char* end) {
   zone->clear();
   if (dp != nullptr) {
-    while (dp < end && !std::isspace(*dp))
-      zone->push_back(*dp++);
+    while (dp < end && !absl::ascii_isspace(*dp)) zone->push_back(*dp++);
     if (zone->empty()) dp = nullptr;
   }
   return dp;
 }
 
-static const int64_t powers_of_ten[] = {1, 10, 100, 1000, 10000, 100000, 1000000,
-                                      10000000, 100000000, 1000000000};
-
-// Parses up to <max_digits> (0 means unbounded), and returns a Duration
-// (digits beyond the given precision are truncated).
-static const char* ParseSubSeconds(const char* dp, const char* end_of_data,
-                                   int max_digits, TimestampScale scale,
-                                   absl::Duration* subseconds) {
-  if (dp != nullptr) {
-    if (dp < end_of_data && *dp == '.') {
-      int64_t parsed_value = 0;
-      int64_t num_digits = 0;
-      const char* const bp = ++dp;
-      const char* cp;
-      while (dp < end_of_data &&
-             (cp = strchr(kDigits, *dp)) &&
-             (max_digits == 0 || num_digits < max_digits)) {
-        int d = static_cast<int>(cp - kDigits);
-        if (d < 0 || d >= 10) break;  // Not a digit.
-        ++dp;
-        if (num_digits >= scale) {
-          // Consume but ignore digits beyond the given precision.
-          continue;
-        }
-        parsed_value *= 10;
-        parsed_value += d;
-        num_digits++;
-      }
-      if (dp != bp) {
-        if (num_digits < scale) {
-          // We consumed less than precision digits, so widen parsed_value to
-          // given precision.
-          parsed_value *= powers_of_ten[scale - num_digits];
-        }
-        if (scale == kMicroseconds) {
-          *subseconds = absl::Microseconds(parsed_value);
-        } else {
-          // NANO precision.
-          *subseconds = absl::Nanoseconds(parsed_value);
-        }
-      } else {
-        dp = nullptr;
-      }
-    }
+// Only parses up to <max_digits>, and ignores digits beyond <scale>.  Stops
+// parsing if a non-digit character is encountered.
+static const char* ParseSubSecondsIfStartingWithPoint(
+    const char* dp, const char* end_of_data, int max_digits,
+    TimestampScale scale, absl::Duration* subseconds) {
+  if (dp == nullptr) {
+    return nullptr;
+  } else if (end_of_data > dp && *dp == '.') {
+    // Start to parse the integer part from dp + 1
+    return ParseSubSeconds(dp + 1, end_of_data, max_digits, scale, subseconds);
   }
+
   return dp;
 }
 
@@ -216,6 +132,57 @@ static const char* ParseTM(const char* dp, const char* fmt, struct tm* tm) {
     dp = strptime(dp, fmt, tm);
   }
   return dp;
+}
+
+// Consume any amount of whitespace (including none).
+static const char* ConsumeWhitespace(const char* data,
+                                     const char* end_of_data) {
+  if (data == nullptr) {
+    return nullptr;
+  }
+  // TODO: Handle UTF and unicode white space characters as well.
+  while (data != end_of_data && absl::ascii_isspace(*data)) ++data;
+  return data;
+}
+
+static const char* HandleTwelveHourFormatters(const char* data,
+                                              const char* end_of_data,
+                                              struct tm& tm,
+                                              bool& twelve_hour) {
+  // In format, these differ:
+  // I: The hour (12-hour clock) as a decimal number (01-12).
+  // l: The hour (12-hour clock) as a decimal number (1-12);
+  //    single digits are preceded by a single space.
+  // O: (as I)
+  // But on parse, we treat them the same, additionally, we consume any
+  // amount of whitespace prior to digits.
+  int hour_number;
+  data = ConsumeWhitespace(data, end_of_data);
+  data = ParseInt(data, end_of_data, 2, 1, 12, &hour_number);
+  if (data != nullptr) {
+    tm.tm_hour = hour_number % 12;  // '12' becomes zero
+    twelve_hour = true;
+  }
+  return data;
+}
+
+static const char* HandleMerdianFormatters(const char* data,
+                                           const char* end_of_data,
+                                           bool& afternoon) {
+  if (data == nullptr || end_of_data - data < 2) {
+    return nullptr;
+  }
+  if ((data[0] == 'P' || data[0] == 'p') &&
+      (data[1] == 'M' || data[1] == 'm')) {
+    afternoon = true;
+  } else if ((data[0] == 'A' || data[0] == 'a') &&
+             (data[1] == 'M' || data[1] == 'm')) {
+    afternoon = false;
+
+  } else {
+    return nullptr;
+  }
+  return data + 2;
 }
 
 // This function generally uses strptime() to handle each format element,
@@ -244,8 +211,7 @@ static absl::Status ParseTime(absl::string_view format,
   }
 
   // Skips leading whitespace.
-  // TODO: Handle UTF and unicode white space characters as well.
-  while (data != end_of_data && std::isspace(*data)) ++data;
+  data = ConsumeWhitespace(data, end_of_data);
 
   // Sets default values for unspecified fields.
   struct tm tm = { 0 };
@@ -296,9 +262,9 @@ static absl::Status ParseTime(absl::string_view format,
     // If the next format character is a space, skip over all the next spaces
     // in both the format and the input timestamp string.
     // TODO: Handle UTF and unicode white space characters as well.
-    if (std::isspace(*fmt)) {
-      while (data < end_of_data && std::isspace(*data)) ++data;
-      while (++fmt < end_of_fmt && std::isspace(*fmt)) continue;
+    if (absl::ascii_isspace(*fmt)) {
+      data = ConsumeWhitespace(data, end_of_data);
+      while (++fmt < end_of_fmt && absl::ascii_isspace(*fmt)) continue;
       continue;
     }
 
@@ -390,11 +356,19 @@ static absl::Status ParseTime(absl::string_view format,
         }
         continue;
       }
-      case 'I':
-      case 'r':  // probably uses %I
-      case 'l':
-        twelve_hour = true;
-        break;
+      case 'p': {
+        data = HandleMerdianFormatters(data, end_of_data, afternoon);
+        continue;
+      }
+      case 'r':  // equivalent to %I:%M:%S %p
+        data = HandleTwelveHourFormatters(data, end_of_data, tm, twelve_hour);
+        data = ExpectChar(data, end_of_data, ':');
+        data = ParseInt(data, end_of_data, 2, 0, 59, &tm.tm_min);
+        data = ExpectChar(data, end_of_data, ':');
+        data = ParseInt(data, end_of_data, 2, 0, 60, &tm.tm_sec);
+        data = ConsumeWhitespace(data, end_of_data);
+        data = HandleMerdianFormatters(data, end_of_data, afternoon);
+        continue;
       case 'R':  // uses %H
       case 'T':  // uses %H
       case 'c':  // probably uses %H
@@ -439,7 +413,7 @@ static absl::Status ParseTime(absl::string_view format,
         if (data != nullptr) saw_percent_s = true;
         continue;
       }
-      case 'E':
+      case 'E': {
         if (fmt < end_of_fmt && *fmt == 'z') {
           if (data != nullptr && *data == 'Z') {
             timezone_offset_minutes = 0;
@@ -503,8 +477,8 @@ static absl::Status ParseTime(absl::string_view format,
         }
         if (fmt + 1 < end_of_fmt && *fmt == '*' && *(fmt + 1) == 'S') {
           data = ParseInt(data, end_of_data, 2, 0, 60, &tm.tm_sec);
-          data = ParseSubSeconds(data, end_of_data, 0 /* max_digits */, scale,
-                                 &subseconds);
+          data = ParseSubSecondsIfStartingWithPoint(
+              data, end_of_data, 0 /* max_digits */, scale, &subseconds);
           fmt += 2;
           continue;
         }
@@ -532,8 +506,8 @@ static absl::Status ParseTime(absl::string_view format,
             if (*np++ == 'S') {
               data = ParseInt(data, end_of_data, 2, 0, 60, &tm.tm_sec);
               if (n > 0) {
-                data = ParseSubSeconds(data, end_of_data, n, scale,
-                                       &subseconds);
+                data = ParseSubSecondsIfStartingWithPoint(data, end_of_data, n,
+                                                          scale, &subseconds);
               }
               fmt = np;
               continue;
@@ -548,9 +522,20 @@ static absl::Status ParseTime(absl::string_view format,
           fmt += 1;
         }
         break;
+      }
+      case 'I':
+      case 'l': {
+        data = HandleTwelveHourFormatters(data, end_of_data, tm, twelve_hour);
+        continue;
+      }
+
       case 'O':
         if (fmt < end_of_fmt && *fmt == 'H') twelve_hour = false;
-        if (fmt < end_of_fmt && *fmt == 'I') twelve_hour = true;
+        if (fmt < end_of_fmt && *fmt == 'I') {
+          data = HandleTwelveHourFormatters(data, end_of_data, tm, twelve_hour);
+          fmt++;
+          continue;
+        }
         if (fmt < end_of_fmt && *fmt == 'u') {
           // Day of week 1-7.  '%Ou' is treated like '%u' in en_US locale.
           data = ParseInt(data, end_of_data, 1, 1, 7, &tm.tm_wday);
@@ -566,12 +551,28 @@ static absl::Status ParseTime(absl::string_view format,
         }
         if (fmt < end_of_fmt) ++fmt;
         break;
+      case 't':
+      case 'n': {
+        data = ConsumeWhitespace(data, end_of_data);
+        continue;
+      }
+      case 'g': {
+        int ignored;
+        // We consume the proper input, but we don't affect the output.
+        data = ParseInt(data, end_of_data, 2, 0, 99, &ignored);
+        continue;
+      }
+      case 'G': {
+        // To be backwards compatible with previous strptime implementation,
+        // we consume and ignore any number of digits here (for now).
+        while (data < end_of_data && absl::ascii_isdigit(*data)) ++data;
+        continue;
+      }
       default:
         // No special handling for this format element, let strptime() do it.
         break;
     }
 
-    const char* orig_data = data;
     std::string format_element(percent, fmt - percent);
 
     // When no special handling for this format element in the switch statement
@@ -603,18 +604,6 @@ static absl::Status ParseTime(absl::string_view format,
     } else {
       data = nullptr;
     }
-
-    // If we successfully parsed %p we need to remember whether the result
-    // was AM or PM so that we can adjust tm_hour before calling
-    // ConvertDateTime().  So reparse the input with a known AM hour, and
-    // check if it is shifted to a PM hour.
-    if (format_element == "%p" && data != nullptr) {
-      std::string test_input = "1" + std::string(orig_data, data - orig_data);
-      const char* test_data = test_input.c_str();
-      struct tm tmp = { 0 };
-      ParseTM(test_data, "%I%p", &tmp);
-      afternoon = (tmp.tm_hour == 13);
-    }
   }
 
   // Adjust a 12-hour tm_hour value if it should be in the afternoon.
@@ -625,7 +614,7 @@ static absl::Status ParseTime(absl::string_view format,
   // Skip any remaining whitespace.
   // TODO: Handle UTF and unicode white space characters as well.
   if (data != nullptr) {
-    while (data < end_of_data && std::isspace(*data)) ++data;
+    while (data < end_of_data && absl::ascii_isspace(*data)) ++data;
   }
   if (fmt != nullptr) {
     // Note that in addition to skipping trailing whitespace in the format
@@ -633,9 +622,9 @@ static absl::Status ParseTime(absl::string_view format,
     // entire input data string, but the format string still contains %n or %t
     // format elements (which consume 0 or more whitespaces).  So we must
     // also ignore any remaining %n or %t format elements.
-    while (fmt < end_of_fmt && (std::isspace(*fmt) || *fmt == '%')) {
+    while (fmt < end_of_fmt && (absl::ascii_isspace(*fmt) || *fmt == '%')) {
       // TODO: Handle UTF and unicode white space characters as well.
-      if (std::isspace(*fmt)) {
+      if (absl::ascii_isspace(*fmt)) {
         ++fmt;
         continue;
       }
@@ -886,7 +875,7 @@ absl::Status ParseStringToTime(absl::string_view format_string,
                                absl::string_view time_string,
                                TimestampScale scale,
                                TimeValue* time) {
-  CHECK(scale == kNanoseconds || scale == kMicroseconds);
+  ZETASQL_CHECK(scale == kNanoseconds || scale == kMicroseconds);
   ZETASQL_RETURN_IF_ERROR(ValidateTimeFormat(format_string));
 
   absl::Time base_time;
@@ -899,7 +888,7 @@ absl::Status ParseStringToDatetime(absl::string_view format_string,
                                    absl::string_view datetime_string,
                                    TimestampScale scale,
                                    DatetimeValue* datetime) {
-  CHECK(scale == kNanoseconds || scale == kMicroseconds);
+  ZETASQL_CHECK(scale == kNanoseconds || scale == kMicroseconds);
   ZETASQL_RETURN_IF_ERROR(ValidateDatetimeFormat(format_string));
 
   absl::Time base_time;

@@ -16,11 +16,16 @@
 
 #include "zetasql/public/types/struct_type.h"
 
+#include <cstdint>
+
+#include "zetasql/common/errors.h"
 #include "zetasql/public/language_options.h"
 #include "zetasql/public/strings.h"
 #include "zetasql/public/types/internal_utils.h"
+#include "zetasql/public/types/type_parameters.h"
 #include "zetasql/public/value_content.h"
 #include "absl/status/status.h"
+#include "absl/strings/match.h"
 #include "zetasql/base/simple_reference_counted.h"
 
 namespace zetasql {
@@ -44,7 +49,7 @@ bool StructType::IsSupportedType(
 
 bool StructType::EqualsForSameKind(const Type* that, bool equivalent) const {
   const StructType* other = that->AsStruct();
-  DCHECK(other);
+  ZETASQL_DCHECK(other);
   return StructType::EqualsImpl(this, other, equivalent);
 }
 
@@ -146,10 +151,10 @@ absl::Status StructType::SerializeToProtoAndDistinctFileDescriptorsImpl(
 
 // TODO DebugString and other recursive methods on struct types
 // may cause a stack overflow for deeply nested types.
-std::string StructType::TypeNameImpl(
+zetasql_base::StatusOr<std::string> StructType::TypeNameImpl(
     int field_limit,
-    const std::function<std::string(const zetasql::Type*)>& field_debug_fn)
-    const {
+    const std::function<zetasql_base::StatusOr<std::string>(
+        const zetasql::Type*, int field_index)>& field_debug_fn) const {
   const int num_fields_to_show = std::min<int>(field_limit, fields_.size());
   const bool output_truncated = num_fields_to_show < fields_.size();
 
@@ -160,7 +165,9 @@ std::string StructType::TypeNameImpl(
     if (!field.name.empty()) {
       absl::StrAppend(&ret, ToIdentifierLiteral(field.name), " ");
     }
-    absl::StrAppend(&ret, field_debug_fn(field.type));
+    ZETASQL_ASSIGN_OR_RETURN(std::string field_parameters,
+                     field_debug_fn(field.type, i));
+    absl::StrAppend(&ret, field_parameters);
   }
   if (output_truncated) {
     absl::StrAppend(&ret, ", ...");
@@ -172,21 +179,64 @@ std::string StructType::TypeNameImpl(
 std::string StructType::ShortTypeName(ProductMode mode) const {
   // Limit the output to three struct fields to avoid long error messages.
   const int field_limit = 3;
-  const auto field_debug_fn = [=](const zetasql::Type* type) {
+  const auto field_debug_fn = [=](const zetasql::Type* type,
+                                  int field_index) {
     return type->ShortTypeName(mode);
   };
-  return TypeNameImpl(field_limit, field_debug_fn);
+  return TypeNameImpl(field_limit, field_debug_fn).value();
 }
 
 std::string StructType::TypeName(ProductMode mode) const {
-  const auto field_debug_fn = [=](const zetasql::Type* type) {
+  const auto field_debug_fn = [=](const zetasql::Type* type,
+                                  int field_index) {
     return type->TypeName(mode);
+  };
+  return TypeNameImpl(std::numeric_limits<int>::max(), field_debug_fn).value();
+}
+
+zetasql_base::StatusOr<std::string> StructType::TypeNameWithParameters(
+    const TypeParameters& type_params, ProductMode mode) const {
+  if (type_params.IsEmpty()) {
+    return TypeName(mode);
+  }
+  if (!(type_params.IsStructOrArrayParameters() &&
+        type_params.num_children() == num_fields())) {
+    return MakeSqlError()
+           << "Input type parameter does not correspond to this StructType";
+  }
+  const auto field_debug_fn = [=](const zetasql::Type* type,
+                                  int field_index) {
+    return type->TypeNameWithParameters(type_params.child(field_index), mode);
   };
   return TypeNameImpl(std::numeric_limits<int>::max(), field_debug_fn);
 }
 
-const StructType::StructField* StructType::FindField(
-    absl::string_view name, bool* is_ambiguous, int* found_idx) const {
+zetasql_base::StatusOr<TypeParameters> StructType::ValidateAndResolveTypeParameters(
+    const std::vector<TypeParameterValue>& type_parameter_values,
+    ProductMode mode) const {
+  return MakeSqlError() << ShortTypeName(mode)
+                        << " type cannot have type parameters by itself, it "
+                           "can only have type parameters on its struct fields";
+}
+
+absl::Status StructType::ValidateResolvedTypeParameters(
+    const TypeParameters& type_parameters, ProductMode mode) const {
+  // type_parameters must be empty or has the same number of children as struct.
+  if (type_parameters.IsEmpty()) {
+    return absl::OkStatus();
+  }
+  ZETASQL_RET_CHECK(type_parameters.IsStructOrArrayParameters());
+  ZETASQL_RET_CHECK_EQ(type_parameters.num_children(), num_fields());
+  for (int i = 0; i < num_fields(); ++i) {
+    ZETASQL_RETURN_IF_ERROR(fields_[i].type->ValidateResolvedTypeParameters(
+        type_parameters.child(i), mode));
+  }
+  return absl::OkStatus();
+}
+
+const StructType::StructField* StructType::FindField(absl::string_view name,
+                                                     bool* is_ambiguous,
+                                                     int* found_idx) const {
   *is_ambiguous = false;
   if (found_idx != nullptr) *found_idx = -1;
 
@@ -278,7 +328,7 @@ bool StructType::FieldEqualsImpl(const StructType::StructField& field1,
                                  const StructType::StructField& field2,
                                  bool equivalent) {
   // Ignore field names if we are doing an equivalence check.
-  if (!equivalent && !zetasql_base::StringCaseEqual(field1.name, field2.name)) {
+  if (!equivalent && !zetasql_base::CaseEqual(field1.name, field2.name)) {
     return false;
   }
   return field1.type->EqualsImpl(field2.type, equivalent);
@@ -322,26 +372,26 @@ absl::HashState StructType::HashValueContent(const ValueContent& value,
   // dependency cycle). In the future we will create a virtual list factory
   // interface defined outside of "value", but which Value can provide to
   // Array/Struct to use to construct lists.
-  LOG(FATAL) << "HashValueContent should never be called for StructType, since "
+  ZETASQL_LOG(FATAL) << "HashValueContent should never be called for StructType, since "
                 "its value content is created in Value class";
 }
 
 bool StructType::ValueContentEquals(
     const ValueContent& x, const ValueContent& y,
     const ValueEqualityCheckOptions& options) const {
-  LOG(FATAL) << "ValueContentEquals should never be called for StructType,"
+  ZETASQL_LOG(FATAL) << "ValueContentEquals should never be called for StructType,"
                 "since its value content is compared in Value class";
 }
 
 bool StructType::ValueContentLess(const ValueContent& x, const ValueContent& y,
                                   const Type* other_type) const {
-  LOG(FATAL) << "ValueContentLess should never be called for StructType,"
+  ZETASQL_LOG(FATAL) << "ValueContentLess should never be called for StructType,"
                 "since its value content is compared in Value class";
 }
 
 std::string StructType::FormatValueContent(
     const ValueContent& value, const FormatValueContentOptions& options) const {
-  LOG(FATAL)
+  ZETASQL_LOG(FATAL)
       << "FormatValueContent should never be called for StructType, since "
          "its value content is maintained in the Value class";
 }

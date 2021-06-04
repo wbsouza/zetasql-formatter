@@ -90,6 +90,13 @@ struct AlgebrizerOptions {
   bool inline_with_entries = false;
 };
 
+struct AnonymizationOptions {
+  absl::optional<Value> epsilon;      // double Value
+  absl::optional<Value> delta;        // double Value
+  absl::optional<Value> kappa;        // int64_t Value
+  absl::optional<Value> k_threshold;  // int64_t Value
+};
+
 class Algebrizer {
  public:
   Algebrizer(const Algebrizer&) = delete;
@@ -186,6 +193,12 @@ class Algebrizer {
   zetasql_base::StatusOr<std::unique_ptr<ValueExpr>> AlgebrizeCast(
       const ResolvedCast* cast);
 
+  zetasql_base::StatusOr<std::unique_ptr<InlineLambdaExpr>> AlgebrizeLambda(
+      const ResolvedInlineLambda* inline_lambda);
+
+  zetasql_base::StatusOr<std::unique_ptr<ValueExpr>> AlgebrizeFunctionCallWithLambda(
+      const ResolvedFunctionCall* function_call);
+
   zetasql_base::StatusOr<std::unique_ptr<ValueExpr>> AlgebrizeFunctionCall(
       const ResolvedFunctionCall* function_call);
 
@@ -195,11 +208,17 @@ class Algebrizer {
   zetasql_base::StatusOr<std::unique_ptr<FieldValueExpr>> AlgebrizeGetStructField(
       const ResolvedGetStructField* get_struct_field);
 
+  zetasql_base::StatusOr<std::unique_ptr<ScalarFunctionCallExpr>> AlgebrizeGetJsonField(
+      const ResolvedGetJsonField* get_json_field);
+
   zetasql_base::StatusOr<std::unique_ptr<ValueExpr>> AlgebrizeGetProtoField(
       const ResolvedGetProtoField* get_proto_field);
 
   zetasql_base::StatusOr<std::unique_ptr<ValueExpr>> AlgebrizeFlatten(
       const ResolvedFlatten* flatten);
+
+  zetasql_base::StatusOr<std::unique_ptr<ValueExpr>> AlgebrizeFlattenedArg(
+      const ResolvedFlattenedArg* flattened_arg);
 
   // Helper for AlgebrizeGetProtoField() for the case where we are getting a
   // proto field of an expression of the form
@@ -211,9 +230,16 @@ class Algebrizer {
                                       const ResolvedGetStructField*>>& path);
 
   // Algebrize specific expressions.
+  zetasql_base::StatusOr<std::unique_ptr<AggregateArg>>
+  AlgebrizeAggregateFnWithAlgebrizedArguments(
+      const VariableId& variable,
+      absl::optional<AnonymizationOptions> anonymization_options,
+      std::unique_ptr<ValueExpr> filter, const ResolvedExpr* expr,
+      std::vector<std::unique_ptr<ValueExpr>> arguments);
   zetasql_base::StatusOr<std::unique_ptr<AggregateArg>> AlgebrizeAggregateFn(
       const VariableId& variable,
-      const ResolvedExpr* expr);
+      absl::optional<AnonymizationOptions> anonymization_options,
+      std::unique_ptr<ValueExpr> filter, const ResolvedExpr* expr);
   zetasql_base::StatusOr<std::unique_ptr<ValueExpr>> AlgebrizeSubqueryExpr(
       const ResolvedSubqueryExpr* subquery_expr);
   zetasql_base::StatusOr<std::unique_ptr<ValueExpr>> AlgebrizeInArray(
@@ -336,8 +362,16 @@ class Algebrizer {
   zetasql_base::StatusOr<std::unique_ptr<RelationalOp>> AlgebrizeFilterScan(
       const ResolvedFilterScan* filter_scan,
       std::vector<FilterConjunctInfo*>* active_conjuncts);
+  zetasql_base::StatusOr<std::unique_ptr<RelationalOp>> AlgebrizeSampleScan(
+      const ResolvedSampleScan* sample_scan,
+      std::vector<FilterConjunctInfo*>* active_conjuncts);
   zetasql_base::StatusOr<std::unique_ptr<AggregateOp>> AlgebrizeAggregateScan(
       const ResolvedAggregateScan* aggregate_scan);
+  zetasql_base::StatusOr<std::unique_ptr<AggregateOp>> AlgebrizePivotScan(
+      const ResolvedPivotScan* pivot_scan);
+  zetasql_base::StatusOr<std::unique_ptr<RelationalOp>>
+  AlgebrizeAnonymizedAggregateScan(
+      const ResolvedAnonymizedAggregateScan* aggregate_scan);
   zetasql_base::StatusOr<std::unique_ptr<RelationalOp>> AlgebrizeSetOperationScan(
       const ResolvedSetOperationScan* set_scan);
   zetasql_base::StatusOr<std::unique_ptr<RelationalOp>> AlgebrizeUnionScan(
@@ -499,6 +533,16 @@ class Algebrizer {
       const ResolvedStatement* ast_root, ResolvedScanMap* resolved_scan_map,
       ResolvedExprMap* resolved_expr_map,
       const ResolvedTableScan** resolved_table_scan);
+
+  // Populates the 'returning_column_list' and 'returning_column_values' from
+  // the returning clause found in this dml statement. 'returning_column_list'
+  // is used to create the returning output table array type,
+  // 'returning_column_values' contains the ValueExpr of the returning output
+  // column list and then passed to its algebrized plan.
+  absl::Status AlgebrizeDMLReturningClause(
+      const ResolvedStatement* ast_root,
+      ResolvedColumnList* returning_column_list,
+      std::vector<std::unique_ptr<ValueExpr>>* returning_column_values);
 
   // Populates the ResolvedScanMap and the ResolvedExprMap corresponding to
   // 'update_item', which must be a DML statement. Also adds any placeholder
@@ -796,6 +840,21 @@ class Algebrizer {
       const absl::optional<SharedProtoFieldPath>& id,
       const ProtoFieldAccessInfo& access_info, ProtoFieldRegistry* registry);
 
+  // Maps each column in <input_columns>, produced by <input>, into the
+  // corresponding column in <output_columns>.
+  //
+  // The result is a ComputeOp node like the following:
+  //   ComputeOp
+  //     input: <input>
+  //     map:
+  //      <output_columns[0]>: DerefExpr(<input_columns[0]>)
+  //      <output_columns[1]>: DerefExpr(<input_columns[1]>)
+  //      ...
+  zetasql_base::StatusOr<std::unique_ptr<RelationalOp>> MapColumns(
+      std::unique_ptr<RelationalOp> input,
+      const ResolvedColumnList& input_columns,
+      const ResolvedColumnList& output_columns);
+
   // LanguageOption to use when algebrizing.
   const LanguageOptions language_options_;
   const AlgebrizerOptions algebrizer_options_;
@@ -900,20 +959,10 @@ class Algebrizer {
   // variable in the current RecursiveScan node being algebrized.
   std::stack<std::unique_ptr<ExprArg>> recursive_var_id_stack_;
 
-  // Maps each column in <input_columns>, produced by <input>, into the
-  // corresponding column in <output_columns>.
-  //
-  // The result is a ComputeOp node like the following:
-  //   ComputeOp
-  //     input: <input>
-  //     map:
-  //      <output_columns[0]>: DerefExpr(<input_columns[0]>)
-  //      <output_columns[1]>: DerefExpr(<input_columns[1]>)
-  //      ...
-  zetasql_base::StatusOr<std::unique_ptr<RelationalOp>> MapColumns(
-      std::unique_ptr<RelationalOp> input,
-      const ResolvedColumnList& input_columns,
-      const ResolvedColumnList& output_columns);
+  // The input that a FlattenedArg should read from.
+  // There may be multiple in a stack as there could be Flatten used as part of
+  // the input expression for another Flatten.
+  std::stack<std::unique_ptr<const Value*>> flattened_arg_input_;
 };
 
 }  // namespace zetasql

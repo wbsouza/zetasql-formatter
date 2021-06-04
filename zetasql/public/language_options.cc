@@ -37,7 +37,6 @@ std::set<LanguageFeature> LanguageOptions::GetLanguageFeaturesForVersion(
       // Add new features here.
       features.insert(FEATURE_V_1_3_PROTO_DEFAULT_IF_NULL);
       features.insert(FEATURE_V_1_3_EXTRACT_FROM_PROTO);
-      features.insert(FEATURE_V_1_3_DISALLOW_PROTO3_HAS_SCALAR_FIELD);
       features.insert(FEATURE_V_1_3_ARRAY_ORDERING);
       features.insert(FEATURE_V_1_3_OMIT_INSERT_COLUMN_LIST);
       features.insert(FEATURE_V_1_3_IGNORE_PROTO3_USE_DEFAULTS);
@@ -58,6 +57,22 @@ std::set<LanguageFeature> LanguageOptions::GetLanguageFeaturesForVersion(
       features.insert(FEATURE_V_1_3_WITH_GROUP_ROWS);
       features.insert(FEATURE_V_1_3_EXTENDED_DATE_TIME_SIGNATURES);
       features.insert(FEATURE_V_1_3_EXTENDED_GEOGRAPHY_PARSERS);
+      features.insert(FEATURE_V_1_3_INLINE_LAMBDA_ARGUMENT);
+      features.insert(FEATURE_V_1_3_PIVOT);
+      features.insert(FEATURE_V_1_3_ANNOTATION_FRAMEWORK);
+      features.insert(FEATURE_V_1_3_COLLATION_SUPPORT);
+      features.insert(FEATURE_V_1_3_IS_DISTINCT);
+      features.insert(FEATURE_V_1_3_FORMAT_IN_CAST);
+      features.insert(FEATURE_V_1_3_UNPIVOT);
+      features.insert(FEATURE_V_1_3_DML_RETURNING);
+      features.insert(FEATURE_V_1_3_FILTER_FIELDS);
+      features.insert(FEATURE_V_1_3_QUALIFY);
+      features.insert(FEATURE_V_1_3_REPEAT);
+      features.insert(FEATURE_V_1_3_COLUMN_DEFAULT_VALUE);
+      features.insert(FEATURE_V_1_3_FOR_IN);
+      features.insert(FEATURE_V_1_3_LIKE_ANY_SOME_ALL);
+      features.insert(FEATURE_V_1_3_CASE_STMT);
+      features.insert(FEATURE_V_1_3_ALLOW_SLASH_PATHS);
       ABSL_FALLTHROUGH_INTENDED;
     // NO CHANGES SHOULD HAPPEN INSIDE THE VERSIONS BELOW, which are
     // supposed to be stable and frozen, except possibly for bug fixes.
@@ -90,7 +105,7 @@ std::set<LanguageFeature> LanguageOptions::GetLanguageFeaturesForVersion(
     case VERSION_1_0:
       break;
     case __LanguageVersion__switch_must_have_a_default__:
-      LOG(DFATAL) << "GetLanguageFeaturesForVersion called with " << version;
+      ZETASQL_LOG(DFATAL) << "GetLanguageFeaturesForVersion called with " << version;
       break;
   }
   return features;

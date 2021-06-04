@@ -16,6 +16,8 @@
 
 #include "zetasql/common/json_parser.h"
 
+#include <cstdint>
+
 #include "zetasql/base/logging.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/escaping.h"
@@ -100,9 +102,9 @@ bool JSONParser::ParseHexDigits(const int size, std::string* str) {
   if (p_.length() < size) {
     return false;
   }
-  CHECK_GT(size, 2);
-  CHECK_EQ(p_.data()[0], '\\');
-  CHECK(p_.data()[1] == 'u' || p_.data()[1] == 'x');
+  ZETASQL_CHECK_GT(size, 2);
+  ZETASQL_CHECK_EQ(p_.data()[0], '\\');
+  ZETASQL_CHECK(p_.data()[1] == 'u' || p_.data()[1] == 'x');
   char32_t code = 0;
   for (int i = 2; i < size; ++i) {
     if (!absl::ascii_isxdigit(p_.data()[i])) {
@@ -111,10 +113,10 @@ bool JSONParser::ParseHexDigits(const int size, std::string* str) {
     code = (code << 4) + zetasql_base::hex_digit_to_int(p_.data()[i]);
   }
   char buf[U8_MAX_LENGTH];
-  UBool is_error = FALSE;
+  UBool is_error = false;
   int32_t len = 0;
   U8_APPEND(buf, len, U8_MAX_LENGTH, code, is_error);
-  if (is_error == TRUE) {
+  if (is_error) {
     // If the codepoint is bogus, just replace with replacement character.
     str->append(kReplacementCharacter.data(), kReplacementCharacter.size());
   } else {
@@ -132,8 +134,8 @@ bool JSONParser::IsOctalDigit(char c) { return (c >= '0' && c <= '7'); }
 
 void JSONParser::ParseOctalDigits(const int max_size, std::string* str) {
   // Length >= 2 because it must have a \ and at least one octal digit.
-  DCHECK_GE(p_.length(), 2);
-  CHECK_EQ(p_.data()[0], '\\');
+  ZETASQL_DCHECK_GE(p_.length(), 2);
+  ZETASQL_CHECK_EQ(p_.data()[0], '\\');
   char32_t sum = 0;
   // Start at one because we skip the \.
   int num_octal_digits = 1;
@@ -145,10 +147,10 @@ void JSONParser::ParseOctalDigits(const int max_size, std::string* str) {
     sum = (sum << 3) + p_.data()[num_octal_digits] - '0';
   }
   char buf[U8_MAX_LENGTH];
-  UBool is_error = FALSE;
+  UBool is_error = false;
   int32_t len = 0;
   U8_APPEND(buf, len, sizeof(buf), sum, is_error);
-  if (is_error == TRUE) {
+  if (is_error) {
     // If the codepoint is bogus, just replace with replacement character.
     str->append(kReplacementCharacter.data(), kReplacementCharacter.size());
   } else {
@@ -162,7 +164,7 @@ bool JSONParser::ParseStringHelper(std::string* str) {
   str->clear();
   // The character used to open the string (' or ") must also close the string.
   const char* open = p_.data();
-  CHECK(*open == '\"' || *open == '\'');
+  ZETASQL_CHECK(*open == '\"' || *open == '\'');
   // We may hit the end of the string before finding the closing quote.
   bool found_close_quote = false;
   AdvanceOneByte();
@@ -188,7 +190,7 @@ bool JSONParser::ParseStringHelper(std::string* str) {
     if (flush_start == nullptr) {
       return;
     }
-    DCHECK_GE(flush_end, flush_start);
+    ZETASQL_DCHECK_GE(flush_end, flush_start);
     str->append(flush_start, flush_end - flush_start);
   };
 
@@ -254,7 +256,7 @@ bool JSONParser::ParseNumber() {
 }
 
 bool JSONParser::ParseNumberTextHelper(absl::string_view* str) {
-  CHECK(str);
+  ZETASQL_CHECK(str);
   const char* p = p_.data();
   const char* end = p + p_.size();
 
@@ -313,7 +315,7 @@ bool JSONParser::ParseNumberTextHelper(absl::string_view* str) {
 }
 
 bool JSONParser::ParseNumberHelper(double* d) {
-  CHECK(d);
+  ZETASQL_CHECK(d);
   char* end;
   errno = 0;
   // Number formats of strtod and JSON are actually different,
@@ -326,7 +328,7 @@ bool JSONParser::ParseNumberHelper(double* d) {
 }
 
 bool JSONParser::ParseObject() {
-  CHECK_EQ('{', *p_.data());
+  ZETASQL_CHECK_EQ('{', *p_.data());
   AdvanceOneByte();
 
   if (!BeginObject()) return ReportFailure("BeginObject returned false");
@@ -388,7 +390,7 @@ bool JSONParser::ParseObject() {
 }
 
 bool JSONParser::ParseArray() {
-  CHECK_EQ('[', *p_.data());
+  ZETASQL_CHECK_EQ('[', *p_.data());
   AdvanceOneByte();
   if (!BeginArray()) return ReportFailure("BeginArray returned false");
   // Deal with [] case
@@ -434,21 +436,21 @@ bool JSONParser::ParseArray() {
 
 bool JSONParser::ParseTrue() {
   if (!ParsedBool(true)) return ReportFailure("ParsedBool returned false");
-  DCHECK_GE(p_.length(), kTrue.length());
+  ZETASQL_DCHECK_GE(p_.length(), kTrue.length());
   p_.remove_prefix(kTrue.length());
   return true;
 }
 
 bool JSONParser::ParseFalse() {
   if (!ParsedBool(false)) return ReportFailure("ParsedBool returned false");
-  DCHECK_GE(p_.length(), kFalse.length());
+  ZETASQL_DCHECK_GE(p_.length(), kFalse.length());
   p_.remove_prefix(kFalse.length());
   return true;
 }
 
 bool JSONParser::ParseNull() {
   if (!ParsedNull()) return ReportFailure("ParsedNull returned false");
-  DCHECK_GE(p_.length(), kNull.length());
+  ZETASQL_DCHECK_GE(p_.length(), kNull.length());
   p_.remove_prefix(kNull.length());
   return true;
 }
@@ -551,8 +553,8 @@ std::string JSONParser::ContextAtCurrentPosition(int context_length) const {
 // virtual
 bool JSONParser::ReportFailure(const std::string& error_message) {
   static const int kContextLength = 10;
-  VLOG(1) << error_message;
-  VLOG(2) << "Character " << p_.data() - json_.data() << ":" << std::endl
+  ZETASQL_VLOG(1) << error_message;
+  ZETASQL_VLOG(2) << "Character " << p_.data() - json_.data() << ":" << std::endl
           << ContextAtCurrentPosition(kContextLength);
   return false;  // Convenient return value for forwarding.
 }

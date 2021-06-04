@@ -42,7 +42,6 @@ cc_library(
         ":hash",
         ":json",
         ":uuid",
-        "@com_google_absl//absl/base",
     ],
 )
 
@@ -81,9 +80,15 @@ cc_library(
         "-Wnonnull-compare",
     ],
     deps = [
+        "//zetasql/base:ret_check",
         "//zetasql/base:statusor",
+        "//zetasql/common:errors",
+        "//zetasql/public:json_value",
         "//zetasql/public:type_cc_proto",
         "//zetasql/public/functions:json",
+        "//zetasql/public/functions:json_format",
+        "//zetasql/public/functions:to_json",
+        "//zetasql/public/types",
         "//zetasql/reference_impl:evaluation",
     ],
 )

@@ -16,6 +16,8 @@
 
 #include "zetasql/reference_impl/tuple.h"
 
+#include <cstdint>
+
 #include "google/protobuf/descriptor.h"
 #include "zetasql/base/testing/status_matchers.h"
 #include "zetasql/public/types/type_factory.h"
@@ -428,7 +430,7 @@ TEST(TupleDataOrderedQueue, InsertAndPopTest) {
   TupleDataOrderedQueue q(*comparator, &accountant);
 
   for (const bool pop_back : {false, true}) {
-    LOG(INFO) << "Testing with pop_back: " << pop_back;
+    ZETASQL_LOG(INFO) << "Testing with pop_back: " << pop_back;
 
     // Insert a few tuples.
     int num_tuples = 0;
@@ -450,7 +452,8 @@ TEST(TupleDataOrderedQueue, InsertAndPopTest) {
 
       ++num_tuples;
 
-      EXPECT_LE(accountant.remaining_bytes() + sizeof(int64_t), remaining_bytes);
+      EXPECT_LE(accountant.remaining_bytes() + sizeof(int64_t),
+                remaining_bytes);
     }
 
     // Make sure a few tuples were inserted.
@@ -470,7 +473,8 @@ TEST(TupleDataOrderedQueue, InsertAndPopTest) {
         EXPECT_EQ(data->slot(0).value(), Int64(num_tuples - 1 - i));
       }
 
-      EXPECT_GE(accountant.remaining_bytes(), remaining_bytes + sizeof(int64_t));
+      EXPECT_GE(accountant.remaining_bytes(),
+                remaining_bytes + sizeof(int64_t));
     }
 
     EXPECT_TRUE(q.IsEmpty());
@@ -730,7 +734,7 @@ TEST(ArrayBuilder, MoveAndCopyValues) {
 TEST(ReorderingTupleIterator, BasicTest) {
   for (int size = 0; size <= 500; ++size) {
     for (bool error : {false, true}) {
-      LOG(INFO) << "Testing with iterator size " << size << " and ending with "
+      ZETASQL_LOG(INFO) << "Testing with iterator size " << size << " and ending with "
                 << (error ? "error" : "success");
       std::vector<Value> values;
       values.reserve(size);

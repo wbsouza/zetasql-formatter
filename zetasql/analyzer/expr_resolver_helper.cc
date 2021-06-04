@@ -16,6 +16,7 @@
 
 #include "zetasql/analyzer/expr_resolver_helper.h"
 
+#include <cstdint>
 #include <utility>
 
 #include "zetasql/base/logging.h"
@@ -23,13 +24,16 @@
 #include "zetasql/parser/parse_tree.h"
 #include "zetasql/parser/parse_tree_errors.h"
 #include "zetasql/public/function.pb.h"
+#include "zetasql/public/input_argument_type.h"
 #include "zetasql/public/strings.h"
 #include "zetasql/public/value.h"
+#include "zetasql/resolved_ast/resolved_ast.h"
 #include "zetasql/resolved_ast/resolved_node_kind.pb.h"
 #include "zetasql/base/string_numbers.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "zetasql/base/map_util.h"
+#include "zetasql/base/ret_check.h"
 #include "zetasql/base/status_macros.h"
 
 namespace zetasql {
@@ -64,8 +68,23 @@ bool IsConstantExpression(const ResolvedExpr* expr) {
         return false;
       }
       for (const std::unique_ptr<const ResolvedExpr>& arg :
-              function_call->argument_list()) {
+           function_call->argument_list()) {
         if (!IsConstantExpression(arg.get())) {
+          return false;
+        }
+      }
+      for (const std::unique_ptr<const ResolvedFunctionArgument>& arg :
+           function_call->generic_argument_list()) {
+        if (arg->expr() != nullptr) {
+          if (!IsConstantExpression(arg->expr())) {
+            return false;
+          }
+        } else if (arg->inline_lambda() != nullptr) {
+          return false;
+        } else {
+          ZETASQL_DCHECK(false) << "Unexpected function argument: "
+                        << arg->DebugString() << "\n of function call: "
+                        << function_call->DebugString();
           return false;
         }
       }
@@ -83,6 +102,10 @@ bool IsConstantExpression(const ResolvedExpr* expr) {
     case RESOLVED_GET_PROTO_FIELD:
       return IsConstantExpression(
           expr->GetAs<ResolvedGetProtoField>()->expr());
+
+    case RESOLVED_GET_JSON_FIELD:
+      return IsConstantExpression(
+          expr->GetAs<ResolvedGetJsonField>()->expr());
 
     case RESOLVED_FLATTEN:
       for (const auto& arg : expr->GetAs<ResolvedFlatten>()->get_field_list()) {
@@ -142,7 +165,7 @@ bool IsConstantExpression(const ResolvedExpr* expr) {
     default:
       // Update the static_assert above if adding or removing cases in
       // this switch.
-      LOG(DFATAL)
+      ZETASQL_LOG(DFATAL)
           << "Unhandled expression type " << expr->node_kind_string()
           << " in IsConstantExpression";
       return false;
@@ -205,7 +228,7 @@ SelectColumnState* SelectColumnStateList::AddSelectColumn(
 
 void SelectColumnStateList::AddSelectColumn(
     SelectColumnState* select_column_state) {
-  DCHECK_EQ(select_column_state->select_list_position, -1);
+  ZETASQL_DCHECK_EQ(select_column_state->select_list_position, -1);
   select_column_state->select_list_position = select_column_state_list_.size();
   // Save a mapping from the alias to this SelectColumnState. The mapping is
   // later used for validations performed by
@@ -296,15 +319,15 @@ absl::Status SelectColumnStateList::ValidateAggregateAndAnalyticSupport(
 
 SelectColumnState* SelectColumnStateList::GetSelectColumnState(
     int select_list_position) {
-  CHECK_GE(select_list_position, 0);
-  CHECK_LT(select_list_position, select_column_state_list_.size());
+  ZETASQL_CHECK_GE(select_list_position, 0);
+  ZETASQL_CHECK_LT(select_list_position, select_column_state_list_.size());
   return select_column_state_list_[select_list_position].get();
 }
 
 const SelectColumnState* SelectColumnStateList::GetSelectColumnState(
     int select_list_position) const {
-  CHECK_GE(select_list_position, 0);
-  CHECK_LT(select_list_position, select_column_state_list_.size());
+  ZETASQL_CHECK_GE(select_list_position, 0);
+  ZETASQL_CHECK_LT(select_list_position, select_column_state_list_.size());
   return select_column_state_list_[select_list_position].get();
 }
 
@@ -445,16 +468,11 @@ std::string ExprResolutionInfo::DebugString() const {
 }
 
 InputArgumentType GetInputArgumentTypeForExpr(const ResolvedExpr* expr) {
-  if (expr->type()->IsStruct() &&
-      expr->node_kind() == RESOLVED_MAKE_STRUCT) {
+  ZETASQL_DCHECK(expr != nullptr);
+  if (expr->type()->IsStruct() && expr->node_kind() == RESOLVED_MAKE_STRUCT) {
     const ResolvedMakeStruct* struct_expr = expr->GetAs<ResolvedMakeStruct>();
-    std::vector<const ResolvedExpr*> fields;
-    fields.reserve(struct_expr->field_list_size());
-    for (int i = 0; i < struct_expr->field_list_size(); ++i) {
-      fields.push_back(struct_expr->field_list(i));
-    }
     std::vector<InputArgumentType> field_types;
-    GetInputArgumentTypesForExprList(&fields, &field_types);
+    GetInputArgumentTypesForExprList(struct_expr->field_list(), &field_types);
     // We construct a custom InputArgumentType for structs that may have
     // some literal and some non-literal fields.
     return InputArgumentType(expr->type()->AsStruct(), field_types);
@@ -504,22 +522,39 @@ InputArgumentType GetInputArgumentTypeForExpr(const ResolvedExpr* expr) {
 }
 
 void GetInputArgumentTypesForExprList(
-    const std::vector<const ResolvedExpr*>* arguments,
-    std::vector<InputArgumentType>* input_arguments) {
-  input_arguments->clear();
-  input_arguments->reserve(arguments->size());
-  for (const ResolvedExpr* argument : *arguments) {
-    input_arguments->push_back(GetInputArgumentTypeForExpr(argument));
-  }
-}
-
-void GetInputArgumentTypesForExprList(
     const std::vector<std::unique_ptr<const ResolvedExpr>>& arguments,
     std::vector<InputArgumentType>* input_arguments) {
   input_arguments->clear();
   input_arguments->reserve(arguments.size());
   for (const std::unique_ptr<const ResolvedExpr>& argument : arguments) {
     input_arguments->push_back(GetInputArgumentTypeForExpr(argument.get()));
+  }
+}
+
+static InputArgumentType GetInputArgumentTypeForGenericArgument(
+    const ASTNode* argument_ast_node, const ResolvedExpr* expr) {
+  ZETASQL_DCHECK(argument_ast_node != nullptr);
+  // Only lambdas uses nullptr as placeholder.
+  if (argument_ast_node->Is<ASTLambda>() || expr == nullptr) {
+    ZETASQL_DCHECK(expr == nullptr) << "Lambda must have a nullptr placeholder";
+    ZETASQL_DCHECK(argument_ast_node->Is<ASTLambda>())
+        << "A nullptr placeholder can only be used for a lambda argument";
+    return InputArgumentType::LambdaInputArgumentType();
+  }
+  ZETASQL_DCHECK(expr != nullptr);
+  return GetInputArgumentTypeForExpr(expr);
+}
+
+void GetInputArgumentTypesForGenericArgumentList(
+    const std::vector<const ASTNode*>& argument_ast_nodes,
+    const std::vector<std::unique_ptr<const ResolvedExpr>>& arguments,
+    std::vector<InputArgumentType>* input_arguments) {
+  ZETASQL_DCHECK_EQ(argument_ast_nodes.size(), arguments.size());
+  input_arguments->clear();
+  input_arguments->reserve(arguments.size());
+  for (int i = 0; i < argument_ast_nodes.size(); i++) {
+    input_arguments->push_back(GetInputArgumentTypeForGenericArgument(
+        argument_ast_nodes[i], arguments[i].get()));
   }
 }
 
@@ -655,68 +690,11 @@ bool IsSameExpressionForGroupBy(const ResolvedExpr* expr1,
   status.Update(expr1->CheckFieldsAccessed());
   status.Update(expr2->CheckFieldsAccessed());
   if (!status.ok()) {
-    LOG(DFATAL) << status;
+    ZETASQL_LOG(DFATAL) << status;
     return false;
   }
 
   return true;
-}
-
-// Extracts lambda argument name from the `arg_expr` and appends it to `names`.
-// Return error if the `arg_expr` is not a path expression with a single
-// identifier.
-static absl::Status ExtractArgumentNameFromExpr(const ASTExpression* arg_expr,
-                                                std::vector<IdString>* names) {
-  const ASTPathExpression* path_expr =
-      arg_expr->GetAsOrNull<ASTPathExpression>();
-  if (path_expr == nullptr) {
-    return MakeSqlErrorAt(arg_expr)
-           << "Expecting lambda argument as a single identifier";
-  }
-  if (path_expr->num_names() != 1) {
-    return MakeSqlErrorAt(arg_expr)
-           << "Expecting lambda argument as a single identifier";
-  }
-  if (names != nullptr) {
-    names->push_back(path_expr->name(0)->GetAsIdString());
-  }
-  return absl::OkStatus();
-}
-
-// Extracts lambda argument names from `ast_lambda` and append them to `names`.
-// Returns error if the argument list is not in the right shape. `names` could
-// nullptr when only check is needed.
-static absl::Status ExtractLambdaArgumentNames(const ASTLambda* ast_lambda,
-                                               std::vector<IdString>* names) {
-  const ASTExpression* args_expr = ast_lambda->argument_list();
-  if (args_expr->node_kind() == AST_STRUCT_CONSTRUCTOR_WITH_PARENS) {
-    const ASTStructConstructorWithParens* struct_cons =
-        args_expr->GetAsOrDie<ASTStructConstructorWithParens>();
-    const absl::Span<const ASTExpression* const>& fields =
-        struct_cons->field_expressions();
-    if (names != nullptr) {
-      names->reserve(fields.size());
-    }
-    for (const ASTExpression* field : fields) {
-      ZETASQL_RETURN_IF_ERROR(ExtractArgumentNameFromExpr(field, names));
-    }
-  } else if (args_expr->node_kind() == AST_PATH_EXPRESSION) {
-    ZETASQL_RETURN_IF_ERROR(ExtractArgumentNameFromExpr(args_expr, names));
-  } else {
-    return MakeSqlErrorAt(args_expr) << "Expecting lambda argument list";
-  }
-  return absl::OkStatus();
-}
-
-zetasql_base::StatusOr<std::vector<IdString>> ExtractLambdaArgumentNames(
-    const ASTLambda* ast_lambda) {
-  std::vector<IdString> names;
-  ZETASQL_RETURN_IF_ERROR(ExtractLambdaArgumentNames(ast_lambda, &names));
-  return names;
-}
-
-absl::Status CheckLambdaArgument(const ASTLambda* ast_lambda) {
-  return ExtractLambdaArgumentNames(ast_lambda, /*names=*/nullptr);
 }
 
 }  // namespace zetasql

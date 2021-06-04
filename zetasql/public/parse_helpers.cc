@@ -58,6 +58,8 @@ ResolvedNodeKind GetStatementKind(ASTNodeKind node_kind) {
       return RESOLVED_QUERY_STMT;
     case AST_EXPLAIN_STATEMENT:
       return RESOLVED_EXPLAIN_STMT;
+    case AST_CLONE_DATA_STATEMENT:
+      return RESOLVED_CLONE_DATA_STMT;
     case AST_EXPORT_DATA_STATEMENT:
       return RESOLVED_EXPORT_DATA_STMT;
     case AST_EXPORT_MODEL_STATEMENT:
@@ -84,6 +86,8 @@ ResolvedNodeKind GetStatementKind(ASTNodeKind node_kind) {
       return RESOLVED_CREATE_MATERIALIZED_VIEW_STMT;
     case AST_CREATE_SCHEMA_STATEMENT:
       return RESOLVED_CREATE_SCHEMA_STMT;
+    case AST_CREATE_SNAPSHOT_TABLE_STATEMENT:
+      return RESOLVED_CREATE_SNAPSHOT_TABLE_STMT;
     case AST_CREATE_TABLE_STATEMENT:
       return RESOLVED_CREATE_TABLE_STMT;
     case AST_CREATE_EXTERNAL_TABLE_STATEMENT:
@@ -125,18 +129,26 @@ ResolvedNodeKind GetStatementKind(ASTNodeKind node_kind) {
       return RESOLVED_DROP_STMT;
     case AST_DROP_FUNCTION_STATEMENT:
       return RESOLVED_DROP_FUNCTION_STMT;
+    case AST_DROP_TABLE_FUNCTION_STATEMENT:
+      return RESOLVED_DROP_TABLE_FUNCTION_STMT;
     case AST_DROP_ROW_ACCESS_POLICY_STATEMENT:
       return RESOLVED_DROP_ROW_ACCESS_POLICY_STMT;
     case AST_DROP_ALL_ROW_ACCESS_POLICIES_STATEMENT:
       return RESOLVED_DROP_ROW_ACCESS_POLICY_STMT;
     case AST_DROP_MATERIALIZED_VIEW_STATEMENT:
       return RESOLVED_DROP_MATERIALIZED_VIEW_STMT;
+    case AST_DROP_SNAPSHOT_TABLE_STATEMENT:
+      return RESOLVED_DROP_SNAPSHOT_TABLE_STMT;
+    case AST_DROP_SEARCH_INDEX_STATEMENT:
+      return RESOLVED_DROP_SEARCH_INDEX_STMT;
     case AST_GRANT_STATEMENT:
       return RESOLVED_GRANT_STMT;
     case AST_REVOKE_STATEMENT:
       return RESOLVED_REVOKE_STMT;
     case AST_ALTER_DATABASE_STATEMENT:
       return RESOLVED_ALTER_DATABASE_STMT;
+    case AST_ALTER_SCHEMA_STATEMENT:
+      return RESOLVED_ALTER_SCHEMA_STMT;
     case AST_ALTER_TABLE_STATEMENT:
       return RESOLVED_ALTER_TABLE_STMT;
     case AST_ALTER_VIEW_STATEMENT:
@@ -151,6 +163,8 @@ ResolvedNodeKind GetStatementKind(ASTNodeKind node_kind) {
       return RESOLVED_IMPORT_STMT;
     case AST_MODULE_STATEMENT:
       return RESOLVED_MODULE_STMT;
+    case AST_ANALYZE_STATEMENT:
+      return RESOLVED_ANALYZE_STMT;
     case AST_ASSERT_STATEMENT:
       return RESOLVED_ASSERT_STMT;
     case AST_SYSTEM_VARIABLE_ASSIGNMENT:
@@ -166,7 +180,7 @@ ResolvedNodeKind GetStatementKind(ASTNodeKind node_kind) {
     default:
       break;
   }
-  VLOG(1) << "Unrecognized parse node kind: "
+  ZETASQL_VLOG(1) << "Unrecognized parse node kind: "
           << ASTNode::NodeKindToString(node_kind);
   return RESOLVED_LITERAL;
 }
@@ -229,6 +243,7 @@ absl::Status GetNextStatementProperties(
     case AST_ALTER_ENTITY_STATEMENT:
     case AST_ALTER_MATERIALIZED_VIEW_STATEMENT:
     case AST_ALTER_ROW_ACCESS_POLICY_STATEMENT:
+    case AST_ALTER_SCHEMA_STATEMENT:
     case AST_ALTER_TABLE_STATEMENT:
     case AST_ALTER_VIEW_STATEMENT:
     case AST_CREATE_CONSTANT_STATEMENT:
@@ -242,6 +257,7 @@ absl::Status GetNextStatementProperties(
     case AST_CREATE_PROCEDURE_STATEMENT:
     case AST_CREATE_ROW_ACCESS_POLICY_STATEMENT:
     case AST_CREATE_SCHEMA_STATEMENT:
+    case AST_CREATE_SNAPSHOT_TABLE_STATEMENT:
     case AST_CREATE_TABLE_FUNCTION_STATEMENT:
     case AST_CREATE_TABLE_STATEMENT:
     case AST_CREATE_VIEW_STATEMENT:
@@ -250,8 +266,11 @@ absl::Status GetNextStatementProperties(
     case AST_DROP_ALL_ROW_ACCESS_POLICIES_STATEMENT:
     case AST_DROP_ENTITY_STATEMENT:
     case AST_DROP_FUNCTION_STATEMENT:
+    case AST_DROP_TABLE_FUNCTION_STATEMENT:
     case AST_DROP_MATERIALIZED_VIEW_STATEMENT:
     case AST_DROP_ROW_ACCESS_POLICY_STATEMENT:
+    case AST_DROP_SNAPSHOT_TABLE_STATEMENT:
+    case AST_DROP_SEARCH_INDEX_STATEMENT:
     case AST_DROP_STATEMENT:
       statement_properties->statement_category = StatementProperties::DDL;
       break;
@@ -262,6 +281,7 @@ absl::Status GetNextStatementProperties(
     case AST_UPDATE_STATEMENT:
       statement_properties->statement_category = StatementProperties::DML;
       break;
+    case AST_ANALYZE_STATEMENT:
     case AST_ASSERT_STATEMENT:
     case AST_ABORT_BATCH_STATEMENT:
     case AST_BEGIN_STATEMENT:
@@ -270,6 +290,7 @@ absl::Status GetNextStatementProperties(
     case AST_DESCRIBE_STATEMENT:
     case AST_EXECUTE_IMMEDIATE_STATEMENT:
     case AST_EXPLAIN_STATEMENT:
+    case AST_CLONE_DATA_STATEMENT:
     case AST_EXPORT_DATA_STATEMENT:
     case AST_EXPORT_MODEL_STATEMENT:
     case AST_GRANT_STATEMENT:
@@ -306,8 +327,8 @@ absl::Status GetNextStatementProperties(
     for (const ASTHintEntry* hint : statement_level_hints->hint_entries()) {
       std::string hint_name_text =
           (hint->qualifier() == nullptr ? hint->name()->GetAsString()
-           : absl::StrCat(hint->qualifier()->GetAsString(), ".",
-                          hint->name()->GetAsString()));
+           : absl::StrCat(hint->qualifier()->GetAsStringView(), ".",
+                          hint->name()->GetAsStringView()));
 
       // Get the start and end byte offset of the hint's value expression,
       // and use the text from the input string.

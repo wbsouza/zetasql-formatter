@@ -34,6 +34,7 @@
 #include "zetasql/base/testing/status_matchers.h"
 #include "zetasql/compliance/functions_testlib.h"
 #include "zetasql/public/functions/json_internal.h"
+#include "zetasql/public/types/type_factory.h"
 #include "zetasql/public/value.h"
 #include "zetasql/testing/test_function.h"
 #include "gmock/gmock.h"
@@ -199,6 +200,87 @@ TEST(JsonTest, NativeJsonExtractScalar) {
   }
 }
 
+TEST(JsonTest, NativeJsonExtractJsonArray) {
+  auto json_value =
+      JSONValue::ParseJSONString(
+          R"({"a": {"b": [ { "c" : "foo" }, 15, null, "bar", )"
+          R"([ 20, { "a": "baz" } ] ] } })");
+  ZETASQL_ASSERT_OK(json_value.status());
+  JSONValueConstRef json_ref = json_value->GetConstRef();
+
+  const std::vector<
+      std::pair<std::string, absl::optional<std::vector<std::string>>>>
+      inputs_and_outputs = {{"$", absl::nullopt},
+                            {"$.a", absl::nullopt},
+                            {"$.a.b",
+                             {{R"({"c":"foo"})", "15", "null", "\"bar\"",
+                               R"([20,{"a":"baz"}])"}}},
+                            {"$.a.b[0]", absl::nullopt},
+                            {"$.a.b[4]", {{"20", R"({"a":"baz"})"}}}};
+  for (const auto& [input, output] : inputs_and_outputs) {
+    SCOPED_TRACE(absl::Substitute("JSON_EXTRACT_ARRAY('$0', '$1')",
+                                  json_ref.ToString(), input));
+    ZETASQL_ASSERT_OK_AND_ASSIGN(
+        const std::unique_ptr<JsonPathEvaluator> evaluator,
+        JsonPathEvaluator::Create(input,
+                                  /*sql_standard_mode=*/false));
+
+    absl::optional<std::vector<JSONValueConstRef>> result =
+        evaluator->ExtractArray(json_ref);
+    if (output.has_value()) {
+      ASSERT_TRUE(result.has_value());
+
+      std::vector<JSONValue> json_value_store;
+      std::vector<::testing::Matcher<JSONValueConstRef>> expected_result;
+      json_value_store.reserve(output->size());
+      expected_result.reserve(output->size());
+      for (const std::string& string_value : *output) {
+        json_value_store.emplace_back();
+        ZETASQL_ASSERT_OK_AND_ASSIGN(json_value_store.back(),
+                             JSONValue::ParseJSONString(string_value));
+        expected_result.push_back(
+            JsonEq(json_value_store.back().GetConstRef()));
+      }
+
+      EXPECT_THAT(*result, ElementsAreArray(expected_result));
+    } else {
+      EXPECT_FALSE(result.has_value());
+    }
+  }
+}
+
+TEST(JsonTest, NativeJsonExtractStringArray) {
+  auto json_value =
+      JSONValue::ParseJSONString(
+          R"({"a": {"b": [ { "c" : "foo" }, 15, null, "bar", )"
+          R"([ 20, "a", true ] ] } })");
+  ZETASQL_ASSERT_OK(json_value.status());
+  JSONValueConstRef json_ref = json_value->GetConstRef();
+  const std::vector<
+      std::pair<std::string, absl::optional<std::vector<std::string>>>>
+      inputs_and_outputs = {{"$", absl::nullopt},
+                            {"$.a", absl::nullopt},
+                            {"$.a.b", absl::nullopt},
+                            {"$.a.b[0]", absl::nullopt},
+                            {"$.a.b[4]", {{"20", "a", "true"}}}};
+  for (const auto& [input, output] : inputs_and_outputs) {
+    SCOPED_TRACE(absl::Substitute("JSON_EXTRACT_STRING_ARRAY('$0', '$1')",
+                                  json_ref.ToString(), input));
+    ZETASQL_ASSERT_OK_AND_ASSIGN(
+        const std::unique_ptr<JsonPathEvaluator> evaluator,
+        JsonPathEvaluator::Create(input,
+                                  /*sql_standard_mode=*/false));
+    absl::optional<std::vector<absl::optional<std::string>>> result =
+        evaluator->ExtractStringArray(json_ref);
+    if (output.has_value()) {
+      ASSERT_TRUE(result.has_value());
+      EXPECT_THAT(*result, ::testing::Pointwise(::testing::Eq(), *output));
+    } else {
+      EXPECT_FALSE(result.has_value());
+    }
+  }
+}
+
 void ExpectExtractScalar(absl::string_view json, absl::string_view path,
                          absl::string_view expected) {
   SCOPED_TRACE(absl::Substitute("JSON_EXTRACT_SCALAR('$0', '$1')", json, path));
@@ -231,7 +313,7 @@ TEST(JsonTest, StringJsonExtractScalarBadBehavior) {
 
 TEST(JsonTest, StringJsonExtractScalarExpectVeryLongIntegersPassthrough) {
   std::string long_integer_str(500, '1');
-  CHECK_EQ(long_integer_str.size(), 500);
+  ZETASQL_CHECK_EQ(long_integer_str.size(), 500);
   ExpectExtractScalar(absl::StrFormat(R"({"a": %s})", long_integer_str), "$.a",
                       long_integer_str);
 }
@@ -244,11 +326,15 @@ TEST(JsonTest, StringJsonCompliance) {
   for (const std::vector<FunctionTestCall>& tests : all_tests) {
     for (const FunctionTestCall& test : tests) {
       if (test.params.params()[0].is_null() ||
-          test.params.params()[1].is_null()) {
+          (test.params.params().size() > 1 &&
+           test.params.params()[1].is_null())) {
         continue;
       }
+
       const std::string json = test.params.param(0).string_value();
-      const std::string json_path = test.params.param(1).string_value();
+      const std::string json_path = (test.params.params().size() > 1)
+                                        ? test.params.param(1).string_value()
+                                        : "$";
       SCOPED_TRACE(absl::Substitute("$0('$1', '$2')", test.function_name, json,
                                     json_path));
 
@@ -292,7 +378,8 @@ TEST(JsonTest, NativeJsonCompliance) {
   for (const std::vector<FunctionTestCall>& tests : all_tests) {
     for (const FunctionTestCall& test : tests) {
       if (test.params.params()[0].is_null() ||
-          test.params.params()[1].is_null()) {
+          (test.params.params().size() > 1 &&
+           test.params.params()[1].is_null())) {
         continue;
       }
       if (test.params.param(0).is_unparsed_json()) {
@@ -301,7 +388,9 @@ TEST(JsonTest, NativeJsonCompliance) {
         continue;
       }
       const JSONValueConstRef json = test.params.param(0).json_value();
-      const std::string json_path = test.params.param(1).string_value();
+      const std::string json_path = (test.params.params().size() > 1)
+                                        ? test.params.param(1).string_value()
+                                        : "$";
       SCOPED_TRACE(absl::Substitute("$0('$1', '$2')", test.function_name,
                                     json.ToString(), json_path));
 
@@ -328,6 +417,80 @@ TEST(JsonTest, NativeJsonCompliance) {
           EXPECT_EQ(test.params.result().is_null(), !result_or.has_value());
           if (!test.params.result().is_null() && result_or.has_value()) {
             EXPECT_EQ(result_or.value(), test.params.result().string_value());
+          }
+        }
+      } else {
+        status = evaluator_status.status();
+      }
+      if (!status.ok() || !test.params.status().ok()) {
+        EXPECT_EQ(test.params.status().code(), status.code()) << status;
+      }
+    }
+  }
+}
+
+TEST(JsonTest, NativeJsonArrayCompliance) {
+  const std::vector<std::vector<FunctionTestCall>> all_tests = {
+      GetFunctionTestsNativeJsonQueryArray(),
+      GetFunctionTestsNativeJsonExtractArray(),
+      GetFunctionTestsNativeJsonValueArray(),
+      GetFunctionTestsNativeJsonExtractStringArray()};
+
+  for (const std::vector<FunctionTestCall>& tests : all_tests) {
+    for (const FunctionTestCall& test : tests) {
+      if (test.params.params()[0].is_null() ||
+          test.params.params()[1].is_null()) {
+        continue;
+      }
+      if (!test.params.param(0).is_validated_json()) {
+        // Unvalidated JSON will be tested in compliance testing, not in unit
+        // tests.
+        continue;
+      }
+      const JSONValueConstRef json =
+          test.params.param(0).json_value();
+      const std::string json_path = test.params.param(1).string_value();
+      SCOPED_TRACE(absl::Substitute("$0('$1', '$2')", test.function_name,
+                                    json.ToString(), json_path));
+
+      absl::Status status;
+      bool sql_standard_mode = test.function_name == "json_query_array" ||
+                               test.function_name == "json_value_array";
+      auto evaluator_status =
+          JsonPathEvaluator::Create(json_path, sql_standard_mode);
+      if (evaluator_status.ok()) {
+        std::unique_ptr<JsonPathEvaluator> evaluator =
+            std::move(evaluator_status).value();
+        if (test.function_name == "json_extract_array" ||
+            test.function_name == "json_query_array")  {
+          absl::optional<std::vector<JSONValueConstRef>> result =
+              evaluator->ExtractArray(json);
+
+          EXPECT_EQ(test.params.result().is_null(), !result.has_value());
+          if (!test.params.result().is_null() && result.has_value()) {
+            std::vector<::testing::Matcher<JSONValueConstRef>> expected_result;
+            expected_result.reserve(test.params.result().num_elements());
+            for (const Value& value : test.params.result().elements()) {
+              expected_result.push_back(JsonEq(value.json_value()));
+            }
+
+            EXPECT_THAT(*result, ElementsAreArray(expected_result));
+          }
+        } else {
+          absl::optional<std::vector<absl::optional<std::string>>> result =
+              evaluator->ExtractStringArray(json);
+          EXPECT_EQ(test.params.result().is_null(), !result.has_value());
+          if (!test.params.result().is_null() && result.has_value()) {
+            std::vector<Value> string_array_result;
+            string_array_result.reserve(result->size());
+            for (const auto& element : *result) {
+              string_array_result.push_back(element.has_value()
+                                                ? values::String(*element)
+                                                : values::NullString());
+            }
+            EXPECT_EQ(values::UnsafeArray(types::StringArrayType(),
+                                          std::move(string_array_result)),
+                      test.params.result());
           }
         }
       } else {
@@ -387,6 +550,7 @@ TEST(JsonTest, ConvertJSONPathToSqlStandardMode) {
 
   std::vector<std::pair<std::string, std::string>> json_paths = {
       {"$", "$"},
+      {"$['']", "$.\"\""},
       {"$.a", "$.a"},
       {"$[a]", "$.a"},
       {"$['a']", "$.a"},
@@ -429,6 +593,36 @@ TEST(JsonTest, ConvertJSONPathToSqlStandardMode) {
                   StatusIs(absl::StatusCode::kOutOfRange));
       EXPECT_EQ(standard_json_path, kInvalidJSONPath);
     }
+  }
+}
+
+TEST(JsonTest, ConvertJSONPathTokenToSqlStandardMode) {
+  const std::string kInvalidJSONPath = "Invalid JSONPath input";
+
+  std::vector<std::pair<std::string, std::string>> json_path_tokens = {
+      {"a", "a"},
+      {"10", "10"},
+      {"a_b", "a_b"},
+      {"a:b", "a:b"},
+      {"a  \tb", "a  \tb"},
+      // Special characters
+      {"a'", R"("a'")"},
+      {"a.b", R"("a.b")"},
+      {"a,b", R"("a,b")"},
+      {"a]", R"("a]")"},
+      {"a['b']", R"("a['b']")"},
+      {R"(a")", R"("a\"")"},
+      {R"(\\)", R"("\\")"},
+  };
+
+  for (const auto& [token, standard_json_path_token] : json_path_tokens) {
+    SCOPED_TRACE(
+        absl::Substitute("ConvertJSONPathTokenToSqlStandardMode($0)", token));
+    EXPECT_EQ(ConvertJSONPathTokenToSqlStandardMode(token),
+              standard_json_path_token);
+    ZETASQL_EXPECT_OK(json_internal::IsValidJSONPath(
+        absl::StrCat("$.", standard_json_path_token),
+        /*sql_standard_mode=*/true));
   }
 }
 
@@ -581,6 +775,38 @@ TEST(JsonPathExtractorTest, EscapedPathTokensStandard) {
   std::vector<ValidJSONPathIterator::Token> tokens;
   for (; !itr.End(); ++itr) {
     tokens.push_back(*itr);
+  }
+
+  EXPECT_THAT(tokens, ElementsAreArray(gold));
+}
+
+TEST(JsonPathExtractorTest, EmptyPathTokens) {
+  std::string esc_text("$.a[''].g[1]");
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<ValidJSONPathIterator> iter,
+      ValidJSONPathIterator::Create(esc_text, /*sql_standard_mode=*/false));
+  const std::vector<ValidJSONPathIterator::Token> gold = {"", "a", "", "g",
+                                                          "1"};
+
+  std::vector<ValidJSONPathIterator::Token> tokens;
+  for (; !iter->End(); ++(*iter)) {
+    tokens.push_back(**iter);
+  }
+
+  EXPECT_THAT(tokens, ElementsAreArray(gold));
+}
+
+TEST(JsonPathExtractorTest, EmptyPathTokensStandard) {
+  std::string esc_text("$.a.\"\".g[1]");
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      std::unique_ptr<ValidJSONPathIterator> iter,
+      ValidJSONPathIterator::Create(esc_text, /*sql_standard_mode=*/true));
+  const std::vector<ValidJSONPathIterator::Token> gold = {"", "a", "", "g",
+                                                          "1"};
+
+  std::vector<ValidJSONPathIterator::Token> tokens;
+  for (; !iter->End(); ++(*iter)) {
+    tokens.push_back(**iter);
   }
 
   EXPECT_THAT(tokens, ElementsAreArray(gold));
@@ -1077,7 +1303,7 @@ TEST(JSONPathExtractorTest, EscapedAccessTest) {
   std::string input_path(R"($."a\"b")");
   absl::string_view esc_input_path(input_path);
 
-  LOG(INFO) << input;
+  ZETASQL_LOG(INFO) << input;
 
   ZETASQL_ASSERT_OK_AND_ASSIGN(const std::unique_ptr<ValidJSONPathIterator> path_itr,
                        ValidJSONPathIterator::Create(
@@ -1242,8 +1468,7 @@ TEST(JSONPathArrayExtractorTest, BasicParsing) {
 
 TEST(JSONPathArrayExtractorTest, MatchingMultipleSuffixes) {
   std::string input =
-      "{ \"a\" : { \"b\" : \"a10\", \"l11\" : \"test\" }, \"a\" : { "
-      "\"c\" : null }, \"a\" : \"a5\", \"a\" : \"a6\" }";
+      R"({"a":{"b":"a10","l11":"test"}, "a":{"c":null}, "a":"a5", "a":"a6"})";
   absl::string_view input_str(input);
   absl::string_view input_path("$.a.c");
 
@@ -1255,18 +1480,26 @@ TEST(JSONPathArrayExtractorTest, MatchingMultipleSuffixes) {
   std::vector<std::string> result;
   bool is_null;
   // Matching the leaf while it is not an array
-  std::vector<std::string> gold({});
+  std::vector<std::string> gold;
+  std::vector<absl::optional<std::string>> scalar_gold;
 
   EXPECT_TRUE(parser.ExtractArray(&result, &is_null));
   EXPECT_TRUE(parser.StoppedOnFirstMatch());
   EXPECT_EQ(result, gold);
   EXPECT_TRUE(is_null);
+
+  std::vector<absl::optional<std::string>> scalar_result;
+  JSONPathStringArrayExtractor scalar_parser(input_str, path_itr.get());
+  EXPECT_TRUE(scalar_parser.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_TRUE(scalar_parser.StoppedOnFirstMatch());
+  EXPECT_EQ(scalar_result, scalar_gold);
+  EXPECT_TRUE(is_null);
 }
 
 TEST(JSONPathArrayExtractorTest, MatchedEmptyArray) {
   std::string input =
-      "{ \"a\" : { \"b\" : \"a10\", \"l11\" : \"test\" }, \"a\" : { "
-      "\"c\" : {\"d\" : [] } }, \"a\" : \"a5\", \"a\" : \"a6\" }";
+      R"({"a":{"b":"a10", "l11":"test"}, "a":{"c":{"d":[]}}, "a":"a5",
+      "a":"a6"})";
   absl::string_view input_str(input);
   absl::string_view input_path("$.a.c.d");
 
@@ -1277,18 +1510,25 @@ TEST(JSONPathArrayExtractorTest, MatchedEmptyArray) {
 
   std::vector<std::string> result;
   bool is_null;
-  std::vector<std::string> gold({});
+  std::vector<std::string> gold;
+  std::vector<absl::optional<std::string>> scalar_gold;
 
   EXPECT_TRUE(parser.ExtractArray(&result, &is_null));
   EXPECT_TRUE(parser.StoppedOnFirstMatch());
   EXPECT_FALSE(is_null);
   EXPECT_EQ(result, gold);
+
+  std::vector<absl::optional<std::string>> scalar_result;
+  JSONPathStringArrayExtractor scalar_parser(input_str, path_itr.get());
+  EXPECT_TRUE(scalar_parser.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_TRUE(scalar_parser.StoppedOnFirstMatch());
+  EXPECT_FALSE(is_null);
+  EXPECT_EQ(scalar_result, scalar_gold);
 }
 
 TEST(JSONPathArrayExtractorTest, PartiallyMatchingSuffixes) {
   std::string input =
-      "{ \"a\" : { \"b\" : \"a10\", \"l11\" : \"test\" }, \"a\" : { "
-      "\"c\" : null }, \"a\" : \"a5\", \"a\" : \"a6\" }";
+      R"({"a":{"b":"a10","l11":"test"}, "a":{"c":null}, "a":"a5", "a":"a6"})";
   absl::string_view input_str(input);
   absl::string_view input_path("$.a.c.d");
 
@@ -1299,21 +1539,27 @@ TEST(JSONPathArrayExtractorTest, PartiallyMatchingSuffixes) {
 
   std::vector<std::string> result;
   bool is_null;
-  std::vector<std::string> gold({});
+  std::vector<std::string> gold;
+  std::vector<absl::optional<std::string>> scalar_gold;
 
   // Parsing of JSON was successful however no match.
   EXPECT_TRUE(parser.ExtractArray(&result, &is_null));
   EXPECT_FALSE(parser.StoppedOnFirstMatch());
   EXPECT_TRUE(is_null);
   EXPECT_EQ(result, gold);
+
+  std::vector<absl::optional<std::string>> scalar_result;
+  JSONPathStringArrayExtractor scalar_parser(input_str, path_itr.get());
+  EXPECT_TRUE(scalar_parser.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_FALSE(scalar_parser.StoppedOnFirstMatch());
+  EXPECT_TRUE(is_null);
+  EXPECT_EQ(scalar_result, scalar_gold);
 }
 
 TEST(JSONPathArrayExtractorTest, ReturnJSONObjectArray) {
   std::string input =
-      "{ \"e\" : { \"b\" : \"a10\", \"l11\" : \"test\" }, \"a\" : { "
-      "\"c\" : null, \"f\" : [ {\"g\" : \"h\"}, {\"g\" : [ \"i\", { \"x\" : "
-      "\"j\"} ] } ] }, "
-      "\"a\" : \"a5\", \"a\" : \"a6\" }";
+      R"({"e":{"b":"a10", "l11":"test"}, "a":{"c":null, "f":[{"g":"h"},
+      {"g":["i", {"x":"j"}]}]}, "a":"a5", "a":"a6"})";
 
   absl::string_view input_str(input);
   absl::string_view input_path("$.a.f");
@@ -1337,9 +1583,8 @@ TEST(JSONPathArrayExtractorTest, ReturnJSONObjectArray) {
 
 TEST(JSONPathArrayExtractorTest, StopParserOnFirstMatch) {
   std::string input =
-      "{ \"a\" : { \"b\" : { \"c\" : { \"d\" : [\"l1\"] } } } ,"
-      " \"a\" : { \"b\" :  { \"c\" : { \"e\" : \"l2\" } } } ,"
-      " \"a\" : { \"b\" : { \"c\" : { \"d\" : \"l3\"} }}}";
+      R"({"a":{"b":{"c":{"d":["l1"]}}}, "a":{"b":{"c":{"e":"l2"}}},
+      "a":{"b":{"c":{"d":"l3"}}}})";
 
   absl::string_view input_str(input);
   absl::string_view input_path("$.a.b.c.d");
@@ -1357,13 +1602,21 @@ TEST(JSONPathArrayExtractorTest, StopParserOnFirstMatch) {
   EXPECT_FALSE(is_null);
   EXPECT_TRUE(parser.StoppedOnFirstMatch());
   EXPECT_EQ(result, gold);
+
+  std::vector<absl::optional<std::string>> scalar_result;
+  std::vector<absl::optional<std::string>> scalar_gold = {"l1"};
+  JSONPathStringArrayExtractor scalar_parser(input_str, path_itr.get());
+  EXPECT_TRUE(scalar_parser.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_FALSE(is_null);
+  EXPECT_TRUE(scalar_parser.StoppedOnFirstMatch());
+  EXPECT_EQ(scalar_result, scalar_gold);
 }
 
 TEST(JSONPathArrayExtractorTest, BasicArrayAccess) {
   std::string input =
-      "{ \"e\" : { \"b\" : \"a10\", \"l11\" : \"test\" }, \"a\" : { "
-      "\"c\" : null, \"f\" : { \"g\" : \"h\", \"g\" : [ [\"i\"], [\"j\", "
-      "\"k\"] ] } }, \"a\" : \"a5\", \"a\" : \"a6\" }";
+      R"({"e":{"b":"a10", "l11":"test"},
+      "a":{"c":null, "f":{"g":"h", "g":[["i"], ["j", "k"]]}},
+      "a":"a5", "a":"a6"})";
   absl::string_view input_str(input);
   absl::string_view input_path("$.a.f.g[1]");
 
@@ -1379,13 +1632,20 @@ TEST(JSONPathArrayExtractorTest, BasicArrayAccess) {
   EXPECT_TRUE(parser.ExtractArray(&result, &is_null));
   EXPECT_FALSE(is_null);
   EXPECT_EQ(result, gold);
+
+  std::vector<absl::optional<std::string>> scalar_result;
+  std::vector<absl::optional<std::string>> scalar_gold = {"j", "k"};
+  JSONPathStringArrayExtractor scalar_parser(input_str, path_itr.get());
+  EXPECT_TRUE(scalar_parser.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_FALSE(is_null);
+  EXPECT_EQ(scalar_result, scalar_gold);
 }
 
 TEST(JSONPathArrayExtractorTest, AccessObjectInArrayMultipleSuffixes) {
   std::string input =
-      "{ \"e\" : { \"b\" : \"a10\", \"l11\" : \"test\" }, \"a\" : { \"f\" : "
-      "null, \"f\" : { \"g\" : \"h\", \"g\" : [ [\"i\"], [\"j\", \"k\"] ] } }, "
-      "\"a\" : \"a5\", \"a\" : \"a6\" }";
+      R"({"e":{"b" : "a10", "l11":"test"},
+      "a":{"f":null, "f":{"g":"h", "g":[["i"], ["j", "k"]]}},
+      "a":"a5", "a":"a6"})";
   absl::string_view input_str(input);
   absl::string_view input_path("$.a.f.g[1]");
 
@@ -1401,6 +1661,13 @@ TEST(JSONPathArrayExtractorTest, AccessObjectInArrayMultipleSuffixes) {
   EXPECT_TRUE(parser.ExtractArray(&result, &is_null));
   EXPECT_FALSE(is_null);
   EXPECT_EQ(result, gold);
+
+  std::vector<absl::optional<std::string>> scalar_result;
+  std::vector<absl::optional<std::string>> scalar_gold = {"j", "k"};
+  JSONPathStringArrayExtractor scalar_parser(input_str, path_itr.get());
+  EXPECT_TRUE(scalar_parser.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_FALSE(is_null);
+  EXPECT_EQ(scalar_result, scalar_gold);
 }
 
 TEST(JSONPathArrayExtractorTest, EscapedAccessTestNonSqlStandard) {
@@ -1411,11 +1678,9 @@ TEST(JSONPathArrayExtractorTest, EscapedAccessTestNonSqlStandard) {
   // So '4k' (k > = 1) backslashes translate to 'k' backslashes at runtime
   // "\\\\" = "\" at runtime. So "\\\\\\\\s" === "\\s"
   std::string input =
-      "{ \"e\" : { \"b\" : \"a10\", \"l11\" : \"test\" },"
-      " \"a\" : { \"b\" : null, "
-      "\"''\\\\\\\\s \" : { \"g\" : \"h\", "
-      "\"g\" : [ \"i\", [\"j\", \"k\"] ] } }, "
-      "\"a\" : \"a5\", \"a\" : \"a6\" }";
+      R"({"e":{"b":"a10", "l11":"test"},
+      "a":{"b":null, "''\\\\s ":{"g":"h", "g":["i", ["j", "k"]]}},
+      "a":"a5", "a":"a6"})";
   absl::string_view input_str(input);
   std::string input_path("$.a['\\'\\'\\\\s '].g[ 1]");
   absl::string_view esc_input_path(input_path);
@@ -1432,16 +1697,21 @@ TEST(JSONPathArrayExtractorTest, EscapedAccessTestNonSqlStandard) {
   EXPECT_TRUE(parser.ExtractArray(&result, &is_null));
   EXPECT_FALSE(is_null);
   EXPECT_EQ(result, gold);
+
+  std::vector<absl::optional<std::string>> scalar_result;
+  std::vector<absl::optional<std::string>> scalar_gold = {"j", "k"};
+  JSONPathStringArrayExtractor scalar_parser(input_str, path_itr.get());
+  EXPECT_TRUE(scalar_parser.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_FALSE(is_null);
+  EXPECT_EQ(scalar_result, scalar_gold);
 }
 
 TEST(JSONPathArrayExtractorTest,
      EscapedAccessTestNonSqlStandardInvalidJsonPath) {
   std::string input =
-      "{ \"e\" : { \"b\" : \"a10\", \"l11\" : \"test\" },"
-      " \"a\" : { \"b\" : null, "
-      "\"''\\\\\\\\s \" : { \"g\" : \"h\", "
-      "\"g\" : [ \"i\", [\"j\", \"k\"] ] } }, "
-      "\"a\" : \"a5\", \"a\" : \"a6\" }";
+      R"({"e":{"b":"a10", "l11":"test"},
+      "a":{"b":null, "''\\\\s ":{"g":"h", "g":["i", ["j", "k"]]}},
+      "a":"a5", "a":"a6"})";
   std::string input_path("$.a.\"\'\'\\\\s \".g[ 1]");
   absl::string_view esc_input_path(input_path);
 
@@ -1456,8 +1726,8 @@ TEST(JSONPathArrayExtractorTest,
 
 TEST(JSONPathArrayExtractorTest, NestedArrayAccess) {
   std::string input =
-      "[0 , [ [],  [ [ 1, 4, 8, [2, 1, 0, [{\"a\" : \"3\"}, {\"a\" : \"4\"}], "
-      "4 ], 11, 13] ] , [], \"a\" ], 2, [] ]";
+      R"([0 ,[[], [[1, 4, 8, [2, 1, 0, ["3", "4"], 4], 11, 13]], [], "a"], 2,
+      []])";
   absl::string_view input_str(input);
   absl::string_view input_path("$[1][1][0][3][3]");
   ZETASQL_ASSERT_OK_AND_ASSIGN(
@@ -1467,18 +1737,24 @@ TEST(JSONPathArrayExtractorTest, NestedArrayAccess) {
 
   std::vector<std::string> result;
   bool is_null;
-  std::vector<std::string> gold(
-      {Normalize("{\"a\" : \"3\"}"), Normalize("{\"a\" : \"4\"}")});
+  std::vector<std::string> gold({"\"3\"", "\"4\""});
 
   EXPECT_TRUE(parser.ExtractArray(&result, &is_null));
   EXPECT_EQ(result, gold);
   EXPECT_FALSE(is_null);
+
+  std::vector<absl::optional<std::string>> scalar_result;
+  std::vector<absl::optional<std::string>> scalar_gold({"3", "4"});
+  JSONPathStringArrayExtractor scalar_parser(input_str, path_itr.get());
+  EXPECT_TRUE(scalar_parser.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_FALSE(is_null);
+  EXPECT_EQ(scalar_result, scalar_gold);
 }
 
 TEST(JSONPathArrayExtractorTest, NegativeNestedArrayAccess) {
   std::string input =
-      "[0 , [ [],  [ [ 1, 4, 8, [2, 1, 0, [{\"a\" : \"3\"}, {\"a\" : \"4\"}], "
-      "4 ], 11, 13] ] , [], \"a\" ], 2, [] ]";
+      R"([0 ,[[], [[1, 4, 8, [2, 1, 0, ["3", "4"], 4], 11, 13]], [], "a"], 2,
+      []])";
   absl::string_view input_str(input);
   absl::string_view input_path("$[1][1]['-0'][3][3]");
   ZETASQL_ASSERT_OK_AND_ASSIGN(
@@ -1488,12 +1764,18 @@ TEST(JSONPathArrayExtractorTest, NegativeNestedArrayAccess) {
 
   std::vector<std::string> result;
   bool is_null;
-  std::vector<std::string> gold(
-      {Normalize("{\"a\" : \"3\"}"), Normalize("{\"a\" : \"4\"}")});
+  std::vector<std::string> gold({"\"3\"", "\"4\""});
 
   EXPECT_TRUE(parser.ExtractArray(&result, &is_null));
   EXPECT_FALSE(is_null);
   EXPECT_EQ(result, gold);
+
+  std::vector<absl::optional<std::string>> scalar_result;
+  std::vector<absl::optional<std::string>> scalar_gold = {"3", "4"};
+  JSONPathStringArrayExtractor scalar_parser(input_str, path_itr.get());
+  EXPECT_TRUE(scalar_parser.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_FALSE(is_null);
+  EXPECT_EQ(scalar_result, scalar_gold);
 
   absl::string_view input_path1("$[1][1]['-5'][3][3]");
   ZETASQL_ASSERT_OK_AND_ASSIGN(
@@ -1507,13 +1789,20 @@ TEST(JSONPathArrayExtractorTest, NegativeNestedArrayAccess) {
   EXPECT_TRUE(is_null);
   EXPECT_FALSE(parser1.StoppedOnFirstMatch());
   EXPECT_EQ(result, gold1);
+
+  scalar_result.clear();
+  std::vector<absl::optional<std::string>> scalar_gold1;
+  JSONPathStringArrayExtractor scalar_parser1(input_str, path_itr1.get());
+  EXPECT_TRUE(scalar_parser1.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_TRUE(is_null);
+  EXPECT_FALSE(scalar_parser1.StoppedOnFirstMatch());
+  EXPECT_EQ(scalar_result, scalar_gold1);
 }
 
 TEST(JSONPathArrayExtractorTest, MixedNestedArrayAccess) {
   std::string input =
-      "{ \"a\" : [0 , [ [],  { \"b\" : [ 7, [ 1, 4, 8, [2, 1, 0, {\"a\" : { "
-      "\"b\" : \"3\"}, \"c\" : [1,  2, 3 ] }, 4 ], 11, 13] ] }, "
-      "[], \"a\" ], 2, [] ] }";
+      R"({"a":[0, [[], {"b":[7, [1, 4, 8, [2, 1, 0, {"a":{"b":"3"},
+      "c":[1, 2, 3]}, 4], 11, 13]]}, [], "a"], 2,[]]})";
   absl::string_view input_str(input);
   absl::string_view input_path("$.a[1][1].b[1][3][3].c");
 
@@ -1528,12 +1817,19 @@ TEST(JSONPathArrayExtractorTest, MixedNestedArrayAccess) {
   EXPECT_TRUE(parser.ExtractArray(&result, &is_null));
   EXPECT_FALSE(is_null);
   EXPECT_EQ(result, gold);
+
+  std::vector<absl::optional<std::string>> scalar_result;
+  std::vector<absl::optional<std::string>> scalar_gold = {"1", "2", "3"};
+  JSONPathStringArrayExtractor scalar_parser(input_str, path_itr.get());
+  EXPECT_TRUE(scalar_parser.ExtractStringArray(&scalar_result, &is_null));
+  EXPECT_FALSE(is_null);
+  EXPECT_EQ(scalar_result, scalar_gold);
 }
 
 TEST(JSONPathArrayExtractorTest, QuotedArrayIndex) {
   std::string input =
-      "[0 , [ [],  [ [ 1, 4, 8, [2, 1, 0, [{\"a\" : \"3\"}, {\"a\" : \"4\"}], "
-      "4 ], 11, 13] ] , [], \"a\" ], 2, [] ]";
+      R"([0, [[], [[1, 4, 8, [2, 1, 0, [{"a":"3"}, {"a":"4"}], 4], 11, 13]], [],
+      "a"], 2, []])";
   absl::string_view input_str(input);
   absl::string_view input_path("$['1'][1][0]['3']['3']");
 
@@ -1545,11 +1841,82 @@ TEST(JSONPathArrayExtractorTest, QuotedArrayIndex) {
   std::vector<std::string> result;
   bool is_null;
   std::vector<std::string> gold(
-      {Normalize("{\"a\" : \"3\"}"), Normalize("{\"a\" : \"4\"}")});
+      {Normalize(R"({"a":"3"})"), Normalize(R"({"a":"4"})")});
 
   EXPECT_TRUE(parser.ExtractArray(&result, &is_null));
   EXPECT_EQ(result, gold);
   EXPECT_FALSE(is_null);
+}
+
+TEST(JSONPathArrayStringExtractorTest, BasicParsing) {
+  std::string input = R"(["a", 1, "2"])";
+  absl::string_view input_str(input);
+  absl::string_view input_path("$");
+
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      const std::unique_ptr<ValidJSONPathIterator> path_itr,
+      ValidJSONPathIterator::Create(input_path, /*sql_standard_mode=*/false));
+  JSONPathStringArrayExtractor parser(input_str, path_itr.get());
+
+  std::vector<absl::optional<std::string>> result;
+  std::vector<absl::optional<std::string>> gold = {"a", "1", "2"};
+  bool is_null;
+
+  EXPECT_TRUE(parser.ExtractStringArray(&result, &is_null));
+  EXPECT_EQ(result, gold);
+  EXPECT_FALSE(is_null);
+}
+
+TEST(JSONPathArrayExtractorTest, ValidateScalarResult) {
+  std::string input =
+      R"({"a":[{"a1":"a11"}, "a2" ],
+      "b":["b1", ["b21", "b22"]],
+      "c":[[],"c2"],
+      "d":["d1", "tes\"t", 1.9834, null, 123]})";
+
+  absl::string_view input_str(input);
+  absl::string_view input_path("$.a");
+
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      const std::unique_ptr<ValidJSONPathIterator> path_itr,
+      ValidJSONPathIterator::Create(input_path, /*sql_standard_mode=*/false));
+  JSONPathStringArrayExtractor parser(input_str, path_itr.get());
+
+  std::vector<absl::optional<std::string>> result;
+  bool is_null;
+  EXPECT_TRUE(parser.ExtractStringArray(&result, &is_null));
+  EXPECT_TRUE(is_null);
+
+  input_path = "$.b";
+  result.clear();
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      const std::unique_ptr<ValidJSONPathIterator> path_itr1,
+      ValidJSONPathIterator::Create(input_path, /*sql_standard_mode=*/false));
+  JSONPathStringArrayExtractor parser1(input_str, path_itr1.get());
+  EXPECT_TRUE(parser1.ExtractStringArray(&result, &is_null));
+  EXPECT_TRUE(is_null);
+
+  input_path = "$.c";
+  result.clear();
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      const std::unique_ptr<ValidJSONPathIterator> path_itr2,
+      ValidJSONPathIterator::Create(input_path, /*sql_standard_mode=*/false));
+  JSONPathStringArrayExtractor parser2(input_str, path_itr2.get());
+  EXPECT_TRUE(parser2.ExtractStringArray(&result, &is_null));
+  EXPECT_TRUE(is_null);
+
+  input_path = "$.d";
+  result.clear();
+  std::vector<absl::optional<std::string>> gold = {"d1", "tes\"t", "1.9834",
+                                                   absl::nullopt, "123"};
+  ZETASQL_ASSERT_OK_AND_ASSIGN(
+      const std::unique_ptr<ValidJSONPathIterator> path_itr3,
+      ValidJSONPathIterator::Create(input_path, /*sql_standard_mode=*/false));
+  JSONPathStringArrayExtractor parser3(input_str, path_itr3.get());
+  EXPECT_TRUE(parser3.ExtractStringArray(&result, &is_null));
+  EXPECT_FALSE(is_null);
+  EXPECT_TRUE(parser.StoppedOnFirstMatch());
+  EXPECT_EQ(result, gold);
 }
 
 TEST(ValidJSONPathIterator, BasicTest) {
@@ -1643,10 +2010,24 @@ TEST(ValidJSONPathIterator, InvalidEmptyJSONPathCreation) {
                                HasSubstr("JSONPath must start with '$'")));
 }
 
-// Compliance Tests on JSON_EXTRACT_ARRAY
-TEST(JSONPathExtractor, ComplianceJSONExtractArray) {
-  const std::vector<FunctionTestCall> tests =
-      GetFunctionTestsJsonExtractArray();
+void ExtractArrayOrStringArray(JSONPathArrayExtractor* parser,
+                               std::vector<absl::optional<std::string>>* output,
+                               bool* is_null) {
+  parser->set_special_character_escaping(true);
+  std::vector<std::string> result;
+  parser->ExtractArray(&result, is_null);
+  output->assign(result.begin(), result.end());
+}
+
+void ExtractArrayOrStringArray(JSONPathStringArrayExtractor* parser,
+                               std::vector<absl::optional<std::string>>* output,
+                               bool* is_null) {
+  parser->ExtractStringArray(output, is_null);
+}
+
+template <class ParserClass>
+void ComplianceJSONExtractArrayTest(const std::vector<FunctionTestCall>& tests,
+                                    bool sql_standard_mode) {
   for (const FunctionTestCall& test : tests) {
     if (test.params.params()[0].is_null() ||
         test.params.params()[1].is_null()) {
@@ -1656,18 +2037,17 @@ TEST(JSONPathExtractor, ComplianceJSONExtractArray) {
     const std::string json_path = test.params.param(1).string_value();
     const Value& expected_result = test.params.results().begin()->second.result;
 
-    std::vector<std::string> output;
-    Value result;
+    std::vector<absl::optional<std::string>> output;
+    std::vector<Value> result_array;
     absl::Status status;
     bool is_null = true;
     auto evaluator_status =
-        ValidJSONPathIterator::Create(json_path, /*sql_standard_mode=*/false);
+        ValidJSONPathIterator::Create(json_path, sql_standard_mode);
     if (evaluator_status.ok()) {
       const std::unique_ptr<ValidJSONPathIterator>& path_itr =
           evaluator_status.value();
-      JSONPathArrayExtractor parser(json, path_itr.get());
-      parser.set_special_character_escaping(true);
-      parser.ExtractArray(&output, &is_null);
+      ParserClass parser(json, path_itr.get());
+      ExtractArrayOrStringArray(&parser, &output, &is_null);
     } else {
       status = evaluator_status.status();
     }
@@ -1675,7 +2055,12 @@ TEST(JSONPathExtractor, ComplianceJSONExtractArray) {
     if (!status.ok() || !test.params.status().ok()) {
       EXPECT_EQ(test.params.status().code(), status.code()) << status;
     } else {
-      result = values::StringArray(output);
+      for (const auto& element : output) {
+        result_array.push_back(element.has_value() ? values::String(*element)
+                                             : values::NullString());
+      }
+      Value result = values::UnsafeArray(types::StringArrayType(),
+                                         std::move(result_array));
       EXPECT_EQ(is_null, expected_result.is_null());
       if (!expected_result.is_null()) {
         EXPECT_EQ(result, expected_result);
@@ -1684,11 +2069,44 @@ TEST(JSONPathExtractor, ComplianceJSONExtractArray) {
   }
 }
 
+// Compliance Tests on JSON_QUERY_ARRAY
+TEST(JSONPathExtractor, ComplianceJSONQueryArray) {
+  const std::vector<FunctionTestCall> tests =
+      GetFunctionTestsStringJsonQueryArray();
+  ComplianceJSONExtractArrayTest<JSONPathArrayExtractor>(
+      tests, /*sql_standard_mode=*/true);
+}
+
+// Compliance Tests on JSON_EXTRACT_ARRAY
+TEST(JSONPathExtractor, ComplianceJSONExtractArray) {
+  const std::vector<FunctionTestCall> tests =
+      GetFunctionTestsStringJsonExtractArray();
+  ComplianceJSONExtractArrayTest<JSONPathArrayExtractor>(
+      tests, /*sql_standard_mode=*/false);
+}
+
+// Compliance Tests on JSON_VALUE_ARRAY
+TEST(JSONPathExtractor, ComplianceJSONValueArray) {
+  const std::vector<FunctionTestCall> tests =
+      GetFunctionTestsStringJsonValueArray();
+  ComplianceJSONExtractArrayTest<JSONPathStringArrayExtractor>(
+      tests, /*sql_standard_mode=*/true);
+}
+
+// Compliance Tests on JSON_EXTRACT_STRING_ARRAY
+TEST(JSONPathExtractor, ComplianceJSONExtractStringArray) {
+  const std::vector<FunctionTestCall> tests =
+      GetFunctionTestsStringJsonExtractStringArray();
+  ComplianceJSONExtractArrayTest<JSONPathStringArrayExtractor>(
+      tests, /*sql_standard_mode=*/false);
+}
+
 TEST(JsonPathEvaluatorTest, ExtractingArrayCloseToLimitSucceeds) {
   const int kNestingDepth = JSONPathExtractor::kMaxParsingDepth;
   const std::string nested_array_json(kNestingDepth, '[');
   std::string value;
   std::vector<std::string> array_value;
+  std::vector<absl::optional<std::string>> scalar_array_value;
   absl::Status status;
   bool is_null = true;
   ZETASQL_ASSERT_OK_AND_ASSIGN(
@@ -1713,6 +2131,9 @@ TEST(JsonPathEvaluatorTest, ExtractingArrayCloseToLimitSucceeds) {
   ZETASQL_EXPECT_OK(
       path_evaluator->ExtractArray(nested_array_json, &array_value, &is_null));
   EXPECT_TRUE(is_null);
+  ZETASQL_EXPECT_OK(path_evaluator->ExtractStringArray(nested_array_json,
+                                               &scalar_array_value, &is_null));
+  EXPECT_TRUE(is_null);
 }
 
 TEST(JsonPathEvaluatorTest, DeeplyNestedArrayCausesFailure) {
@@ -1727,6 +2148,7 @@ TEST(JsonPathEvaluatorTest, DeeplyNestedArrayCausesFailure) {
       JsonPathEvaluator::Create(json_path, /*sql_standard_mode=*/true));
   std::string value;
   std::vector<std::string> array_value;
+  std::vector<absl::optional<std::string>> scalar_array_value;
   bool is_null = true;
   EXPECT_THAT(path_evaluator->Extract(nested_array_json, &value, &is_null),
               StatusIs(absl::StatusCode::kOutOfRange,
@@ -1747,6 +2169,11 @@ TEST(JsonPathEvaluatorTest, DeeplyNestedArrayCausesFailure) {
       StatusIs(absl::StatusCode::kOutOfRange,
                "JSON parsing failed due to deeply nested array/struct. "
                "Maximum nesting depth is 1000"));
+  EXPECT_THAT(path_evaluator->ExtractStringArray(nested_array_json,
+                                                 &scalar_array_value, &is_null),
+              StatusIs(absl::StatusCode::kOutOfRange,
+                       "JSON parsing failed due to deeply nested array/struct. "
+                       "Maximum nesting depth is 1000"));
   EXPECT_TRUE(is_null);
 }
 
@@ -1758,6 +2185,7 @@ TEST(JsonPathEvaluatorTest, ExtractingObjectCloseToLimitSucceeds) {
   }
   std::string value;
   std::vector<std::string> array_value;
+  std::vector<absl::optional<std::string>> scalar_array_value;
   absl::Status status;
   bool is_null = true;
   ZETASQL_ASSERT_OK_AND_ASSIGN(
@@ -1783,6 +2211,9 @@ TEST(JsonPathEvaluatorTest, ExtractingObjectCloseToLimitSucceeds) {
   ZETASQL_EXPECT_OK(
       path_evaluator->ExtractArray(nested_object_json, &array_value, &is_null));
   EXPECT_TRUE(is_null);
+  ZETASQL_EXPECT_OK(path_evaluator->ExtractStringArray(nested_object_json,
+                                               &scalar_array_value, &is_null));
+  EXPECT_TRUE(is_null);
 }
 
 TEST(JsonPathEvaluatorTest, DeeplyNestedObjectCausesFailure) {
@@ -1801,6 +2232,7 @@ TEST(JsonPathEvaluatorTest, DeeplyNestedObjectCausesFailure) {
 
   std::string value;
   std::vector<std::string> array_value;
+  std::vector<absl::optional<std::string>> scalar_array_value;
   bool is_null = true;
   EXPECT_THAT(path_evaluator->Extract(nested_object_json, &value, &is_null),
               StatusIs(absl::StatusCode::kOutOfRange,
@@ -1821,6 +2253,12 @@ TEST(JsonPathEvaluatorTest, DeeplyNestedObjectCausesFailure) {
       StatusIs(absl::StatusCode::kOutOfRange,
                "JSON parsing failed due to deeply nested array/struct. "
                "Maximum nesting depth is 1000"));
+  EXPECT_TRUE(is_null);
+  EXPECT_THAT(path_evaluator->ExtractStringArray(nested_object_json,
+                                                 &scalar_array_value, &is_null),
+              StatusIs(absl::StatusCode::kOutOfRange,
+                       "JSON parsing failed due to deeply nested array/struct. "
+                       "Maximum nesting depth is 1000"));
   EXPECT_TRUE(is_null);
 }
 

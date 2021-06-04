@@ -8,12 +8,15 @@ ZetaSQL supports the following statements for manipulating data:
 + `INSERT`
 + `UPDATE`
 + `DELETE`
++ `MERGE`
 
-## Example data {: #example-data }
+## Example data 
+<a id="example-data"></a>
 
 The sections in this topic use the following table schemas.
 
-### Singers table {: #singers-table }
+### Singers table 
+<a id="singers-table"></a>
 
 <table>
 <thead>
@@ -97,7 +100,8 @@ message Album {
 }
 </pre>
 
-### Concerts table {: #concerts-table }
+### Concerts table 
+<a id="concerts-table"></a>
 
 <table>
 <thead>
@@ -136,6 +140,64 @@ message Album {
 <tr>
 <td>TicketPrices</td>
 <td><code>ARRAY&lt;INT64&gt;</code></td>
+<td>&nbsp;</td>
+</tr>
+</tbody>
+</table>
+
+### Inventory table
+
+<table>
+<thead>
+<tr>
+<th>Column Name</th>
+<th>Data Type</th>
+<th>Default Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>product</td>
+<td><code>STRING NOT NULL</code></td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td>quantity</td>
+<td><code>INT64 NOT NULL</code></td>
+<td>0</td>
+</tr>
+<tr>
+<td>supply_constrained</td>
+<td><code>BOOL</code></td>
+<td>false</td>
+</tr>
+</tbody>
+</table>
+
+### NewArrivals table
+
+<table>
+<thead>
+<tr>
+<th>Column Name</th>
+<th>Data Type</th>
+<th>Default Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>product</td>
+<td><code>STRING NOT NULL</code></td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td>quantity</td>
+<td><code>INT64 NOT NULL</code></td>
+<td>0</td>
+</tr>
+<tr>
+<td>warehouse</td>
+<td><code>STRING NOT NULL</code></td>
 <td>&nbsp;</td>
 </tr>
 </tbody>
@@ -199,7 +261,8 @@ SELECT c.VenueId, c.SingerId, DATE "2015-06-01", c.BeginTime, c.EndTime, c.Ticke
   FROM Concerts c WHERE c.SingerId = 1;
 ```
 
-### Value type compatibility {: #compatible-types }
+### Value type compatibility 
+<a id="compatible-types"></a>
 
 Values added with an `INSERT` statement must be compatible with the target
 column's type. A value's type is considered compatible with the target column's
@@ -547,17 +610,119 @@ Use the `UPDATE` statement when you want to update existing rows within a table.
 
 <pre>
 UPDATE target_name
-SET update_item [, update_item]*
-WHERE condition<br>[ASSERT_ROWS_MODIFIED n]<br/>
+SET set_clause
+[FROM from_clause]
+WHERE condition [ASSERT_ROWS_MODIFIED n]
+
+set_clause ::= update_item[, ...]
+
 update_item ::= path_expression = expression
               | path_expression = DEFAULT
-              | (dml_stmt)<br/>
+              | (dml_stmt)
+
 dml_stmt ::= insert_statement | update_statement | delete_statement
 </pre>
 
 **Note**: `UPDATE` statements must comply with all
 [statement rules](#statement-rules) and use
 [compatible types](#compatible-types).
+
+### FROM keyword
+
+An `UPDATE` statement can optionally include a `FROM` clause.
+
+You can use the `FROM` clause to specify the rows to update in the target table.
+You can also use columns from joined tables in a `SET` clause or `WHERE`
+condition.
+
+The `FROM` clause join can be a cross join if no condition is specified in the
+`WHERE` clause, otherwise it is an inner join. In either case, rows from the
+target table can join with at most one row from the `FROM` clause.
+
+To specify the join predicate between the table to be updated and tables in
+the `FROM` clause, use the `WHERE` clause.
+
+Caveats:
+
++ The `SET` clause can reference columns from a target table and columns from
+  any `FROM` item in the `FROM` clause. If there is a name collision,
+  unqualified references are treated as ambiguous.
++ If the target table is present in the `FROM` clause as a table name, it
+  must have an alias if you would like to perform a self-join.
++ If a row in the table to be updated joins with zero rows from the `FROM`
+  clause, then the row isn't updated.
++ If a row in the table to be updated joins with exactly one row from the `FROM`
+  clause, then the row is updated.
++ If a row in the table to be updated joins with more than one row from the
+  `FROM` clause, then the query generates a runtime error.
+
+The following example generates a table with inventory totals that include
+existing inventory and inventory from the `NewArrivals` table, and
+marks `supply_constrained` as false.
+
+```sql
+UPDATE dataset.Inventory
+SET quantity = quantity +
+  (SELECT quantity FROM dataset.NewArrivals
+   WHERE Inventory.product = NewArrivals.product),
+    supply_constrained = false
+WHERE product IN (SELECT product FROM dataset.NewArrivals)
+```
+
+Alternately, you can join the tables.
+
+```sql
+UPDATE dataset.Inventory i
+SET quantity = i.quantity + n.quantity,
+    supply_constrained = false
+FROM dataset.NewArrivals n
+WHERE i.product = n.product
+```
+
+Note: The join predicate between `Inventory` and `NewArrivals` is specified
+using the `WHERE` clause.
+
+Before:
+
+```sql
+Inventory
++-------------------+----------+--------------------+
+|      product      | quantity | supply_constrained |
++-------------------+----------+--------------------+
+| dishwasher        |       30 |               NULL |
+| dryer             |       30 |               NULL |
+| front load washer |       20 |               NULL |
+| microwave         |       20 |               NULL |
+| oven              |        5 |               NULL |
+| refrigerator      |       10 |               NULL |
+| top load washer   |       10 |               NULL |
++-------------------+----------+--------------------+
+
+NewArrivals
++-----------------+----------+--------------+
+|     product     | quantity |  warehouse   |
++-----------------+----------+--------------+
+| dryer           |      200 | warehouse #2 |
+| oven            |      300 | warehouse #3 |
+| top load washer |      100 | warehouse #1 |
++-----------------+----------+--------------+
+```
+
+After:
+
+```sql
++-------------------+----------+--------------------+
+|      product      | quantity | supply_constrained |
++-------------------+----------+--------------------+
+| dishwasher        |       30 |               NULL |
+| dryer             |      230 |              false |
+| front load washer |       20 |               NULL |
+| microwave         |       20 |               NULL |
+| oven              |      305 |              false |
+| refrigerator      |       10 |               NULL |
+| top load washer   |      110 |              false |
++-------------------+----------+--------------------+
+```
 
 ### WHERE keyword
 
@@ -824,7 +989,8 @@ WHERE s.SingerId = 5 AND s.Albums.title = "Fire is Hot";
 
 If the repeated field is another protocol buffer, you can provide the
 protocol buffer as a string literal. For example, the following statement adds a
-new song to an album and updates the number of tracks. Notice that this
+new song to an album and updates the number of tracks.
+Notice that this
 statement uses `ASSERT_ROWS_MODIFIED` to ensure that only one `Singer` is
 updated.
 
@@ -854,7 +1020,8 @@ WHERE s.SingerId = 5
 ASSERT_ROWS_MODIFIED 1;
 ```
 
-This next statement updates the chart to reflect a new rank for the song. Notice
+This next statement updates the chart to reflect a new rank for the song.
+Notice
 that each inner `UPDATE` statement uses `ASSERT_ROWS_MODIFIED 1` to ensure that
 only one update is made.
 
@@ -946,6 +1113,174 @@ SET
     (INSERT AlbumTitles VALUES ("The Sloth and the Tiger"));
 ```
 
-[coercion]: https://github.com/google/zetasql/blob/master/docs/conversion_rules#coercion
-[functions-and-operators]: https://github.com/google/zetasql/blob/master/docs/functions-reference
+[from-clause]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#from-clause
+
+## MERGE statement
+
+Use the `MERGE` statement when you want to merge rows from a source table or
+subquery into a target table.
+
+<pre>
+MERGE [INTO] target_name [[AS] alias]
+USING source_name
+ON merge_condition
+when_clause [...]
+
+when_clause ::=
+  {
+    matched_clause
+    | not_matched_by_target_clause
+    | not_matched_by_source_clause
+  }
+
+matched_clause ::=
+  WHEN MATCHED [ AND search_condition ]
+  THEN { merge_update_clause | merge_delete_clause }
+
+not_matched_by_target_clause ::=
+  WHEN NOT MATCHED [BY TARGET] [ AND search_condition ]
+  THEN merge_insert_clause
+
+not_matched_by_source_clause ::=
+  WHEN NOT MATCHED BY SOURCE [ AND search_condition ]
+  THEN { merge_update_clause | merge_delete_clause }
+
+merge_condition ::=
+  bool_expression
+
+search_condition ::=
+  bool_expression
+
+merge_update_clause ::=
+  UPDATE SET update_item [, ...]
+
+update_item ::=
+  path_expression = expression
+
+merge_delete_clause ::=
+  DELETE
+
+merge_insert_clause ::=
+  INSERT [(column [, ... ])] input
+
+input ::=
+  {
+    VALUES (expr [, ... ])
+    | ROW
+  }
+
+expr ::=
+  { expression | DEFAULT }
+</pre>
+
+A `MERGE` statement is a DML statement that can combine `INSERT`, `UPDATE`,
+and `DELETE` operations into a single statement and perform the operations
+atomically.
+
++  `target_name`: The name of the table you're changing.
++  `source_name`: A table name or subquery.
++  `merge_condition`: A `MERGE` statement performs a `JOIN` between the
+   target and the source. Then, depending on the match status (row matched,
+   only in source table, only in destination table), the corresponding `WHEN`
+   clause is executed. The merge condition is used by the `JOIN` to match rows
+   between source and target tables. Depending on the combination of
+   `WHEN` clauses, different `INNER` and `OUTER JOIN` types are applied.
+
+   If the merge condition is `FALSE`, the query optimizer avoids using a `JOIN`.
+   This optimization is referred to as a constant false predicate. A
+   constant false predicate is useful when you perform an atomic `DELETE` on
+   the target plus an `INSERT` from a source (`DELETE` with `INSERT` is also
+   known as a `REPLACE` operation).
++  `when_clause`: The `WHEN` clause has three options: `MATCHED`,
+   `NOT MATCHED BY TARGET` and `NOT MATCHED BY SOURCE`. There must be at least
+   one `WHEN` clause in each `MERGE` statement.
+
+   Each `WHEN` clause can have an optional search condition. The `WHEN` clause
+   is executed for a row if both the merge condition and search condition are
+   satisfied. When there are multiple qualified clauses, only the first
+   `WHEN` clause is executed for a row.
++  `matched_clause`: The `WHEN MATCHED` clause defines how to update or delete
+   a row in the target table if that row matches a row in the source table.
+
+   If there is at least one matched clause performing an `UPDATE` operation,
+   a runtime error is returned when multiple rows from the source table match
+   one row from the target table, and you are trying to update or delete that
+   row in the target table.
++  `not_matched_by_target_clause`: The `WHEN NOT MATCHED` clause defines how to
+   insert into the target table if a row from the source table does not match
+   any row in the target table.
+
+   When the column names of the target table are omitted, all columns in the
+   target table are included in ascending order based on their ordinal
+   positions.
+
+   `ROW` can be used to include all the columns of the source in the ascending
+   sequence of their ordinal positions. Note that none of the pseudo column of
+   the source table is included.
++  `not_matched_by_source_clause`: The `WHEN NOT MATCHED BY SOURCE` clause
+   defines how to update or delete a row in the target table if that row does
+   not match any row in the source table.
+
+In the following example, the query merges items from the `NewArrivals` table
+into the `Inventory` table. If an item is already present in `Inventory`, the
+query increments the quantity field. Otherwise, the query inserts a new row.
+
+```sql
+MERGE dataset.Inventory T
+USING dataset.NewArrivals S
+ON T.product = S.product
+WHEN MATCHED THEN
+  UPDATE SET quantity = T.quantity + S.quantity
+WHEN NOT MATCHED THEN
+  INSERT (product, quantity) VALUES(product, quantity)
+```
+
+These are the tables before you run the query:
+
+```sql
+NewArrivals
++-----------------+----------+--------------+
+|     product     | quantity |  warehouse   |
++-----------------+----------+--------------+
+| dryer           |       20 | warehouse #2 |
+| oven            |       30 | warehouse #3 |
+| refrigerator    |       25 | warehouse #2 |
+| top load washer |       10 | warehouse #1 |
++-----------------+----------+--------------+
+
+Inventory
++-------------------+----------+
+|      product      | quantity |
++-------------------+----------+
+| dishwasher        |       30 |
+| dryer             |       30 |
+| front load washer |       20 |
+| microwave         |       20 |
+| oven              |        5 |
+| top load washer   |       10 |
++-------------------+----------+
+```
+
+This is the `Inventory` table after you run the query:
+
+```sql
+Inventory
++-------------------+----------+
+|      product      | quantity |
++-------------------+----------+
+| dishwasher        |       30 |
+| dryer             |       50 |
+| front load washer |       20 |
+| microwave         |       20 |
+| oven              |       35 |
+| refrigerator      |       25 |
+| top load washer   |       20 |
++-------------------+----------+
+```
+
+[from-clause]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#from-clause
+[join-operator]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#join_types
+
+[coercion]: https://github.com/google/zetasql/blob/master/docs/conversion_rules.md#coercion
+[functions-and-operators]: https://github.com/google/zetasql/blob/master/docs/functions-reference.md
 

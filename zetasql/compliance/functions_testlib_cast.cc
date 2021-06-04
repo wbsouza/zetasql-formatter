@@ -14,6 +14,7 @@
 // limitations under the License.
 //
 
+#include <cstdint>
 #include <limits>
 #include <set>
 #include <string>
@@ -28,7 +29,9 @@
 #include "google/protobuf/unknown_field_set.h"
 #include "zetasql/common/status_payload_utils.h"
 #include "zetasql/common/testing/testing_proto_util.h"
+#include "zetasql/compliance/functions_testlib.h"
 #include "zetasql/compliance/functions_testlib_common.h"
+#include "zetasql/public/interval_value_test_util.h"
 #include "zetasql/public/numeric_value.h"
 #include "zetasql/public/options.pb.h"
 #include "zetasql/public/type.h"
@@ -156,7 +159,7 @@ static std::vector<Type> ConcatTests(
 
 static Value KitchenSink_equivalent(const std::string& proto_str) {
   zetasql_test::KitchenSinkPB kitchen_sink_message;
-  CHECK(google::protobuf::TextFormat::ParseFromString(proto_str,
+  ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString(proto_str,
                                             &kitchen_sink_message));
   return Value::Proto(KitchenSinkProtoType_equivalent(),
                       SerializeToCord(kitchen_sink_message));
@@ -205,6 +208,36 @@ std::vector<QueryParamsWithResult> GetFunctionTestsCastString() {
       {{String("+nan")}, float_nan},
       {{String("-nan")}, float_nan},
   };
+}
+
+std::vector<QueryParamsWithResult> GetFunctionTestsCastBytesStringWithFormat() {
+  std::vector<FunctionTestCall> function_calls =
+      GetFunctionTestsBytesStringConversion();
+  std::vector<QueryParamsWithResult> tests;
+
+  tests.reserve(function_calls.size());
+  for (auto& function_call : function_calls) {
+    tests.push_back(QueryParamsWithResult(function_call.params)
+                        .WrapWithFeature(FEATURE_V_1_3_FORMAT_IN_CAST));
+  }
+
+  return tests;
+}
+
+std::vector<QueryParamsWithResult>
+GetFunctionTestsCastDateTimestampStringWithFormat() {
+  std::vector<FunctionTestCall> function_calls =
+      GetFunctionTestsCastFormatDateTimestamp();
+  std::vector<QueryParamsWithResult> tests;
+
+  tests.reserve(function_calls.size());
+  for (auto& function_call : function_calls) {
+    tests.push_back(QueryParamsWithResult(function_call.params)
+                        .WrapWithFeatureSet({FEATURE_V_1_3_FORMAT_IN_CAST,
+                                             FEATURE_V_1_2_CIVIL_TIME}));
+  }
+
+  return tests;
 }
 
 std::vector<QueryParamsWithResult> GetFunctionTestsCastNumericString() {
@@ -979,6 +1012,149 @@ std::vector<QueryParamsWithResult> GetFunctionTestsCastDateTime() {
   });
 }
 
+using interval_testing::Days;
+using interval_testing::Hours;
+using interval_testing::Micros;
+using interval_testing::Minutes;
+using interval_testing::Months;
+using interval_testing::MonthsDaysMicros;
+using interval_testing::Nanos;
+using interval_testing::Seconds;
+using interval_testing::Years;
+using interval_testing::YMDHMS;
+
+std::vector<QueryParamsWithResult> GetFunctionTestsCastInterval() {
+  std::vector<QueryParamsWithResult> tests({
+      // INTERVAL -> INTERVAL
+      {{NullInterval()}, NullInterval()},
+      {{Interval(Months(0))}, Interval(Months(0))},
+      // INTERVAL -> STRING
+      {{Interval(Months(0))}, String("0-0 0 0:0:0")},
+      {{Interval(Months(-240))}, String("-20-0 0 0:0:0")},
+      {{Interval(Days(30))}, String("0-0 30 0:0:0")},
+      {{Interval(Micros(-1))}, String("0-0 0 -0:0:0.000001")},
+      {{Interval(Nanos(-1))}, String("0-0 0 -0:0:0.000000001")},
+      {{Interval(MonthsDaysMicros(1, 2, 3000000))}, String("0-1 2 0:0:3")},
+      {{Interval(YMDHMS(1, 2, 3, 4, 5, 6))}, String("1-2 3 4:5:6")},
+      // STRING -> INTERVAL
+      {{String("0-0 0 0:0:0.0")}, Interval(Months(0))},
+      {{String("1-2 3 4:5:6")}, Interval(YMDHMS(1, 2, 3, 4, 5, 6))},
+      {{String("-1-2 -3 -4:5:6")}, Interval(YMDHMS(-1, -2, -3, -4, -5, -6))},
+      {{String("1-2 3 +4:5")}, Interval(YMDHMS(1, 2, 3, 4, 5, 0))},
+      {{String("1-2 +3 -4:5")}, Interval(YMDHMS(1, 2, 3, -4, -5, 0))},
+      {{String("1-2 3 4")}, Interval(YMDHMS(1, 2, 3, 4, 0, 0))},
+      {{String("1-2 3 -4")}, Interval(YMDHMS(1, 2, 3, -4, 0, 0))},
+      {{String("+1-2 3")}, Interval(YMDHMS(1, 2, 3, 0, 0, 0))},
+      {{String("-1-2 -3")}, Interval(YMDHMS(-1, -2, -3, 0, 0, 0))},
+      {{String("1-2")}, Interval(YMDHMS(1, 2, 0, 0, 0, 0))},
+      {{String("-1-2")}, Interval(YMDHMS(-1, -2, 0, 0, 0, 0))},
+      {{String("0-1 2 -3:4:5")}, Interval(YMDHMS(0, 1, 2, -3, -4, -5))},
+      {{String("0-1 2 3:4")}, Interval(YMDHMS(0, 1, 2, 3, 4, 0))},
+      {{String("0-1 2 3")}, Interval(YMDHMS(0, 1, 2, 3, 0, 0))},
+      {{String("0-1 -2 -3")}, Interval(YMDHMS(0, 1, -2, -3, 0, 0))},
+      {{String("1 2:3:4")}, Interval(YMDHMS(0, 0, 1, 2, 3, 4))},
+      {{String("1 2:3")}, Interval(YMDHMS(0, 0, 1, 2, 3, 0))},
+      {{String("+1:2:3")}, Interval(YMDHMS(0, 0, 0, 1, 2, 3))},
+      {{String("-1:2:3")}, Interval(YMDHMS(0, 0, 0, -1, -2, -3))},
+      {{String("-0:0:0.0003")}, Interval(Micros(-300))},
+      // STRING -> INTERVAL using ISO 8601 format
+      {{String("PT")}, Interval(Years(0))},
+      {{String("P0Y")}, Interval(Years(0))},
+      {{String("P1Y")}, Interval(Years(1))},
+      {{String("P-1Y")}, Interval(Years(-1))},
+      {{String("P1Y-2Y1Y")}, Interval(Years(0))},
+      {{String("P0M")}, Interval(Months(0))},
+      {{String("P2M")}, Interval(Months(2))},
+      {{String("P2M-4M")}, Interval(Months(-2))},
+      {{String("P1Y-1M")}, Interval(Months(11))},
+      {{String("P0W")}, Interval(Days(0))},
+      {{String("P-1W4W")}, Interval(Days(21))},
+      {{String("P3D-5D-2D")}, Interval(Days(-4))},
+      {{String("PT25H")}, Interval(Hours(25))},
+      {{String("PT-7M")}, Interval(Minutes(-7))},
+      {{String("PT1S2S5S")}, Interval(Seconds(8))},
+      {{String("PT-0.000009S")}, Interval(Micros(-9))},
+      {{String("PT0.000000001S")}, Interval(Nanos(1))},
+      {{String("P1Y-2M3DT-4H5M-6S")}, Interval(YMDHMS(1, -2, 3, -4, 5, -6))},
+
+      // Bad formats
+      {{String("0-0-0")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0:0:0:0")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0:0.0")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0:0:0.")}, NullInterval(), OUT_OF_RANGE},
+      {{String(" 0-0 0")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0-0 +-0")}, NullInterval(), OUT_OF_RANGE},
+      {{String("1  2 3")}, NullInterval(), OUT_OF_RANGE},
+      {{String("1\t2 3")}, NullInterval(), OUT_OF_RANGE},
+      {{String("1:2:3 ")}, NullInterval(), OUT_OF_RANGE},
+      {{String("++1:2:3")}, NullInterval(), OUT_OF_RANGE},
+      {{String("+-1:2:3")}, NullInterval(), OUT_OF_RANGE},
+      {{String("--1:2:3")}, NullInterval(), OUT_OF_RANGE},
+      {{String("")}, NullInterval(), OUT_OF_RANGE},
+      {{String(" ")}, NullInterval(), OUT_OF_RANGE},
+      {{String("1")}, NullInterval(), OUT_OF_RANGE},
+      {{String("+")}, NullInterval(), OUT_OF_RANGE},
+      {{String(":")}, NullInterval(), OUT_OF_RANGE},
+      {{String(".")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0:0:1.234e-6")}, NullInterval(), OUT_OF_RANGE},
+      // Ambiguous formats
+      {{String("1 2")}, NullInterval(), OUT_OF_RANGE},
+      {{String("1:2")}, NullInterval(), OUT_OF_RANGE},
+      // Too many fractional digits
+      {{String("0:0:0.0000000000")}, NullInterval(), OUT_OF_RANGE},
+      // Integer parsing overflow
+      {{String("9223372036854775808-0")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0-9223372036854775808")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0:9223372036854775808:0")}, NullInterval(), OUT_OF_RANGE},
+      // Exceeds maximum allowed values
+      {{String("10001-0")}, NullInterval(), OUT_OF_RANGE},
+      {{String("-10000-1")}, NullInterval(), OUT_OF_RANGE},
+      {{String("-0-120001")}, NullInterval(), OUT_OF_RANGE},
+      {{String("1-120000")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0-0 3660001")}, NullInterval(), OUT_OF_RANGE},
+      {{String("-87840001:0:0")}, NullInterval(), OUT_OF_RANGE},
+      {{String("87840000:0:0.001")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0:5270400001:0")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0:5270400000:0.000001")}, NullInterval(), OUT_OF_RANGE},
+      {{String("0:0:316224000001")}, NullInterval(), OUT_OF_RANGE},
+      {{String("-0:0:316224000000.0001")}, NullInterval(), OUT_OF_RANGE},
+
+      {{String("")}, NullInterval(), OUT_OF_RANGE},
+      {{String("1Y")}, NullInterval(), OUT_OF_RANGE},
+      {{String("T")}, NullInterval(), OUT_OF_RANGE},
+      {{String("P")}, NullInterval(), OUT_OF_RANGE},
+      {{String("P--1")}, NullInterval(), OUT_OF_RANGE},
+      {{String("P1")}, NullInterval(), OUT_OF_RANGE},
+      {{String("PTT")}, NullInterval(), OUT_OF_RANGE},
+      {{String("PT1HT1M")}, NullInterval(), OUT_OF_RANGE},
+      {{String("P1YM")}, NullInterval(), OUT_OF_RANGE},
+      {{String("P1YT2MS")}, NullInterval(), OUT_OF_RANGE},
+      {{String("PT.1S")}, NullInterval(), OUT_OF_RANGE},
+      {{String("PT1.S")}, NullInterval(), OUT_OF_RANGE},
+      {{String("PT1.1M")}, NullInterval(), OUT_OF_RANGE},
+      {{String("PT99999999999999999999999999999H")},
+       NullInterval(),
+       OUT_OF_RANGE},
+      {{String("PT-99999999999H")}, NullInterval(), OUT_OF_RANGE},
+      {{String("P-1S")}, NullInterval(), OUT_OF_RANGE},
+      {{String("")}, NullInterval(), OUT_OF_RANGE},
+      {{String("")}, NullInterval(), OUT_OF_RANGE},
+      {{String("")}, NullInterval(), OUT_OF_RANGE},
+      {{String("")}, NullInterval(), OUT_OF_RANGE},
+      {{String("")}, NullInterval(), OUT_OF_RANGE},
+      {{String("")}, NullInterval(), OUT_OF_RANGE},
+      {{String("")}, NullInterval(), OUT_OF_RANGE},
+      {{String("")}, NullInterval(), OUT_OF_RANGE},
+  });
+
+  std::vector<QueryParamsWithResult> result;
+  result.reserve(tests.size());
+  for (const auto& test : tests) {
+    result.push_back(test.WrapWithFeature(FEATURE_INTERVAL_TYPE));
+  }
+  return result;
+}
+
 static std::vector<QueryParamsWithResult> GetFunctionTestsCastIntPorted() {
   return {
     // INT32 -> INT32
@@ -1358,8 +1534,7 @@ std::vector<QueryParamsWithResult> GetFunctionTestsCastInteger() {
       {{NullDate()}, NullDate()},
       QueryParamsWithResult({{NullNumeric()}, NullNumeric()})
           .WrapWithFeature(FEATURE_NUMERIC_TYPE),
-      QueryParamsWithResult(
-          {{NullBigNumeric()}, NullBigNumeric()})
+      QueryParamsWithResult({{NullBigNumeric()}, NullBigNumeric()})
           .WrapWithFeature(FEATURE_BIGNUMERIC_TYPE),
 
       // INT32
@@ -1379,13 +1554,11 @@ std::vector<QueryParamsWithResult> GetFunctionTestsCastInteger() {
       {{Int32(int32min)}, Int64(int32min)},
       {{Int32(int32min)}, Float(int32min)},
       {{Int32(int32min)}, Double(int32min)},
-      QueryParamsWithResult(
-          {Int32(int32max)},
-          Value::Numeric(NumericValue(int32max)))
+      QueryParamsWithResult({Int32(int32max)},
+                            Value::Numeric(NumericValue(int32max)))
           .WrapWithFeature(FEATURE_NUMERIC_TYPE),
-      QueryParamsWithResult(
-          {Int32(int32min)},
-          Value::Numeric(NumericValue(int32min)))
+      QueryParamsWithResult({Int32(int32min)},
+                            Value::Numeric(NumericValue(int32min)))
           .WrapWithFeature(FEATURE_NUMERIC_TYPE),
       QueryParamsWithResult({Int32(int32max)},
                             Value::BigNumeric(BigNumericValue(int32max)))
@@ -1438,15 +1611,13 @@ std::vector<QueryParamsWithResult> GetFunctionTestsCastInteger() {
       {{Uint32(0)}, Uint64(0)},
       {{Uint32(0)}, Float(0)},
       {{Uint32(0)}, Double(0)},
-      QueryParamsWithResult(
-          {Uint32(uint32max)},
-          Value::Numeric(NumericValue(uint32max)))
+      QueryParamsWithResult({Uint32(uint32max)},
+                            Value::Numeric(NumericValue(uint32max)))
           .WrapWithFeature(FEATURE_NUMERIC_TYPE),
       QueryParamsWithResult({Uint32(0)}, Value::Numeric(NumericValue()))
           .WrapWithFeature(FEATURE_NUMERIC_TYPE),
-      QueryParamsWithResult(
-          {Uint32(uint32max)},
-          Value::BigNumeric(BigNumericValue(uint32max)))
+      QueryParamsWithResult({Uint32(uint32max)},
+                            Value::BigNumeric(BigNumericValue(uint32max)))
           .WrapWithFeature(FEATURE_BIGNUMERIC_TYPE),
       QueryParamsWithResult({Uint32(0)}, Value::BigNumeric(BigNumericValue()))
           .WrapWithFeature(FEATURE_BIGNUMERIC_TYPE),
@@ -2010,47 +2181,47 @@ std::vector<QueryParamsWithResult> GetFunctionTestsCastComplex() {
   // Scratch message.
   zetasql_test::KitchenSinkPB kitchen_sink_message;
 
-  CHECK(google::protobuf::TextFormat::ParseFromString(kitchen_sink_string_1,
+  ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString(kitchen_sink_string_1,
                                             &kitchen_sink_message));
   absl::Cord kitchen_sink_cord_1 = SerializeToCord(kitchen_sink_message);
 
   const google::protobuf::Reflection* reflection = kitchen_sink_message.GetReflection();
   google::protobuf::UnknownFieldSet* unknown_fields =
       reflection->MutableUnknownFields(&kitchen_sink_message);
-  CHECK(unknown_fields->empty());
+  ZETASQL_CHECK(unknown_fields->empty());
   const int reserved_tag_number = 103;
-  CHECK(kitchen_sink_message.GetDescriptor()->IsReservedNumber(
+  ZETASQL_CHECK(kitchen_sink_message.GetDescriptor()->IsReservedNumber(
       reserved_tag_number));
   unknown_fields->AddVarint(reserved_tag_number, /*value=*/1000);
   absl::Cord kitchen_sink_cord_5 = SerializeToCord(kitchen_sink_message);
 
-  CHECK(google::protobuf::TextFormat::ParseFromString(kitchen_sink_string_2,
+  ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString(kitchen_sink_string_2,
                                             &kitchen_sink_message));
   absl::Cord kitchen_sink_cord_2 = SerializeToCord(kitchen_sink_message);
-  CHECK(google::protobuf::TextFormat::ParseFromString(kitchen_sink_string_3,
+  ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString(kitchen_sink_string_3,
                                             &kitchen_sink_message));
   absl::Cord kitchen_sink_cord_3 = SerializeToCord(kitchen_sink_message);
-  CHECK(google::protobuf::TextFormat::ParseFromString(kitchen_sink_string_4,
+  ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString(kitchen_sink_string_4,
                                             &kitchen_sink_message));
   absl::Cord kitchen_sink_cord_4 = SerializeToCord(kitchen_sink_message);
 
   zetasql_test::NullableInt nullable_int_message;
   const std::string nullable_int_string_1("value: 1");
-  CHECK(google::protobuf::TextFormat::ParseFromString(nullable_int_string_1,
+  ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString(nullable_int_string_1,
                                             &nullable_int_message));
   absl::Cord nullable_int_cord_1 = SerializeToCord(nullable_int_message);
 
   // Set up some equivalent but not equal enums and protos, both null and
   // non-null.
-  CHECK(!enum_value.type()->Equals(TestEnumType_equivalent()));
-  CHECK(enum_value.type()->Equivalent(TestEnumType_equivalent()));
+  ZETASQL_CHECK(!enum_value.type()->Equals(TestEnumType_equivalent()));
+  ZETASQL_CHECK(enum_value.type()->Equivalent(TestEnumType_equivalent()));
 
-  CHECK(!null_proto.type()->Equals(KitchenSinkProtoType_equivalent()));
-  CHECK(null_proto.type()->Equivalent(KitchenSinkProtoType_equivalent()));
+  ZETASQL_CHECK(!null_proto.type()->Equals(KitchenSinkProtoType_equivalent()));
+  ZETASQL_CHECK(null_proto.type()->Equivalent(KitchenSinkProtoType_equivalent()));
 
-  CHECK(!KitchenSink(kitchen_sink_string_1).type()->Equals(
+  ZETASQL_CHECK(!KitchenSink(kitchen_sink_string_1).type()->Equals(
           KitchenSink_equivalent(kitchen_sink_string_1).type()));
-  CHECK(KitchenSink(kitchen_sink_string_1).type()->Equivalent(
+  ZETASQL_CHECK(KitchenSink(kitchen_sink_string_1).type()->Equivalent(
           KitchenSink_equivalent(kitchen_sink_string_1).type()));
 
   const Value enum_value_equivalent = Value::Enum(TestEnumType_equivalent(), 1);
@@ -2076,7 +2247,7 @@ std::vector<QueryParamsWithResult> GetFunctionTestsCastComplex() {
       google::protobuf::MessageFactory::generated_factory()
           ->GetPrototype(string_int32_descriptor)
           ->New());
-  CHECK(google::protobuf::TextFormat::ParseFromString("key: 'aaa' value: 777",
+  ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString("key: 'aaa' value: 777",
                                             string_int32_message.get()));
   const Value string_int32_map_entry = Value::Proto(
       StringInt32MapEntryType(), SerializeToCord(*string_int32_message));
@@ -2284,16 +2455,20 @@ std::vector<QueryParamsWithResult> GetFunctionTestsCast() {
       GetFunctionTestsCastBool(),
       GetFunctionTestsCastComplex(),
       GetFunctionTestsCastDateTime(),
+      GetFunctionTestsCastInterval(),
       GetFunctionTestsCastNumeric(),
       GetFunctionTestsCastString(),
       GetFunctionTestsCastNumericString(),
+      GetFunctionTestsCastBytesStringWithFormat(),
+      GetFunctionTestsCastDateTimestampStringWithFormat(),
   });
 }
 
 std::vector<QueryParamsWithResult> GetFunctionTestsSafeCast() {
   std::vector<QueryParamsWithResult> tests;
   for (const QueryParamsWithResult& test : GetFunctionTestsCast()) {
-    CHECK_EQ(1, test.params().size()) << test;
+    ZETASQL_CHECK_GE(test.params().size(), 1) << test;
+    ZETASQL_CHECK_LE(test.params().size(), 3) << test;
 
     using FeatureSet = QueryParamsWithResult::FeatureSet;
     using Result = QueryParamsWithResult::Result;
@@ -2333,7 +2508,11 @@ std::vector<QueryParamsWithResult>
 GetFunctionTestsCastBetweenDifferentArrayTypes(bool arrays_with_nulls) {
   std::vector<QueryParamsWithResult> tests;
   for (const QueryParamsWithResult& test : GetFunctionTestsCast()) {
-    CHECK_EQ(1, test.params().size()) << test;
+    // Currently FORMAT parameter is not allowed for array casting
+    if (test.params().size() > 1) {
+      continue;
+    }
+    ZETASQL_CHECK_EQ(1, test.params().size()) << test;
 
     for (const auto& test_result : test.results()) {
       const QueryParamsWithResult::FeatureSet& feature_set = test_result.first;
@@ -2355,7 +2534,7 @@ GetFunctionTestsCastBetweenDifferentArrayTypes(bool arrays_with_nulls) {
         Value from_array = Value::Array(from_array_type, {cast_value});
         Value to_array = Value::Array(to_array_type, {result_value});
 
-        CHECK_EQ(0,
+        ZETASQL_CHECK_EQ(0,
                  feature_set.count(FEATURE_V_1_1_CAST_DIFFERENT_ARRAY_TYPES));
         tests.push_back(QueryParamsWithResult(
             {from_array},

@@ -20,11 +20,50 @@
 #include "zetasql/public/value.h"
 #include "zetasql/testing/test_function.h"
 #include "zetasql/testing/using_test_value.cc"
+#include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
 
 namespace zetasql {
 namespace {
 constexpr absl::StatusCode OUT_OF_RANGE = absl::StatusCode::kOutOfRange;
+
+// Note: not enclosed in {}.
+constexpr absl::string_view kDeepJsonString = R"(
+  "a" : {
+    "b" : {
+      "c" : {
+        "d" : {
+          "e" : {
+            "f" : {
+              "g" : {
+                "h" : {
+                  "i" : {
+                    "j" : {
+                      "k" : {
+                        "l" : {
+                          "m" : {
+                            "x" : "foo",
+                            "y" : 10,
+                            "z" : [1, 2, 3]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  )";
+
+constexpr absl::string_view kWideJsonString = R"(
+  "a" : null, "b" : "bar", "c" : false, "d" : [4, 5], "e" : 0.123, "f" : "345",
+  "g" : null, "h" : "baz", "i" : true, "j" : [-3, 0], "k" : 0.321, "l" : "678"
+  )";
 
 // 'sql_standard_mode': if true, uses the SQL2016 standard for JSON function
 // names (e.g. JSON_QUERY instead of JSON_EXTRACT).
@@ -57,70 +96,33 @@ const std::vector<FunctionTestCall> GetJsonTestsCommon(
   const Value json7 = json_constructor(R"({"a":{"b": {"c": {"d": 3}}}})");
   const Value json8 = json_constructor(
       R"({"x" : [    ], "y"    :[1,2       ,      5,3  ,4]})");
-
-  // Note: not enclosed in {}.
-  const std::string deep_json_string = R"(
-  "a" : {
-    "b" : {
-      "c" : {
-        "d" : {
-          "e" : {
-            "f" : {
-              "g" : {
-                "h" : {
-                  "i" : {
-                    "j" : {
-                      "k" : {
-                        "l" : {
-                          "m" : {
-                            "x" : "foo",
-                            "y" : 10,
-                            "z" : [1, 2, 3]
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  )";
-  const std::string wide_json_string = R"(
-  "a" : null, "b" : "bar", "c" : false, "d" : [4, 5], "e" : 0.123, "f" : "345",
-  "g" : null, "h" : "baz", "i" : true, "j" : [-3, 0], "k" : 0.321, "l" : "678"
-  )";
+  const Value json9 = json_constructor(R"({"a": 1, "": [5, "foo"]})");
 
   const Value deep_json =
-      json_constructor(absl::StrCat("{", deep_json_string, "}"));
+      json_constructor(absl::StrCat("{", kDeepJsonString, "}"));
   const Value wide_json =
-      json_constructor(absl::StrCat("{", wide_json_string, "}"));
+      json_constructor(absl::StrCat("{", kWideJsonString, "}"));
 
   const int kArrayElements = 20;
   std::vector<int> indexes(kArrayElements);
   std::iota(indexes.begin(), indexes.end(), 0);
   const Value array_of_wide_json = json_constructor(absl::Substitute(
       R"({"arr" : [$0]})",
-      absl::StrJoin(
-          indexes, ",", [&wide_json_string](std::string* out, int index) {
-            absl::StrAppend(out, absl::Substitute(R"({"index" : $0, $1})",
-                                                  index, wide_json_string));
-          })));
+      absl::StrJoin(indexes, ",", [](std::string* out, int index) {
+        absl::StrAppend(out, absl::Substitute(R"({"index" : $0, $1})", index,
+                                              kWideJsonString));
+      })));
   const Value array_of_deep_json = json_constructor(absl::Substitute(
       R"({"arr" : [$0]})",
-      absl::StrJoin(
-          indexes, ",", [&deep_json_string](std::string* out, int index) {
-            absl::StrAppend(out, absl::Substitute(R"({"index" : $0, $1})",
-                                                  index, deep_json_string));
-          })));
+      absl::StrJoin(indexes, ",", [](std::string* out, int index) {
+        absl::StrAppend(out, absl::Substitute(R"({"index" : $0, $1})", index,
+                                              kDeepJsonString));
+      })));
 
   std::vector<FunctionTestCall> all_tests;
   if (scalar_test_cases) {
     all_tests = {
+        {value_fn_name, {json1}, NullString()},
         {value_fn_name, {json1, String("$.a.b[0]")}, NullString()},
         {value_fn_name, {json1, String("$.a.b[0].c")}, String("foo")},
         {value_fn_name, {json1, String("$.a.b[0].d")}, String("1.23")},
@@ -170,15 +172,29 @@ const std::vector<FunctionTestCall> GetJsonTestsCommon(
          {json6, String("$.a[0].b[(@.length-1)].c[(@.length-1)].d")},
          NullString(),
          OUT_OF_RANGE},
+        {value_fn_name, {json9, String("$..1")}, NullString(), OUT_OF_RANGE},
+        // Optional json_path argument
+        {value_fn_name,
+         {json_constructor("\"hello my friend\"")},
+         String("hello my friend")},
+        {value_fn_name, {json_constructor("-4.58295")}, String("-4.58295")},
     };
     if (sql_standard_mode) {
       all_tests.push_back({value_fn_name,
                            {json3, String("$['a.b.c']")},
                            NullString(),
                            OUT_OF_RANGE});
+      all_tests.push_back(
+          {value_fn_name, {json9, String("$.\"\"[1]")}, String("foo")});
     } else {
       all_tests.push_back({value_fn_name,
                            {json3, String("$.\"a.b.c\"")},
+                           NullString(),
+                           OUT_OF_RANGE});
+      all_tests.push_back(
+          {value_fn_name, {json9, String("$[''][1]")}, String("foo")});
+      all_tests.push_back({value_fn_name,
+                           {json9, String("$[][1]")},
                            NullString(),
                            OUT_OF_RANGE});
     }
@@ -372,15 +388,35 @@ const std::vector<FunctionTestCall> GetJsonTestsCommon(
          {json2, String(R"($.y[?(@.a==='bar')])")},
          json_constructor(absl::nullopt),
          OUT_OF_RANGE},
+        {query_fn_name,
+         {json9, String("$..1")},
+         json_constructor(absl::nullopt),
+         OUT_OF_RANGE},
     };
     if (sql_standard_mode) {
       all_tests.push_back({query_fn_name,
                            {json3, String("$['a.b.c']")},
                            json_constructor(absl::nullopt),
                            OUT_OF_RANGE});
+      all_tests.push_back({query_fn_name,
+                           {json9, String("$.\"\"")},
+                           json_constructor(R"([5,"foo"])")});
+      all_tests.push_back({query_fn_name,
+                           {json9, String("$.\"\"[1]")},
+                           json_constructor(R"("foo")")});
     } else {
       all_tests.push_back({query_fn_name,
                            {json3, String("$.\"a.b.c\"")},
+                           json_constructor(absl::nullopt),
+                           OUT_OF_RANGE});
+      all_tests.push_back({query_fn_name,
+                           {json9, String("$['']")},
+                           json_constructor(R"([5,"foo"])")});
+      all_tests.push_back({query_fn_name,
+                           {json9, String("$[''][1]")},
+                           json_constructor(R"("foo")")});
+      all_tests.push_back({query_fn_name,
+                           {json9, String("$[][1]")},
                            json_constructor(absl::nullopt),
                            OUT_OF_RANGE});
     }
@@ -516,10 +552,13 @@ const std::vector<FunctionTestCall> GetNativeJsonTests(
           String("$.a.b[0].f")},
          Json(std::move(null_json_value))});
     // Malformed JSON.
-    tests.push_back({query_fn_name,
-                     {Value::UnvalidatedJsonString(R"({"a": )"), String("$")},
-                     NullJson(),
-                     OUT_OF_RANGE});
+    tests.push_back(
+        {query_fn_name,
+         QueryParamsWithResult(
+             {Value::UnvalidatedJsonString(R"({"a": )"), String("$")},
+             NullJson(), OUT_OF_RANGE)
+             .WrapWithFeatureSet(
+                 {FEATURE_JSON_TYPE, FEATURE_JSON_NO_VALIDATION})});
     tests.push_back(
         {query_fn_name,
          {json_with_wide_numbers, String("$")},
@@ -590,6 +629,172 @@ std::vector<QueryParamsWithResult> GetFunctionTestsJsonIsNull() {
       {{Json(JSONValue(std::string{"null"}))}, False()},
       {{Value::Null(types::JsonArrayType())}, True()},
   };
+  return v;
+}
+
+std::vector<FunctionTestCall> GetFunctionTestsParseJson() {
+  // TODO: Currently these tests only verify if PARSE_JSON produces
+  // the same output as JSONValue::ParseJsonString. A better test would need
+  // to evaluate the output of PARSE_JSON either through JSONValueConstRef
+  // accessors or through the JSON_VALUE SQL function.
+  enum WideNumberMode { kExact = 0x1, kRound = 0x2 };
+  struct ParseJsonTestCase {
+    std::string json_to_parse;
+    // Bit flag representing the wide number parsing modes supported by the
+    // test. 'json_to_parse' will be parsed in all supported modes.
+    uint8_t wide_number_mode_flag;
+  };
+  std::vector<ParseJsonTestCase> valid_json_tests = {
+      // 'exact' or 'round' mode
+      {"123", kExact | kRound},
+      {"\"string\"", kExact | kRound},
+      {"12.3", kExact | kRound},
+      {"true", kExact | kRound},
+      {"null", kExact | kRound},
+      {"[1, true, null]", kExact | kRound},
+      {"{\"a\" : [ {\"b\": \"c\"}, {\"b\": false}]}", kExact | kRound},
+      {absl::StrCat("{", kDeepJsonString, "}"), kExact | kRound},
+      {absl::StrCat("{", kWideJsonString, "}"), kExact | kRound},
+      {"11111111111111111111", kExact | kRound},
+      {"1.2345678901234568e+29", kExact | kRound},
+      {R"("foo\t\\t\\\t\n\\nbar \"baz\\")", kExact | kRound},
+      {"[[1, 2, 3], [\"a\", \"b\", \"c\"], [[true, false]]]", kExact | kRound},
+      {"\"\u005C\u005C\u0301\u263a\u2028\"", kExact | kRound},
+      {"\"你好\"", kExact | kRound},
+      {"{\"%2526%7C%2B\": null}", kExact | kRound},
+      // 'round' mode only
+      {"123456789012345678901234567890", kRound},
+      {R"({"x":11111111111111111111, "z":123456789012345678901234567890})",
+       kRound},
+      {"-0.0000002414214151379150123", kRound},
+      {"989124899124.1241251252125121285", kRound},
+      {"9891248991241241251252125121285021782188712512512", kRound}};
+  std::vector<ParseJsonTestCase> invalid_json_tests = {
+      // Invalid regardless of wide number mode
+      {"{\"foo\": 12", kExact | kRound},
+      {"\"", kExact | kRound},
+      {"string", kExact | kRound},
+      {"[1, 2", kExact | kRound},
+      {"[\"a\" \"b\"]", kExact | kRound},
+      {"'foo'", kExact | kRound},
+      {"True", kExact | kRound},
+      {"FALSE", kExact | kRound},
+      {"NULL", kExact | kRound},
+      {"nan", kExact | kRound},
+      {R"("\")", kExact | kRound},
+      {".3", kExact | kRound},
+      {"4.", kExact | kRound},
+      {"0x3", kExact | kRound},
+      {"1.e", kExact | kRound},
+      {R"("f1":"v1")", kExact | kRound},
+      {R"("":"v1")", kExact | kRound},
+      {"3]", kExact | kRound},
+      {"4}", kExact | kRound},
+      {"-", kExact | kRound},
+      {"", kExact | kRound},
+      {" ", kExact | kRound},
+      // Fails parsing in both 'exact' and 'round'. Intentionally kept separate
+      // from cases above to allow for handling `kStringify` when implemented.
+      {"-1.79769313486232e+309", kExact | kRound},
+      {"1.79769313486232e+309", kExact | kRound},
+      // Fails parsing in 'exact'
+      {"123456789012345678901234567890", kExact},
+      {R"({"x":11111111111111111111, "z":123456789012345678901234567890})",
+       kExact},
+      {"-0.0000002414214151379150123", kExact},
+      {"989124899124.1241251252125121285", kExact},
+      {"9891248991241241251252125121285021782188712512512", kExact}};
+  std::vector<FunctionTestCall> v;
+  v.reserve(valid_json_tests.size() * 3 + invalid_json_tests.size() * 3 + 6);
+  for (const ParseJsonTestCase& test : valid_json_tests) {
+    if (test.wide_number_mode_flag & kExact) {
+      // Add both the case where mode is specified and mode is not specified.
+      v.push_back(
+          {"parse_json",
+           QueryParamsWithResult(
+               {test.json_to_parse},
+               Json(JSONValue::ParseJSONString(
+                        test.json_to_parse,
+                        {.legacy_mode = false, .strict_number_parsing = true})
+                        .value()))
+               .WrapWithFeature(FEATURE_JSON_TYPE)});
+      v.push_back(
+          {"parse_json",
+           QueryParamsWithResult(
+               {test.json_to_parse, "exact"},
+               Json(JSONValue::ParseJSONString(
+                        test.json_to_parse,
+                        {.legacy_mode = false, .strict_number_parsing = true})
+                        .value()))
+               .WrapWithFeatureSet(
+                   {FEATURE_NAMED_ARGUMENTS, FEATURE_JSON_TYPE})});
+    }
+    if (test.wide_number_mode_flag & kRound) {
+      v.push_back(
+          {"parse_json",
+           QueryParamsWithResult(
+               {test.json_to_parse, "round"},
+               Json(JSONValue::ParseJSONString(test.json_to_parse).value()))
+               .WrapWithFeatureSet(
+                   {FEATURE_NAMED_ARGUMENTS, FEATURE_JSON_TYPE})});
+    }
+  }
+  for (const ParseJsonTestCase& test : invalid_json_tests) {
+    if (test.wide_number_mode_flag & kExact) {
+      // Add both the case where mode is specified and mode is not specified.
+      v.push_back({"parse_json", QueryParamsWithResult({test.json_to_parse},
+                                                       NullJson(), OUT_OF_RANGE)
+                                     .WrapWithFeature(FEATURE_JSON_TYPE)});
+      v.push_back(
+          {"parse_json", QueryParamsWithResult({test.json_to_parse, "exact"},
+                                               NullJson(), OUT_OF_RANGE)
+                             .WrapWithFeatureSet({FEATURE_NAMED_ARGUMENTS,
+                                                  FEATURE_JSON_TYPE})});
+    }
+    if (test.wide_number_mode_flag & kRound) {
+      v.push_back(
+          {"parse_json", QueryParamsWithResult({test.json_to_parse, "round"},
+                                               NullJson(), OUT_OF_RANGE)
+                             .WrapWithFeatureSet({FEATURE_NAMED_ARGUMENTS,
+                                                  FEATURE_JSON_TYPE})});
+    }
+  }
+  // Fail if invalid 'wide_number_mode' specified. 'wide_number_mode' is
+  // case-sensitive.
+  v.push_back(
+      {"parse_json",
+       QueryParamsWithResult({"2.5", "junk"}, NullJson(), OUT_OF_RANGE)
+           .WrapWithFeatureSet({FEATURE_NAMED_ARGUMENTS, FEATURE_JSON_TYPE})});
+  v.push_back(
+      {"parse_json",
+       QueryParamsWithResult({"2.5", "EXACT"}, NullJson(), OUT_OF_RANGE)
+           .WrapWithFeatureSet({FEATURE_NAMED_ARGUMENTS, FEATURE_JSON_TYPE})});
+  v.push_back(
+      {"parse_json",
+       QueryParamsWithResult({"2.5", "Round"}, NullJson(), OUT_OF_RANGE)
+           .WrapWithFeatureSet({FEATURE_NAMED_ARGUMENTS, FEATURE_JSON_TYPE})});
+  // Return NULL if either argument is NULL.
+  v.push_back({"parse_json", QueryParamsWithResult({NullString()}, NullJson())
+                                 .WrapWithFeatureSet({FEATURE_JSON_TYPE})});
+  v.push_back(
+      {"parse_json",
+       QueryParamsWithResult({NullString(), "wide"}, NullJson())
+           .WrapWithFeatureSet({FEATURE_NAMED_ARGUMENTS, FEATURE_JSON_TYPE})});
+  v.push_back(
+      {"parse_json",
+       QueryParamsWithResult({"25", NullString()}, NullJson())
+           .WrapWithFeatureSet({FEATURE_NAMED_ARGUMENTS, FEATURE_JSON_TYPE})});
+  // Legacy parsing
+  v.push_back(
+      {"parse_json",
+       QueryParamsWithResult(
+           {"'str'", "round"},
+           Json(JSONValue::ParseJSONString("'str'", {.legacy_mode = true})
+                    .value()))
+           .WrapWithFeatureSet({FEATURE_NAMED_ARGUMENTS, FEATURE_JSON_TYPE,
+                                FEATURE_JSON_LEGACY_PARSE})});
+  v.push_back({"parse_json", QueryParamsWithResult({NullString()}, NullJson())
+                                 .WrapWithFeature(FEATURE_JSON_TYPE)});
   return v;
 }
 

@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -27,13 +28,34 @@
 
 
 #include <cstdint>  
+#include "absl/status/status.h"
 #include "zetasql/base/statusor.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 
 namespace zetasql {
 
 class JSONValueConstRef;
 class JSONValueRef;
+
+// Options for parsing an input JSON-formatted string.
+struct JSONParsingOptions {
+  // If 'legacy_mode' is set to true, the parsing will be done using the legacy
+  // proto JSON parser. The legacy parser supports strings that are not
+  // valid JSON documents according to JSON RFC (such as single quote strings).
+  bool legacy_mode;
+  // If 'strict_number_parsing' is set to true, parsing will fail if there is at
+  // least one number value in 'str' that does not round-trip from
+  // string -> number -> string. 'strict_number_parsing' only affects non-legacy
+  // parsing (i.e. 'legacy_mode' = true and 'strict_number_parsing' = true
+  // returns an error).
+  bool strict_number_parsing;
+  // If 'max_nesting' is set to a non-negative number, parsing will fail if the
+  // JSON document has more than 'max_nesting' levels of nesting. If it is set
+  // to a negative number, the max nesting will be set to 0 instead (i.e. only
+  // allowing scalar JSONs). JSON Arrays and Objects increase nesting levels.
+  absl::optional<int> max_nesting;
+};
 
 // JSONValue stores a JSON document. Access to read and update the values and
 // their members and elements is provided through JSONValueRef and
@@ -65,12 +87,12 @@ class JSONValue final {
   // to read the value including object members and array elements.
   JSONValueConstRef GetConstRef() const;
 
-  // Parses a given JSON document string and returns a JSON value. If
-  // 'legacy_mode' is set to true, the parsing will be done using the legacy
-  // proto JSON parser. The legacy parser supports strings that are not
-  // valid JSON documents according to JSON RFC (such as single quote strings).
-  static zetasql_base::StatusOr<JSONValue> ParseJSONString(absl::string_view str,
-                                                   bool legacy_mode = false);
+  // Parses a given JSON document string and returns a JSON value.
+  static zetasql_base::StatusOr<JSONValue> ParseJSONString(
+      absl::string_view str,
+      JSONParsingOptions parsing_options = {.legacy_mode = false,
+                                            .strict_number_parsing = false,
+                                            .max_nesting = absl::nullopt});
 
   // Decodes a binary representation of a JSON value produced by
   // JSONValueConstRef::SerializeAndAppendToProtoBytes(). Returns an error if
@@ -114,19 +136,19 @@ class JSONValueConstRef {
   bool IsDouble() const;
 
   // Returns a JSON number value as int64_t.
-  // Requires IsInt64() to be true. Otherwise, the call results in LOG(FATAL).
+  // Requires IsInt64() to be true. Otherwise, the call results in ZETASQL_LOG(FATAL).
   int64_t GetInt64() const;
   // Returns a JSON number value as uint64_t.
-  // Requires IsUInt64() to be true. Otherwise, the call results in LOG(FATAL).
+  // Requires IsUInt64() to be true. Otherwise, the call results in ZETASQL_LOG(FATAL).
   uint64_t GetUInt64() const;
   // Returns a JSON number value as double.
-  // Requires IsDouble() to be true. Otherwise, the call results in LOG(FATAL).
+  // Requires IsDouble() to be true. Otherwise, the call results in ZETASQL_LOG(FATAL).
   double GetDouble() const;
   // Returns a JSON string value.
-  // Requires IsString() to be true. Otherwise, the call results in LOG(FATAL).
+  // Requires IsString() to be true. Otherwise, the call results in ZETASQL_LOG(FATAL).
   std::string GetString() const;
   // Returns a JSON boolean value.
-  // Requires IsBoolean() to be true. Otherwise, the call results in LOG(FATAL).
+  // Requires IsBoolean() to be true. Otherwise, the call results in ZETASQL_LOG(FATAL).
   bool GetBoolean() const;
 
   // If the JSON value being referenced is an object, returns whether the 'key'
@@ -135,9 +157,9 @@ class JSONValueConstRef {
   bool HasMember(absl::string_view key) const;
   // If the JSON value being referenced is an object, returns the member
   // corresponding to the given 'key'. If such 'key' does not exist, then
-  // the call results in LOG(FATAL).
+  // the call results in ZETASQL_LOG(FATAL).
   //
-  // Requires IsObject() to be true. Otherwise, the call results in LOG(FATAL).
+  // Requires IsObject() to be true. Otherwise, the call results in ZETASQL_LOG(FATAL).
   JSONValueConstRef GetMember(absl::string_view key) const;
   // If the JSON value being referenced is an object, returns the member
   // corresponding to the given 'key' if it exists. If such 'key' does not
@@ -147,24 +169,24 @@ class JSONValueConstRef {
   // If the JSON value being referenced is an object, returns all the key/value
   // pairs corresponding to members of the object.
   //
-  // Requires IsObject() to be true. Otherwise, the call results in LOG(FATAL).
+  // Requires IsObject() to be true. Otherwise, the call results in ZETASQL_LOG(FATAL).
   std::vector<std::pair<absl::string_view, JSONValueConstRef>> GetMembers()
       const;
 
   // If the JSON value being referenced is an array, returns the number of
   // elements.
   //
-  // Requires IsArray() to be true. Otherwise, the call results in LOG(FATAL).
+  // Requires IsArray() to be true. Otherwise, the call results in ZETASQL_LOG(FATAL).
   size_t GetArraySize() const;
   // If the JSON value being referenced is an array, returns the element at
   // 'index'. If such element does not exists (index >= GetArraySize()), then
   // the returned value is an invalid object.
   //
-  // Requires IsArray() to be true. Otherwise, the call results in LOG(FATAL).
+  // Requires IsArray() to be true. Otherwise, the call results in ZETASQL_LOG(FATAL).
   JSONValueConstRef GetArrayElement(size_t index) const;
   // If the JSON value being referenced is an array, returns all the elements.
   //
-  // Requires IsArray() to be true. Otherwise, the call results in LOG(FATAL).
+  // Requires IsArray() to be true. Otherwise, the call results in ZETASQL_LOG(FATAL).
   std::vector<JSONValueConstRef> GetArrayElements() const;
 
   // Serializes the JSON value into a compact string representation.
@@ -209,6 +231,8 @@ class JSONValueRef : public JSONValueConstRef {
   JSONValueRef& operator=(const JSONValueRef&) = default;
   JSONValueRef& operator=(JSONValueRef&&) = default;
 
+  // Sets the JSON value to null.
+  void SetNull();
   // Sets the JSON value to the given int64_t value.
   void SetInt64(int64_t value);
   // Sets the JSON value to the given uin64 value.
@@ -219,19 +243,25 @@ class JSONValueRef : public JSONValueConstRef {
   void SetString(absl::string_view value);
   // Sets the JSON value to the given boolean value.
   void SetBoolean(bool value);
+  // Sets the JSON value to the given json value.
+  void Set(JSONValue json_value);
+  // Sets the JSON value to an empty object.
+  void SetToEmptyObject();
+  // Sets the JSON value to an empty array.
+  void SetToEmptyArray();
 
   // If the JSON value being referenced is an object, returns the member
   // corresponding to the given 'key'. If such 'key' does not exists, creates
   // a null value corresponding the 'key' and returns it.
   //
   // Requires IsObject() or IsNull() to be true. Otherwise, the call results in
-  // LOG(FATAL).
+  // ZETASQL_LOG(FATAL).
   JSONValueRef GetMember(absl::string_view key);
   // If the JSON value being referenced is an object, returns all the key/value
   // pairs corresponding to members of the object.
   //
   // Requires IsObject() or IsNull() to be true. Otherwise, the call results in
-  // LOG(FATAL).
+  // ZETASQL_LOG(FATAL).
   std::vector<std::pair<absl::string_view, JSONValueRef>> GetMembers();
 
   // If the JSON value being referenced is an array, returns the element at
@@ -239,12 +269,12 @@ class JSONValueRef : public JSONValueConstRef {
   // elements and returns a reference to the newly created null element.
   //
   // Requires IsArray() or IsNull() to be true. Otherwise, the call results in
-  // LOG(FATAL).
+  // ZETASQL_LOG(FATAL).
   JSONValueRef GetArrayElement(size_t index);
   // If the JSON value being referenced is an array, returns all the elements.
   //
   // Requires IsArray() or IsNull() to be true. Otherwise, the call results in
-  // LOG(FATAL).
+  // ZETASQL_LOG(FATAL).
   std::vector<JSONValueRef> GetArrayElements();
 
  private:
@@ -254,6 +284,52 @@ class JSONValueRef : public JSONValueConstRef {
 
   friend class JSONValue;
 };
+
+namespace internal {
+
+// Returns absl::OkStatus() if the number in string 'lhs' is numerically
+// equivalent to the number in the string created by serializing a JSON document
+// containing 'val' to a string. Returns an error status otherwise.
+//
+// Restrictions:
+//   - Input string ('lhs') can be at most 1500 characters in length.
+//   - Numbers represented by 'lhs' and 'val' can have at most 1074 significant
+//   fractional decimal digits, and at most 1500 significant digits.
+//
+// To understand the restrictions above, we must consider the following:
+//
+//  1) The 64-bit IEEE 754 double only guarantees roundtripping from text ->
+//  double -> text for numbers that have 15 significant digits at most. Values
+//  with more significant digits than 15 may or may not round-trip.
+//
+//  2) The conversion of double -> text -> double will produce the exact same
+//  double value if at least 17 significant digits are used in serialization of
+//  the double value to text (e.g. "10.000000000000001" -> double and
+//  "10.0000000000000019" -> double return the same double value).
+//
+// The implication of the above two facts might suggest that numbers with more
+// than 17 significant digits should be rejected for round-tripping. However,
+// there are 2 categories of numbers that can exceed 17 significant digits but
+// still round-trip. The first category consists of very large whole numbers
+// with a continuous sequence of trailing zeros before the decimal point
+// (e.g. 1e+200). The second category consists of very small purely fractional
+// numbers with a continuous sequence of leading zeros after the decimal point
+// (e.g. 1e-200).
+//
+// To ensure that the numbers in these additional categories are correctly
+// considered for round-tripping, we allow for a maximum of 1074 significant
+// fractional digits and a maximum total string length of 1500 characters.
+//
+// For ASCII decimal input strings, this allows for a maximum of 424 significant
+// whole decimal digits, which exceeds the number of significant whole digits
+// for the maximum value of double (~1.7976931348623157E+308), while still
+// capturing the maximum number of fractional digits for a double (1074).
+// Scientific notation input strings can potentially express more than 424
+// significant decimal digits, while still being constrained to 1074 significant
+// fractional decimal digits.
+absl::Status CheckNumberRoundtrip(absl::string_view lhs, double val);
+
+}  // namespace internal
 
 }  // namespace zetasql
 

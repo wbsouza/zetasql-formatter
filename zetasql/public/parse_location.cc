@@ -20,6 +20,7 @@
 #include "zetasql/public/parse_location.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 
 #include "zetasql/base/logging.h"
@@ -175,16 +176,16 @@ zetasql_base::StatusOr<int> ColumnNumberFromLineLocalByteOffset(
 
 zetasql_base::StatusOr<std::pair<int, int>>
 ParseLocationTranslator::GetLineAndColumnFromByteOffset(int byte_offset) const {
-  DCHECK_GE(byte_offset, 0);
-  DCHECK_LE(byte_offset, input_.size());
+  ZETASQL_DCHECK_GE(byte_offset, 0);
+  ZETASQL_DCHECK_LE(byte_offset, input_.size());
   ZETASQL_RET_CHECK(byte_offset >= 0 &&
             byte_offset <= static_cast<int64_t>(input_.size()))
       << "Byte offset " << byte_offset << " out of bounds of input (size "
       << input_.size() << ")";
   CalculateLineOffsets();
-  DCHECK_EQ(line_offsets_[0], 0);
-  DCHECK(!line_offsets_.empty());
-  DCHECK_EQ(line_offsets_.front(), 0);
+  ZETASQL_DCHECK_EQ(line_offsets_[0], 0);
+  ZETASQL_DCHECK(!line_offsets_.empty());
+  ZETASQL_DCHECK_EQ(line_offsets_.front(), 0);
   auto ub_iter =
       std::upper_bound(line_offsets_.begin(), line_offsets_.end(), byte_offset);
   // ub_iter points at the beginning of the *next* line.
@@ -210,12 +211,13 @@ zetasql_base::StatusOr<int> ParseLocationTranslator::GetByteOffsetFromLineAndCol
 
   // Find the offset corresponding to the line number.
   ZETASQL_RET_CHECK_LE(line, line_offsets_.size())
-      << "No line " << line << " in " << input_;
+      << "Query had " << line_offsets_.size() << " lines but line " << line
+      << " was requested";
 
   ZETASQL_ASSIGN_OR_RETURN(absl::string_view current_line, GetLineText(line));
-  DCHECK_EQ(current_line.find('\r'), current_line.npos)
+  ZETASQL_DCHECK_EQ(current_line.find('\r'), current_line.npos)
       << "GetLineText() returned string with newline characters";
-  DCHECK_EQ(current_line.find('\n'), current_line.npos)
+  ZETASQL_DCHECK_EQ(current_line.find('\n'), current_line.npos)
       << "GetLineText() returned string with newline characters";
 
   int byte_offset = 0;
@@ -240,7 +242,7 @@ ParseLocationTranslator::GetLineAndColumnAfterTabExpansion(
 std::string ParseLocationTranslator::ExpandTabs(absl::string_view input) {
   std::string out;
   for (int i = 0; i < input.size(); ++i) {
-    DCHECK(input[i] != '\n' && input[i] != '\r');
+    ZETASQL_DCHECK(input[i] != '\n' && input[i] != '\r');
     if (input[i] == '\t') {
       out += std::string(kTabWidth - (out.size() % kTabWidth), ' ');
     } else {
@@ -256,7 +258,8 @@ zetasql_base::StatusOr<absl::string_view> ParseLocationTranslator::GetLineText(
 
   ZETASQL_RET_CHECK_GT(line, 0) << "Line number <= 0";
   ZETASQL_RET_CHECK_LE(line, line_offsets_.size())
-      << "No line " << line << " in " << input_;
+      << "Query had " << line << " lines but line " << line_offsets_.size()
+      << " was requested";
 
   const int line_index = line - 1;
   const int line_start_offset = line_offsets_[line_index];

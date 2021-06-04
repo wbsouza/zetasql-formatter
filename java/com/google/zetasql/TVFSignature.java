@@ -51,7 +51,7 @@ public final class TVFSignature implements Serializable {
 
   /** Deserializes a signature from a proto. */
   public static TVFSignature deserialize(
-      TVFSignatureProto proto, final ImmutableList<ZetaSQLDescriptorPool> pools) {
+      TVFSignatureProto proto, final ImmutableList<? extends DescriptorPool> pools) {
 
     ImmutableList.Builder<TVFArgument> builder = ImmutableList.builder();
     proto.getArgumentList().forEach(arg -> builder.add(TVFArgument.deserialize(arg, pools)));
@@ -67,12 +67,14 @@ public final class TVFSignature implements Serializable {
   }
 
   /** Serializes this signature into a proto. */
-  public TVFSignatureProto serialize() {
+  public TVFSignatureProto serialize(FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
     TVFSignatureProto.Builder builder = TVFSignatureProto.newBuilder();
-    args.stream().map(TVFArgument::serialize).forEach(builder::addArgument);
+    for (TVFArgument arg : args) {
+      builder.addArgument(arg.serialize(fileDescriptorSetsBuilder));
+    }
     return builder
         .setOptions(options.serialize())
-        .setOutputSchema(outputSchema.serialize())
+        .setOutputSchema(outputSchema.serialize(fileDescriptorSetsBuilder))
         .build();
   }
 
@@ -372,7 +374,7 @@ public final class TVFSignature implements Serializable {
 
     /** Deserializes an argument from a proto. */
     public static TVFArgument deserialize(
-        TVFArgumentProto proto, final ImmutableList<ZetaSQLDescriptorPool> pools) {
+        TVFArgumentProto proto, final ImmutableList<? extends DescriptorPool> pools) {
       ValueWithType arg =
           proto.hasScalarArgument()
               ? ValueWithType.deserialize(proto.getScalarArgument(), pools)
@@ -396,13 +398,13 @@ public final class TVFSignature implements Serializable {
     }
 
     /** Serializes this argument to a proto. */
-    public TVFArgumentProto serialize() {
+    public TVFArgumentProto serialize(FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
       TVFArgumentProto.Builder builder = TVFArgumentProto.newBuilder();
       if (scalar != null) {
-        builder.setScalarArgument(scalar.serialize());
+        builder.setScalarArgument(scalar.serialize(fileDescriptorSetsBuilder));
       }
       if (relation != null) {
-        builder.setRelationArgument(relation.serialize());
+        builder.setRelationArgument(relation.serialize(fileDescriptorSetsBuilder));
       }
       if (model != null) {
         builder.setModelArgument(model.serialize());
@@ -484,7 +486,7 @@ public final class TVFSignature implements Serializable {
     }
 
     public static ValueWithType deserialize(
-        ValueWithTypeProto proto, final ImmutableList<ZetaSQLDescriptorPool> pools) {
+        ValueWithTypeProto proto, final ImmutableList<? extends DescriptorPool> pools) {
       Type type = TypeFactory.nonUniqueNames().deserialize(proto.getType(), pools);
       Value value = proto.hasValue() ? Value.deserialize(type, proto.getValue()) : null;
       Category category = findCategory(value, type);
@@ -507,12 +509,12 @@ public final class TVFSignature implements Serializable {
       return Category.UNTYPED_NULL;
     }
 
-    public ValueWithTypeProto serialize() {
+    public ValueWithTypeProto serialize(FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
       ValueWithTypeProto.Builder builder = ValueWithTypeProto.newBuilder();
       if (value != null) {
         builder.setValue(value.serialize());
       }
-      return builder.setType(type.serialize()).build();
+      return builder.setType(type.serialize(fileDescriptorSetsBuilder)).build();
     }
 
     @Override

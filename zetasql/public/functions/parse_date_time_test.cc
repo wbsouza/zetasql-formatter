@@ -18,6 +18,7 @@
 
 #include <time.h>
 
+#include <cstdint>
 #include <functional>
 #include <set>
 #include <vector>
@@ -210,7 +211,7 @@ static void ValidateResult(
     const std::function<bool(const Value& expected_result,
                              const std::string& actual_string_value)>&
         result_validator) {
-  CHECK(result != nullptr);
+  ZETASQL_CHECK(result != nullptr);
   const absl::Status& expected_status = result->status;
   const Value& expected_result = result->result;
 
@@ -271,7 +272,7 @@ static void TestCivilTimeFunction(
 
 static void TestParseTime(const FunctionTestCall& testcase) {
   auto ShouldSkipTestCase = [](const FunctionTestCall& testcase) {
-    DCHECK_EQ(testcase.params.num_params(), 2);
+    ZETASQL_DCHECK_EQ(testcase.params.num_params(), 2);
     // Ignore test cases with NULL value inputs.  The date/time function
     // library is only implemented for non-NULL values.
     if (testcase.params.param(0).is_null() ||
@@ -303,7 +304,7 @@ static void TestParseTime(const FunctionTestCall& testcase) {
 
 static void TestParseDatetime(const FunctionTestCall& testcase) {
   auto ShouldSkipTestCase = [](const FunctionTestCall& testcase) {
-    DCHECK_EQ(testcase.params.num_params(), 2);
+    ZETASQL_DCHECK_EQ(testcase.params.num_params(), 2);
     // Ignore test cases with NULL value inputs.  The date/time function
     // library is only implemented for non-NULL values.
     if (testcase.params.param(0).is_null() ||
@@ -416,7 +417,7 @@ TEST(StringToTimestampTests, StrptimeTests) {
   EXPECT_EQ(7, tm.tm_mon);
   EXPECT_EQ(5, tm.tm_mday);
 
-
+#if !defined(__APPLE__)  // Works fine on APPLE version
   // The '%Ey' element is not working in strptime so we have to roll our own.
   format_string = "%Ey";  // two digit year
   timestamp_string = "07";
@@ -432,6 +433,7 @@ TEST(StringToTimestampTests, StrptimeTests) {
   strptime_result = strptime(timestamp_string.c_str(), format_string.c_str(),
                              &tm);
   EXPECT_THAT(strptime_result, testing::IsNull());
+#endif  // !defined(__APPLE__)
 }
 
 TEST(StringToTimestampTests, NonNullTerminatedStringViewTests) {
@@ -596,6 +598,7 @@ TEST(StringToTimestampTests, NonNullTerminatedStringViewTests) {
   for (int i = 0; i < 16; i++) {
     char_array_13[i] = timestamp_string_13[i];
   }
+  // Bug in __APPLE__
   absl::string_view bad_format_string_13("%t%Y%t", 6);
   absl::string_view bad_timestamp_string_13(char_array_13, 16);
 
@@ -733,8 +736,8 @@ TEST(StringToTimestampTests, LeadingAndTrailingWhitespaceTests) {
       {time1, time2, time3, time4, time5, time6, time7, time8};
 
   TimeValue time_value;
-  for (const absl::string_view& format : formats) {
-    for (const absl::string_view& time : times) {
+  for (absl::string_view format : formats) {
+    for (absl::string_view time : times) {
       ZETASQL_EXPECT_OK(ParseStringToTime(format, time, kMicroseconds, &time_value));
       EXPECT_EQ(time_value.Packed64TimeMicros(),
                 TimeValue::FromHMSAndMicros(0, 0, 0, 0).Packed64TimeMicros());
@@ -743,7 +746,7 @@ TEST(StringToTimestampTests, LeadingAndTrailingWhitespaceTests) {
 
   // One additional test for an empty timestamp string, where the format
   // string ends in '%' (which is invalid).
-  for (const absl::string_view& time : times) {
+  for (absl::string_view time : times) {
     EXPECT_THAT(
         ParseStringToTime("  %", time, kMicroseconds, &time_value),
         StatusIs(absl::StatusCode::kOutOfRange,
@@ -779,9 +782,11 @@ TEST(StringToTimestampTests, LeadingAndTrailingWhitespaceTests) {
 
   for (const absl::string_view& format : formats) {
     for (const absl::string_view& time : times) {
-      ZETASQL_EXPECT_OK(ParseStringToTime(format, time, kMicroseconds, &time_value));
+      ZETASQL_EXPECT_OK(ParseStringToTime(format, time, kMicroseconds, &time_value))
+          << "format: " << format << "\ntime: " << time;
       EXPECT_EQ(time_value.Packed64TimeMicros(),
-                TimeValue::FromHMSAndMicros(0, 26, 0, 0).Packed64TimeMicros());
+                TimeValue::FromHMSAndMicros(0, 26, 0, 0).Packed64TimeMicros())
+          << "format: " << format << "\ntime: " << time;
     }
   }
 
@@ -814,9 +819,11 @@ TEST(StringToTimestampTests, LeadingAndTrailingWhitespaceTests) {
 
   for (const absl::string_view& format : formats) {
     for (const absl::string_view& time : times) {
-      ZETASQL_EXPECT_OK(ParseStringToTime(format, time, kMicroseconds, &time_value));
+      ZETASQL_EXPECT_OK(ParseStringToTime(format, time, kMicroseconds, &time_value))
+          << "format: " << format << "\ntime: " << time;
       EXPECT_EQ(time_value.Packed64TimeMicros(),
-                TimeValue::FromHMSAndMicros(0, 26, 0, 0).Packed64TimeMicros());
+                TimeValue::FromHMSAndMicros(0, 26, 0, 0).Packed64TimeMicros())
+          << "format: " << format << "\ntime: " << time;
     }
   }
 }
@@ -848,7 +855,8 @@ TEST(StringToTimestampTests, IntermediateWhitespaceTests) {
           << "format: " << format
           << "\ntime: " << time;
       EXPECT_EQ(time_value.Packed64TimeMicros(),
-                TimeValue::FromHMSAndMicros(11, 26, 0, 0).Packed64TimeMicros());
+                TimeValue::FromHMSAndMicros(11, 26, 0, 0).Packed64TimeMicros())
+          << "format: " << format << "\ntime: " << time;
     }
   }
 }

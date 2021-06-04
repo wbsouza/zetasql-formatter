@@ -85,10 +85,12 @@ bool InputArgumentType::operator!=(const InputArgumentType& type) const {
   return !(*this == type);
 }
 
-InputArgumentType::InputArgumentType(const Value& literal_value)
+InputArgumentType::InputArgumentType(const Value& literal_value,
+                                     bool is_default_argument_value)
     : category_(kTypedLiteral),
       type_(literal_value.type()),
-      literal_value_(literal_value) {
+      literal_value_(literal_value),
+      is_default_argument_value_(is_default_argument_value) {
   if (literal_value.type()->IsStruct()) {
     if (literal_value.is_null()) {
       // This is a NULL struct, so its field InputArgumentTypes are the
@@ -108,7 +110,7 @@ InputArgumentType::InputArgumentType(const Value& literal_value)
 InputArgumentType::InputArgumentType(const Type* type, bool is_query_parameter)
     : category_(is_query_parameter ? kTypedParameter : kTypedExpression),
       type_(type) {
-  DCHECK(type != nullptr);
+  ZETASQL_DCHECK(type != nullptr);
   if (type->IsStruct()) {
     for (const StructType::StructField& struct_field :
              type->AsStruct()->fields()) {
@@ -231,6 +233,7 @@ InputArgumentType InputArgumentType::DescriptorInputArgumentType() {
 InputArgumentType InputArgumentType::LambdaInputArgumentType() {
   InputArgumentType type;
   type.category_ = kLambda;
+  type.type_ = nullptr;
   return type;
 }
 
@@ -254,7 +257,7 @@ bool InputArgumentTypeSet::Insert(
     if (inserted) {
       arguments_vector_.push_back(argument);
     }
-    DCHECK_EQ(arguments_set_->size(), arguments_vector_.size());
+    ZETASQL_DCHECK_EQ(arguments_set_->size(), arguments_vector_.size());
     return inserted;
   } else {
     for (const InputArgumentType& arg : arguments_vector_) {

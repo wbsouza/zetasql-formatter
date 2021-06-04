@@ -34,6 +34,7 @@
 #include <math.h>  // for round and roundf
 
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <type_traits>
 
@@ -69,15 +70,15 @@ static inline bool CheckRange(const FromType& value) {
   static_assert(sizeof(FromType) > sizeof(ToType),
                 "FromType must be larger than ToType");
   // Not a static_assert since floating point PODs are not integral constants.
-  DCHECK_LE(std::numeric_limits<FromType>::lowest(),
+  ZETASQL_DCHECK_LE(std::numeric_limits<FromType>::lowest(),
             std::numeric_limits<ToType>::lowest());
-  DCHECK_GE(std::numeric_limits<FromType>::max(),
+  ZETASQL_DCHECK_GE(std::numeric_limits<FromType>::max(),
             std::numeric_limits<ToType>::max());
   FromType min = static_cast<FromType>(std::numeric_limits<ToType>::lowest());
   FromType max = static_cast<FromType>(std::numeric_limits<ToType>::max());
   // Not a static_assert since floating point PODs are not integral constants.
-  DCHECK_LE(min, 0);
-  DCHECK_LT(0, max);
+  ZETASQL_DCHECK_LE(min, 0);
+  ZETASQL_DCHECK_LT(0, max);
   return value >= min && value <= max;
 }
 
@@ -147,8 +148,9 @@ inline bool Convert(
 
 // -------------- int32_t --------------
 
-template <> inline bool Convert<int32_t, uint32_t>(
-    const int32_t& in, uint32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<int32_t, uint32_t>(const int32_t& in, uint32_t* out,
+                                       absl::Status* error) {
   if (in < 0) {
     return internal::UpdateError(
         error, absl::StrCat(internal::kConvertOverflowUint32, in));
@@ -157,8 +159,9 @@ template <> inline bool Convert<int32_t, uint32_t>(
   return true;
 }
 
-template <> inline bool Convert<int32_t, uint64_t>(
-    const int32_t& in, uint64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<int32_t, uint64_t>(const int32_t& in, uint64_t* out,
+                                       absl::Status* error) {
   if (in < 0) {
     return internal::UpdateError(
         error, absl::StrCat(internal::kConvertOverflowUint64, in));
@@ -169,23 +172,24 @@ template <> inline bool Convert<int32_t, uint64_t>(
 
 template <>
 inline bool Convert<int32_t, NumericValue>(const int32_t& in, NumericValue* out,
-                                         absl::Status* error) {
+                                           absl::Status* error) {
   *out = NumericValue(in);
   return true;
 }
 
 template <>
 inline bool Convert<int32_t, BigNumericValue>(const int32_t& in,
-                                            BigNumericValue* out,
-                                            absl::Status* error) {
+                                              BigNumericValue* out,
+                                              absl::Status* error) {
   *out = BigNumericValue(in);
   return true;
 }
 
 // -------------- int64_t --------------
 
-template <> inline bool Convert<int64_t, int32_t>(
-    const int64_t& in, int32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<int64_t, int32_t>(const int64_t& in, int32_t* out,
+                                      absl::Status* error) {
   if (!internal::CheckRange<int64_t, int32_t>(in)) {
     return internal::UpdateError(
         error, absl::StrCat(internal::kConvertOverflowInt32, in));
@@ -194,8 +198,9 @@ template <> inline bool Convert<int64_t, int32_t>(
   return true;
 }
 
-template <> inline bool Convert<int64_t, uint32_t>(
-    const int64_t& in, uint32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<int64_t, uint32_t>(const int64_t& in, uint32_t* out,
+                                       absl::Status* error) {
   if (!internal::CheckRange<int64_t, uint32_t>(in)) {
     return internal::UpdateError(
         error, absl::StrCat(internal::kConvertOverflowUint32, in));
@@ -204,8 +209,9 @@ template <> inline bool Convert<int64_t, uint32_t>(
   return true;
 }
 
-template <> inline bool Convert<int64_t, uint64_t>(
-    const int64_t& in, uint64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<int64_t, uint64_t>(const int64_t& in, uint64_t* out,
+                                       absl::Status* error) {
   if (in < 0) {
     return internal::UpdateError(
         error, absl::StrCat(internal::kConvertOverflowUint64, in));
@@ -216,23 +222,24 @@ template <> inline bool Convert<int64_t, uint64_t>(
 
 template <>
 inline bool Convert<int64_t, NumericValue>(const int64_t& in, NumericValue* out,
-                                         absl::Status* error) {
+                                           absl::Status* error) {
   *out = NumericValue(in);
   return true;
 }
 
 template <>
 inline bool Convert<int64_t, BigNumericValue>(const int64_t& in,
-                                            BigNumericValue* out,
-                                            absl::Status* error) {
+                                              BigNumericValue* out,
+                                              absl::Status* error) {
   *out = BigNumericValue(in);
   return true;
 }
 
 // -------------- uint32_t --------------
 
-template <> inline bool Convert<uint32_t, int32_t>(
-    const uint32_t& in, int32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<uint32_t, int32_t>(const uint32_t& in, int32_t* out,
+                                       absl::Status* error) {
   if (!internal::CheckRange<int64_t, int32_t>(static_cast<int64_t>(in))) {
     return internal::UpdateError(
         error, absl::StrCat(internal::kConvertOverflowInt32, in));
@@ -242,24 +249,26 @@ template <> inline bool Convert<uint32_t, int32_t>(
 }
 
 template <>
-inline bool Convert<uint32_t, NumericValue>(const uint32_t& in, NumericValue* out,
-                                          absl::Status* error) {
+inline bool Convert<uint32_t, NumericValue>(const uint32_t& in,
+                                            NumericValue* out,
+                                            absl::Status* error) {
   *out = NumericValue(in);
   return true;
 }
 
 template <>
 inline bool Convert<uint32_t, BigNumericValue>(const uint32_t& in,
-                                             BigNumericValue* out,
-                                             absl::Status* error) {
+                                               BigNumericValue* out,
+                                               absl::Status* error) {
   *out = BigNumericValue(in);
   return true;
 }
 
 // -------------- uint64_t --------------
 
-template <> inline bool Convert<uint64_t, int32_t>(
-    const uint64_t& in, int32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<uint64_t, int32_t>(const uint64_t& in, int32_t* out,
+                                       absl::Status* error) {
   if (in > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
     return internal::UpdateError(
         error, absl::StrCat(internal::kConvertOverflowInt32, in));
@@ -268,8 +277,9 @@ template <> inline bool Convert<uint64_t, int32_t>(
   return true;
 }
 
-template <> inline bool Convert<uint64_t, int64_t>(
-    const uint64_t& in, int64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<uint64_t, int64_t>(const uint64_t& in, int64_t* out,
+                                       absl::Status* error) {
   if (in > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
     return internal::UpdateError(
         error, absl::StrCat(internal::kConvertOverflowInt64, in));
@@ -278,8 +288,9 @@ template <> inline bool Convert<uint64_t, int64_t>(
   return true;
 }
 
-template <> inline bool Convert<uint64_t, uint32_t>(
-    const uint64_t& in, uint32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<uint64_t, uint32_t>(const uint64_t& in, uint32_t* out,
+                                        absl::Status* error) {
   if (in > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
     return internal::UpdateError(
         error, absl::StrCat(internal::kConvertOverflowUint32, in));
@@ -289,16 +300,17 @@ template <> inline bool Convert<uint64_t, uint32_t>(
 }
 
 template <>
-inline bool Convert<uint64_t, NumericValue>(const uint64_t& in, NumericValue* out,
-                                          absl::Status* error) {
+inline bool Convert<uint64_t, NumericValue>(const uint64_t& in,
+                                            NumericValue* out,
+                                            absl::Status* error) {
   *out = NumericValue(in);
   return true;
 }
 
 template <>
 inline bool Convert<uint64_t, BigNumericValue>(const uint64_t& in,
-                                             BigNumericValue* out,
-                                             absl::Status* error) {
+                                               BigNumericValue* out,
+                                               absl::Status* error) {
   *out = BigNumericValue(in);
   return true;
 }
@@ -324,8 +336,9 @@ inline bool Convert<bool, BigNumericValue>(const bool& in, BigNumericValue* out,
 
 // -------------- float --------------
 
-template <> inline bool Convert<float, int32_t>(
-    const float& in, int32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<float, int32_t>(const float& in, int32_t* out,
+                                    absl::Status* error) {
   if (!std::isfinite(in)) {
     return internal::UpdateError(error,
                                  absl::StrCat(internal::kConvertNonFinite, in));
@@ -338,8 +351,9 @@ template <> inline bool Convert<float, int32_t>(
   return true;
 }
 
-template <> inline bool Convert<float, int64_t>(
-    const float& in, int64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<float, int64_t>(const float& in, int64_t* out,
+                                    absl::Status* error) {
   if (!std::isfinite(in)) {
     return internal::UpdateError(error,
                                  absl::StrCat(internal::kConvertNonFinite, in));
@@ -352,8 +366,9 @@ template <> inline bool Convert<float, int64_t>(
   return true;
 }
 
-template <> inline bool Convert<float, uint32_t>(
-    const float& in, uint32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<float, uint32_t>(const float& in, uint32_t* out,
+                                     absl::Status* error) {
   if (!std::isfinite(in)) {
     return internal::UpdateError(error,
                                  absl::StrCat(internal::kConvertNonFinite, in));
@@ -366,8 +381,9 @@ template <> inline bool Convert<float, uint32_t>(
   return true;
 }
 
-template <> inline bool Convert<float, uint64_t>(
-    const float& in, uint64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<float, uint64_t>(const float& in, uint64_t* out,
+                                     absl::Status* error) {
   if (!std::isfinite(in)) {
     return internal::UpdateError(error,
                                  absl::StrCat(internal::kConvertNonFinite, in));
@@ -423,8 +439,9 @@ inline bool Convert<float, BigNumericValue>(const float& in,
 
 // -------------- double --------------
 
-template <> inline bool Convert<double, int32_t>(
-    const double& in, int32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<double, int32_t>(const double& in, int32_t* out,
+                                     absl::Status* error) {
   if (!std::isfinite(in)) {
     return internal::UpdateError(error,
                                  absl::StrCat(internal::kConvertNonFinite, in));
@@ -437,8 +454,9 @@ template <> inline bool Convert<double, int32_t>(
   return true;
 }
 
-template <> inline bool Convert<double, int64_t>(
-    const double& in, int64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<double, int64_t>(const double& in, int64_t* out,
+                                     absl::Status* error) {
   if (!std::isfinite(in)) {
     return internal::UpdateError(error,
                                  absl::StrCat(internal::kConvertNonFinite, in));
@@ -451,8 +469,9 @@ template <> inline bool Convert<double, int64_t>(
   return true;
 }
 
-template <> inline bool Convert<double, uint32_t>(
-    const double& in, uint32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<double, uint32_t>(const double& in, uint32_t* out,
+                                      absl::Status* error) {
   if (!std::isfinite(in)) {
     return internal::UpdateError(error,
                                  absl::StrCat(internal::kConvertNonFinite, in));
@@ -465,8 +484,9 @@ template <> inline bool Convert<double, uint32_t>(
   return true;
 }
 
-template <> inline bool Convert<double, uint64_t>(
-    const double& in, uint64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<double, uint64_t>(const double& in, uint64_t* out,
+                                      absl::Status* error) {
   if (!std::isfinite(in)) {
     return internal::UpdateError(error,
                                  absl::StrCat(internal::kConvertNonFinite, in));
@@ -532,8 +552,9 @@ inline bool Convert<double, BigNumericValue>(const double& in,
 
 // -------------- numeric --------------
 
-template <> inline bool Convert<NumericValue, int32_t>(
-    const NumericValue& in, int32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<NumericValue, int32_t>(const NumericValue& in, int32_t* out,
+                                           absl::Status* error) {
   const zetasql_base::StatusOr<int32_t> int32_status = in.To<int32_t>();
   if (ABSL_PREDICT_TRUE(int32_status.ok())) {
     *out = int32_status.value();
@@ -545,8 +566,9 @@ template <> inline bool Convert<NumericValue, int32_t>(
   return false;
 }
 
-template <> inline bool Convert<NumericValue, int64_t>(
-    const NumericValue& in, int64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<NumericValue, int64_t>(const NumericValue& in, int64_t* out,
+                                           absl::Status* error) {
   const zetasql_base::StatusOr<int64_t> int64_status = in.To<int64_t>();
   if (ABSL_PREDICT_TRUE(int64_status.ok())) {
     *out = int64_status.value();
@@ -558,8 +580,10 @@ template <> inline bool Convert<NumericValue, int64_t>(
   return false;
 }
 
-template <> inline bool Convert<NumericValue, uint32_t>(
-    const NumericValue& in, uint32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<NumericValue, uint32_t>(const NumericValue& in,
+                                            uint32_t* out,
+                                            absl::Status* error) {
   const zetasql_base::StatusOr<uint32_t> uint32_status = in.To<uint32_t>();
   if (ABSL_PREDICT_TRUE(uint32_status.ok())) {
     *out = uint32_status.value();
@@ -571,8 +595,10 @@ template <> inline bool Convert<NumericValue, uint32_t>(
   return false;
 }
 
-template <> inline bool Convert<NumericValue, uint64_t>(
-    const NumericValue& in, uint64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<NumericValue, uint64_t>(const NumericValue& in,
+                                            uint64_t* out,
+                                            absl::Status* error) {
   const zetasql_base::StatusOr<uint64_t> uint64_status = in.To<uint64_t>();
   if (ABSL_PREDICT_TRUE(uint64_status.ok())) {
     *out = uint64_status.value();
@@ -614,8 +640,10 @@ inline bool Convert<NumericValue, bool>(const NumericValue& in, bool* out,
 
 // -------------- bignumeric --------------
 
-template <> inline bool Convert<BigNumericValue, int32_t>(
-    const BigNumericValue& in, int32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<BigNumericValue, int32_t>(const BigNumericValue& in,
+                                              int32_t* out,
+                                              absl::Status* error) {
   const zetasql_base::StatusOr<int32_t> int32_status = in.To<int32_t>();
   if (ABSL_PREDICT_TRUE(int32_status.ok())) {
     *out = *int32_status;
@@ -627,8 +655,10 @@ template <> inline bool Convert<BigNumericValue, int32_t>(
   return false;
 }
 
-template <> inline bool Convert<BigNumericValue, int64_t>(
-    const BigNumericValue& in, int64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<BigNumericValue, int64_t>(const BigNumericValue& in,
+                                              int64_t* out,
+                                              absl::Status* error) {
   const zetasql_base::StatusOr<int64_t> int64_status = in.To<int64_t>();
   if (ABSL_PREDICT_TRUE(int64_status.ok())) {
     *out = *int64_status;
@@ -640,8 +670,10 @@ template <> inline bool Convert<BigNumericValue, int64_t>(
   return false;
 }
 
-template <> inline bool Convert<BigNumericValue, uint32_t>(
-    const BigNumericValue& in, uint32_t* out, absl::Status* error) {
+template <>
+inline bool Convert<BigNumericValue, uint32_t>(const BigNumericValue& in,
+                                               uint32_t* out,
+                                               absl::Status* error) {
   const zetasql_base::StatusOr<uint32_t> uint32_status = in.To<uint32_t>();
   if (ABSL_PREDICT_TRUE(uint32_status.ok())) {
     *out = *uint32_status;
@@ -653,8 +685,10 @@ template <> inline bool Convert<BigNumericValue, uint32_t>(
   return false;
 }
 
-template <> inline bool Convert<BigNumericValue, uint64_t>(
-    const BigNumericValue& in, uint64_t* out, absl::Status* error) {
+template <>
+inline bool Convert<BigNumericValue, uint64_t>(const BigNumericValue& in,
+                                               uint64_t* out,
+                                               absl::Status* error) {
   const zetasql_base::StatusOr<uint64_t> uint64_status = in.To<uint64_t>();
   if (ABSL_PREDICT_TRUE(uint64_status.ok())) {
     *out = *uint64_status;
@@ -666,11 +700,11 @@ template <> inline bool Convert<BigNumericValue, uint64_t>(
   return false;
 }
 
-// TODO: Implement a direct conversion from NUMERIC/BIGNUMERIC to
-// float without converting to double first to avoid the precision loss and
-// wrong results in some cases.
 template <> inline bool Convert<BigNumericValue, float>(
     const BigNumericValue& in, float* out, absl::Status* error) {
+  // There are some edge cases where conversion to double and then to float
+  // yields slightly different results than conversion directly to float, but
+  // the usage of float implies that the precision is not critical.
   *out = static_cast<float>(in.ToDouble());
   if (ABSL_PREDICT_FALSE(std::isinf(*out))) {
     return internal::UpdateError(

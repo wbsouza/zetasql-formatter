@@ -16,11 +16,13 @@
 
 #include "zetasql/local_service/local_service.h"
 
+#include <cstdint>
 #include <string>
 #include <utility>
 
 #include "zetasql/base/logging.h"
 #include "zetasql/base/path.h"
+#include "google/protobuf/wrappers.pb.h"
 #include "google/protobuf/compiler/importer.h"
 #include "google/protobuf/descriptor.pb.h"
 #include "google/protobuf/descriptor.h"
@@ -28,8 +30,10 @@
 #include "zetasql/common/status_payload_utils.h"
 #include "zetasql/common/testing/proto_matchers.h"
 #include "zetasql/base/testing/status_matchers.h"
+#include "zetasql/common/testing/testing_proto_util.h"
 #include "zetasql/proto/function.pb.h"
 #include "zetasql/proto/simple_catalog.pb.h"
+#include "zetasql/public/functions/date_time_util.h"
 #include "zetasql/public/parse_resume_location.pb.h"
 #include "zetasql/public/simple_catalog.h"
 #include "zetasql/public/simple_table.pb.h"
@@ -37,6 +41,8 @@
 #include "zetasql/public/type.pb.h"
 #include "zetasql/public/value.h"
 #include "zetasql/public/value.pb.h"
+#include "zetasql/resolved_ast/resolved_ast.pb.h"
+#include "zetasql/testdata/test_proto3.pb.h"
 #include "zetasql/testdata/test_schema.pb.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -45,32 +51,33 @@
 
 namespace zetasql {
 
+using google::protobuf::Int64Value;
 using ::zetasql::testing::EqualsProto;
+using ::testing::IsEmpty;
 using ::testing::Not;
 using ::zetasql_base::testing::IsOk;
-
+using ::zetasql_base::testing::StatusIs;
 namespace local_service {
 
 class ZetaSqlLocalServiceImplTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    // Support both sides of --incompatible_generated_protos_in_virtual_imports.
-    source_tree_.MapPath(
-        "", zetasql_base::JoinPath(getenv("TEST_SRCDIR"), "com_google_protobuf",
-        "_virtual_imports", "descriptor_proto"));
-    source_tree_.MapPath(
-        "", zetasql_base::JoinPath(getenv("TEST_SRCDIR"), "com_google_protobuf"));
-    source_tree_.MapPath(
-        "", zetasql_base::JoinPath(getenv("TEST_SRCDIR"), "com_google_zetasql"));
-    proto_importer_ =
-        absl::make_unique<google::protobuf::compiler::Importer>(&source_tree_, nullptr);
+    source_tree_ = CreateProtoSourceTree();
+    proto_importer_ = absl::make_unique<google::protobuf::compiler::Importer>(
+        source_tree_.get(), nullptr);
     ASSERT_NE(nullptr, proto_importer_->Import(
                            "zetasql/testdata/test_schema.proto"));
     pool_ = absl::make_unique<google::protobuf::DescriptorPool>(proto_importer_->pool());
+    // We expect 1, the builtin descriptor pool.
+    EXPECT_EQ(1, service_.NumRegisteredDescriptorPools());
+    EXPECT_EQ(0, service_.NumRegisteredCatalogs());
     EXPECT_EQ(0, service_.NumSavedPreparedExpression());
   }
 
   void TearDown() override {
+    // We expect 1, the builtin descriptor pool.
+    EXPECT_EQ(1, service_.NumRegisteredDescriptorPools());
+    EXPECT_EQ(0, service_.NumRegisteredCatalogs());
     EXPECT_EQ(0, service_.NumSavedPreparedExpression());
   }
 
@@ -113,16 +120,13 @@ class ZetaSqlLocalServiceImplTest : public ::testing::Test {
     return service_.FormatSql(request, response);
   }
 
+  absl::Status RegisterCatalog(const RegisterCatalogRequest& request,
+                               RegisterResponse* response) {
+    return service_.RegisterCatalog(request, response);
+  }
+
   absl::Status UnregisterCatalog(int64_t id) {
     return service_.UnregisterCatalog(id);
-  }
-
-  absl::Status UnregisterParseResumeLocation(int64_t id) {
-    return service_.UnregisterParseResumeLocation(id);
-  }
-
-  absl::Status AddSimpleTable(const AddSimpleTableRequest& request) {
-    return service_.AddSimpleTable(request);
   }
 
   size_t NumSavedPreparedExpression() {
@@ -141,72 +145,79 @@ class ZetaSqlLocalServiceImplTest : public ::testing::Test {
   }
 
   ZetaSqlLocalServiceImpl service_;
-  google::protobuf::compiler::DiskSourceTree source_tree_;
+  std::unique_ptr<google::protobuf::compiler::DiskSourceTree> source_tree_;
   std::unique_ptr<google::protobuf::compiler::Importer> proto_importer_;
   std::unique_ptr<google::protobuf::DescriptorPool> pool_;
   TypeFactory factory_;
 };
 
-TEST_F(ZetaSqlLocalServiceImplTest, PrepareAndCleanup) {
-  PrepareRequest request;
-  TypeFactory factory;
-  FileDescriptorSetMap file_descriptor_set_map;
-
-  // Add a proto-type column.
-  const ProtoType* proto_type;
-  ZETASQL_ASSERT_OK(factory.MakeProtoType(zetasql_test::KitchenSinkPB::descriptor(),
-                                  &proto_type));
-  auto* column = request.mutable_options()->add_expression_columns();
-  column->set_name("c");
-  ZETASQL_ASSERT_OK(proto_type->SerializeToProtoAndDistinctFileDescriptors(
-      column->mutable_type(), &file_descriptor_set_map));
-
-  // And add an enum-type param.
-  const EnumType* enum_type;
-  ZETASQL_ASSERT_OK(factory.MakeEnumType(
-      pool_->FindEnumTypeByName("zetasql_test.TestEnum"), &enum_type));
-  auto* param = request.mutable_options()->add_query_parameters();
-  param->set_name("e");
-  ZETASQL_ASSERT_OK(enum_type->SerializeToProtoAndDistinctFileDescriptors(
-      param->mutable_type(), &file_descriptor_set_map));
-
-  // The proto and enum come from different descriptor pools, resulting 2 file
-  // descriptor sets.
-  ASSERT_EQ(2, file_descriptor_set_map.size());
-
-  for (int i = 0; i < file_descriptor_set_map.size(); ++i) {
-    request.add_file_descriptor_set();
-  }
-  for (const auto& pair : file_descriptor_set_map) {
-    *request.mutable_file_descriptor_set(pair.second->descriptor_set_index) =
-        pair.second->file_descriptor_set;
-  }
-
-  // Use the column and param in the expression.
-  request.set_sql("IF(c.int32_val=1, @e, null)");
-
-  PrepareResponse response;
-  ZETASQL_ASSERT_OK(Prepare(request, &response));
-
-  // Check result type and value.
-  EXPECT_EQ(TYPE_ENUM, response.output_type().type_kind());
-  EXPECT_EQ("zetasql_test.TestEnum",
-            response.output_type().enum_type().enum_name());
-  EXPECT_EQ(0, response.output_type().file_descriptor_set_size());
-  EXPECT_EQ(1, response.output_type().enum_type().file_descriptor_set_index());
-
-  // Check prepared id.
-  EXPECT_TRUE(response.has_prepared_expression_id());
-  EXPECT_EQ(1, NumSavedPreparedExpression());
-  ZETASQL_ASSERT_OK(Unprepare(response.prepared_expression_id()));
+void AddEmptyFileDescriptorSet(DescriptorPoolListProto* list) {
+  list->add_definitions()->mutable_file_descriptor_set();
 }
 
-TEST_F(ZetaSqlLocalServiceImplTest, PrepareFailuresNoRegister) {
+void AddBuiltin(DescriptorPoolListProto* list) {
+  list->add_definitions()->mutable_builtin();
+}
+
+void AddRegisteredDescriptorPool(DescriptorPoolListProto* list, int64_t id) {
+  list->add_definitions()->set_registered_id(id);
+}
+
+void AddKitchenSinkDescriptorPool(DescriptorPoolListProto* list) {
+  TypeFactory factory;
+  const ProtoType* proto_type = nullptr;
+  ZETASQL_CHECK_OK(factory.MakeProtoType(zetasql_test::KitchenSinkPB::descriptor(),
+                                 &proto_type));
+  TypeProto ignored;
+
+  ZETASQL_CHECK_OK(proto_type->SerializeToProtoAndFileDescriptors(
+      &ignored, list->add_definitions()->mutable_file_descriptor_set()));
+}
+
+void AddKitchenSink3DescriptorPool(DescriptorPoolListProto* list) {
+  TypeFactory factory;
+  const ProtoType* proto_type = nullptr;
+  ZETASQL_CHECK_OK(factory.MakeProtoType(
+      zetasql_test::Proto3KitchenSink::descriptor(), &proto_type));
+  TypeProto ignored;
+
+  ZETASQL_CHECK_OK(proto_type->SerializeToProtoAndFileDescriptors(
+      &ignored, list->add_definitions()->mutable_file_descriptor_set()));
+}
+
+
+TEST_F(ZetaSqlLocalServiceImplTest, PrepareCleansUpPoolsAndCatalogsOnError) {
   PrepareRequest request;
   PrepareResponse response;
+
+  request.set_sql("1");
+
+  // Fails on deserializing 3rd pool
+  AddBuiltin(request.mutable_descriptor_pool_list());
+  AddKitchenSinkDescriptorPool(request.mutable_descriptor_pool_list());
+  AddRegisteredDescriptorPool(request.mutable_descriptor_pool_list(), -5);
+
+  ASSERT_FALSE(Prepare(request, &response).ok());
+  // Fix descriptor pools
+  request.mutable_descriptor_pool_list()->Clear();
+  AddBuiltin(request.mutable_descriptor_pool_list());
+  AddKitchenSinkDescriptorPool(request.mutable_descriptor_pool_list());
+
+  // Bad catalog id
+  request.set_registered_catalog_id(-1);
+  ASSERT_FALSE(Prepare(request, &response).ok());
+
+  // Fix bad catalog
+  request.clear_registered_catalog_id();
+  request.mutable_simple_catalog()->add_constant();
+  ASSERT_FALSE(Prepare(request, &response).ok());
+
+  // make the catalog valid again
+  request.mutable_simple_catalog()->clear_constant();
 
   request.set_sql("foo");
   ASSERT_FALSE(Prepare(request, &response).ok());
+
   // No prepared state saved on failure.
   EXPECT_EQ(0, NumSavedPreparedExpression());
 
@@ -226,146 +237,40 @@ TEST_F(ZetaSqlLocalServiceImplTest, PrepareFailuresNoRegister) {
   EXPECT_EQ(0, NumSavedPreparedExpression());
 }
 
-TEST_F(ZetaSqlLocalServiceImplTest, Evaluate) {
+TEST_F(ZetaSqlLocalServiceImplTest, EvaluateCleansUpPoolsOnError) {
   EvaluateRequest request;
-
-  TypeFactory factory;
-  FileDescriptorSetMap file_descriptor_set_map;
-
-  // Add a proto-type column.
-  const ProtoType* proto_type;
-  ZETASQL_ASSERT_OK(factory.MakeProtoType(zetasql_test::KitchenSinkPB::descriptor(),
-                                  &proto_type));
-  auto* column_type = request.mutable_options()->add_expression_columns();
-  column_type->set_name("C");
-  ZETASQL_ASSERT_OK(proto_type->SerializeToProtoAndDistinctFileDescriptors(
-      column_type->mutable_type(), &file_descriptor_set_map));
-  auto* column = request.add_columns();
-  column->set_name("C");
-  zetasql_test::KitchenSinkPB pb;
-  pb.set_int32_val(1);
-  pb.set_int64_key_1(2);
-  pb.set_int64_key_2(3);
-  Value proto_value = values::Proto(proto_type, pb);
-  ValueProto proto_pb;
-  ZETASQL_ASSERT_OK(proto_value.Serialize(&proto_pb));
-  *column->mutable_value() = proto_pb;
-
-  // And add an enum-type param.
-  const EnumType* enum_type;
-  ZETASQL_ASSERT_OK(factory.MakeEnumType(
-      pool_->FindEnumTypeByName("zetasql_test.TestEnum"), &enum_type));
-  auto* param_type = request.mutable_options()->add_query_parameters();
-  param_type->set_name("e");
-  ZETASQL_ASSERT_OK(enum_type->SerializeToProtoAndDistinctFileDescriptors(
-      param_type->mutable_type(), &file_descriptor_set_map));
-  auto* param = request.add_params();
-  param->set_name("e");
-  Value enum_value = values::Enum(enum_type, 1);
-  ValueProto enum_pb;
-  ZETASQL_ASSERT_OK(enum_value.Serialize(&enum_pb));
-  *param->mutable_value() = enum_pb;
-
-  // The proto and enum come from different descriptor pools, resulting 2 file
-  // descriptor sets.
-  ASSERT_EQ(2, file_descriptor_set_map.size());
-
-  for (int i = 0; i < file_descriptor_set_map.size(); ++i) {
-    request.add_file_descriptor_set();
-  }
-  for (const auto& pair : file_descriptor_set_map) {
-    *request.mutable_file_descriptor_set(pair.second->descriptor_set_index) =
-        pair.second->file_descriptor_set;
-  }
-
-  // Use the column and param in the expression.
-  request.set_sql("IF(C.int32_val=1, @e, null)");
-
   EvaluateResponse response;
-  ZETASQL_ASSERT_OK(Evaluate(request, &response));
 
-  // check result type and value.
-  EXPECT_EQ(TYPE_ENUM, response.type().type_kind());
-  EXPECT_EQ("zetasql_test.TestEnum", response.type().enum_type().enum_name());
-  EXPECT_EQ(0, response.type().file_descriptor_set_size());
-  EXPECT_EQ(1, response.type().enum_type().file_descriptor_set_index());
-  EXPECT_EQ(1, response.value().enum_value());
-  EXPECT_EQ(1, NumSavedPreparedExpression());
-  ZETASQL_ASSERT_OK(Unprepare(response.prepared_expression_id()));
-}
+  request.set_sql("1");
 
-TEST_F(ZetaSqlLocalServiceImplTest, EvaluatePrepared) {
-  PrepareRequest request;
-  TypeFactory factory;
-  FileDescriptorSetMap file_descriptor_set_map;
+  // Fails on deserializing 3rd pool
+  AddBuiltin(request.mutable_descriptor_pool_list());
+  AddKitchenSinkDescriptorPool(request.mutable_descriptor_pool_list());
+  AddRegisteredDescriptorPool(request.mutable_descriptor_pool_list(), -5);
 
-  // Add a proto-type column.
-  const ProtoType* proto_type;
-  ZETASQL_ASSERT_OK(factory.MakeProtoType(zetasql_test::KitchenSinkPB::descriptor(),
-                                  &proto_type));
-  auto* column = request.mutable_options()->add_expression_columns();
-  column->set_name("c");
-  ZETASQL_ASSERT_OK(proto_type->SerializeToProtoAndDistinctFileDescriptors(
-      column->mutable_type(), &file_descriptor_set_map));
+  ASSERT_FALSE(Evaluate(request, &response).ok());
+  // Fix descriptor pools
+  request.mutable_descriptor_pool_list()->Clear();
+  AddBuiltin(request.mutable_descriptor_pool_list());
+  AddKitchenSinkDescriptorPool(request.mutable_descriptor_pool_list());
 
-  // And add an enum-type param.
-  const EnumType* enum_type;
-  ZETASQL_ASSERT_OK(factory.MakeEnumType(
-      pool_->FindEnumTypeByName("zetasql_test.TestEnum"), &enum_type));
+  // No prepared state saved on failure.
+  EXPECT_EQ(0, NumSavedPreparedExpression());
+
+  request.set_sql("foo + @bar");
   auto* param = request.mutable_options()->add_query_parameters();
-  param->set_name("e");
-  ZETASQL_ASSERT_OK(enum_type->SerializeToProtoAndDistinctFileDescriptors(
-      param->mutable_type(), &file_descriptor_set_map));
+  param->set_name("bar");
+  param->mutable_type()->set_type_kind(TYPE_INT64);
 
-  // The proto and enum come from different descriptor pools, resulting 2 file
-  // descriptor sets.
-  ASSERT_EQ(2, file_descriptor_set_map.size());
+  ASSERT_FALSE(Evaluate(request, &response).ok());
+  EXPECT_EQ(0, NumSavedPreparedExpression());
 
-  for (int i = 0; i < file_descriptor_set_map.size(); ++i) {
-    request.add_file_descriptor_set();
-  }
-  for (const auto& pair : file_descriptor_set_map) {
-    *request.mutable_file_descriptor_set(pair.second->descriptor_set_index) =
-        pair.second->file_descriptor_set;
-  }
+  auto* column = request.mutable_options()->add_expression_columns();
+  column->set_name("foo");
+  column->mutable_type()->set_type_kind(TYPE_STRING);
 
-  // Use the column and param in the expression.
-  request.set_sql("IF(c.int32_val=1, @e, null)");
-
-  PrepareResponse response;
-  ZETASQL_ASSERT_OK(Prepare(request, &response));
-
-  EvaluateRequest evaluate_request;
-  evaluate_request.set_prepared_expression_id(
-      response.prepared_expression_id());
-
-  auto* evaluate_column = evaluate_request.add_columns();
-  evaluate_column->set_name("c");
-  zetasql_test::KitchenSinkPB pb;
-  pb.set_int32_val(1);
-  pb.set_int64_key_1(2);
-  pb.set_int64_key_2(3);
-  Value proto_value = values::Proto(proto_type, pb);
-  ValueProto proto_pb;
-  ZETASQL_ASSERT_OK(proto_value.Serialize(&proto_pb));
-  *evaluate_column->mutable_value() = proto_pb;
-
-  // And add an enum-type param.
-  auto* evaluate_param = evaluate_request.add_params();
-  evaluate_param->set_name("e");
-  Value enum_value = values::Enum(enum_type, 1);
-  ValueProto enum_pb;
-  ZETASQL_ASSERT_OK(enum_value.Serialize(&enum_pb));
-  *evaluate_param->mutable_value() = enum_pb;
-
-  EvaluateResponse evaluate_response;
-  ZETASQL_ASSERT_OK(Evaluate(evaluate_request, &evaluate_response));
-
-  // check result type and value.
-  EXPECT_EQ(TYPE_ENUM, evaluate_response.type().type_kind());
-  EXPECT_EQ(1, evaluate_response.value().enum_value());
-  EXPECT_EQ(1, NumSavedPreparedExpression());
-  ZETASQL_ASSERT_OK(Unprepare(response.prepared_expression_id()));
+  ASSERT_FALSE(Evaluate(request, &response).ok());
+  EXPECT_EQ(0, NumSavedPreparedExpression());
 }
 
 TEST_F(ZetaSqlLocalServiceImplTest, EvaluateWithWrongId) {
@@ -712,38 +617,6 @@ TEST_F(ZetaSqlLocalServiceImplTest, UnregisterWrongCatalogId) {
             internal::StatusToString(status));
 }
 
-TEST_F(ZetaSqlLocalServiceImplTest, AnalyzeWrongParseResumeLocationId) {
-  AnalyzeRequest request;
-  RegisteredParseResumeLocationProto location;
-  location.set_registered_id(12345);
-  location.set_byte_position(0);
-  *request.mutable_registered_parse_resume_location() = location;
-
-  AnalyzeResponse response;
-  absl::Status status = Analyze(request, &response);
-  EXPECT_FALSE(status.ok());
-  EXPECT_EQ(
-      "generic::invalid_argument: "
-      "Registered parse resume location 12345 unknown.",
-      internal::StatusToString(status));
-}
-
-TEST_F(ZetaSqlLocalServiceImplTest, UnregisterWrongParseResumeLocationId) {
-  absl::Status status = UnregisterParseResumeLocation(12345);
-  EXPECT_FALSE(status.ok());
-  EXPECT_EQ("generic::invalid_argument: Unknown ParseResumeLocation ID: 12345",
-            internal::StatusToString(status));
-}
-
-TEST_F(ZetaSqlLocalServiceImplTest, AddSimpleTableWithWrongCatalogId) {
-  AddSimpleTableRequest request;
-  request.set_registered_catalog_id(12345);
-  absl::Status status = AddSimpleTable(request);
-  EXPECT_FALSE(status.ok());
-  EXPECT_EQ("generic::invalid_argument: Unknown catalog ID: 12345",
-            internal::StatusToString(status));
-}
-
 TEST_F(ZetaSqlLocalServiceImplTest, Analyze) {
   const std::string catalog_proto_text = R"pb(
     name: "foo"
@@ -788,6 +661,916 @@ TEST_F(ZetaSqlLocalServiceImplTest, Analyze) {
   EXPECT_EQ(40, response3.resume_byte_position());
 }
 
+void AddDateTruncToCatalog(SimpleCatalogProto* catalog) {
+  catalog->mutable_builtin_function_options()->add_include_function_ids(
+      FN_DATE_TRUNC_DATE);
+}
+
+// builtin-only use for datetimepart
+TEST_F(ZetaSqlLocalServiceImplTest,
+       AnalyzeWithDescriptorPoolListProtoBuiltinOnlyForFunction) {
+  AnalyzeRequest request;
+  request.set_sql_statement(R"(select DATE_TRUNC(DATE "2020-10-20", MONTH))");
+  // We add a useless descriptor set, this ensures that 'zero' is not somehow
+  // magic.
+  AddEmptyFileDescriptorSet(request.mutable_descriptor_pool_list());
+  AddBuiltin(request.mutable_descriptor_pool_list());
+  AddDateTruncToCatalog(request.mutable_simple_catalog());
+
+  AnalyzeResponse response;
+  ZETASQL_EXPECT_OK(Analyze(request, &response));
+
+  auto date_trunc_call = response.resolved_statement()
+                             .resolved_query_stmt_node()
+                             .query()
+                             .resolved_project_scan_node()
+                             .expr_list(0)
+                             .expr()
+                             .resolved_function_call_base_node()
+                             .resolved_function_call_node()
+                             .parent();
+  auto signature = date_trunc_call.signature();
+  EXPECT_EQ(date_trunc_call.function().name(), "ZetaSQL:date_trunc");
+
+  TypeProto datetimepart_type;
+  ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString(
+      R"pb(type_kind: TYPE_ENUM
+           enum_type {
+             enum_name: "zetasql.functions.DateTimestampPart"
+             enum_file_name: "zetasql/public/functions/datetime.proto"
+             file_descriptor_set_index: 1
+           })pb",
+      &datetimepart_type));
+
+  EXPECT_THAT(signature.argument(1).type(), EqualsProto(datetimepart_type));
+}
+
+// The presence of the built in DescrpitorPool doesn't magically make that
+// available in the catalog
+TEST_F(ZetaSqlLocalServiceImplTest,
+       AnalyzeWithDescriptorPoolListProtoBuiltinNotMagicallyInCatalog) {
+  AnalyzeRequest request;
+  request.set_sql_statement(R"(select new google.protobuf.Int64Value())");
+  AddBuiltin(request.mutable_descriptor_pool_list());
+
+  AnalyzeResponse response;
+  EXPECT_THAT(Analyze(request, &response),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest,
+       AnalyzeWithDescriptorPoolListProtoCatalogIndependence) {
+  constexpr int32_t kKitchenSinkPool = 1;
+  constexpr int32_t kKitchenSink3Pool = 2;
+  AnalyzeRequest request;
+  request.set_sql_statement(
+      R"(select new zetasql_test.KitchenSinkPB(1 as int64_key_1, 2 as int64_key_2),
+                new a.zetasql_test.Proto3KitchenSink(1 as int64_val),
+                new b.zetasql_test.KitchenSinkPB(1 as int64_key_1, 2 as int64_key_2))");
+  AddBuiltin(request.mutable_descriptor_pool_list());
+  // kKitchenSinkPool ->
+  AddKitchenSinkDescriptorPool(request.mutable_descriptor_pool_list());
+  // kKitchenSink3Pool ->
+  AddKitchenSink3DescriptorPool(request.mutable_descriptor_pool_list());
+
+  SimpleCatalogProto* root_catalog = request.mutable_simple_catalog();
+  root_catalog->set_file_descriptor_set_index(kKitchenSinkPool);
+
+  SimpleCatalogProto* sub_catalog_a = root_catalog->add_catalog();
+  sub_catalog_a->set_name("a");
+  sub_catalog_a->set_file_descriptor_set_index(kKitchenSink3Pool);
+
+  SimpleCatalogProto* sub_catalog_b = root_catalog->add_catalog();
+  sub_catalog_b->set_name("b");
+  sub_catalog_b->set_file_descriptor_set_index(kKitchenSinkPool);
+
+  AnalyzeResponse response;
+  ZETASQL_CHECK_OK(Analyze(request, &response));
+
+  TypeProto expected_kitchen_sink_proto_type;
+  ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString(
+      R"pb(
+        type_kind: TYPE_PROTO
+        proto_type {
+          proto_name: "zetasql_test.KitchenSinkPB"
+          proto_file_name: "zetasql/testdata/test_schema.proto"
+          file_descriptor_set_index: 1
+        })pb",
+      &expected_kitchen_sink_proto_type));
+
+  TypeProto expected_kitchen_sink_proto3_type;
+  ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString(
+      R"pb(
+        type_kind: TYPE_PROTO
+        proto_type {
+          proto_name: "zetasql_test.Proto3KitchenSink"
+          proto_file_name: "zetasql/testdata/test_proto3.proto"
+          file_descriptor_set_index: 2
+        })pb",
+      &expected_kitchen_sink_proto3_type));
+
+  auto output_columns = response.resolved_statement()
+                            .resolved_query_stmt_node()
+                            .output_column_list();
+  ASSERT_EQ(output_columns.size(), 3);
+  EXPECT_THAT(output_columns[0].column().type(),
+              EqualsProto(expected_kitchen_sink_proto_type));
+
+  EXPECT_THAT(output_columns[1].column().type(),
+              EqualsProto(expected_kitchen_sink_proto3_type));
+
+  EXPECT_THAT(output_columns[2].column().type(),
+              EqualsProto(expected_kitchen_sink_proto_type));
+}
+
+TypeProto MakeInt64TypeProto(int file_descriptor_pool_index) {
+  TypeProto proto;
+  proto.set_type_kind(TYPE_PROTO);
+  proto.mutable_proto_type()->set_proto_name("google.protobuf.Int64Value");
+  proto.mutable_proto_type()->set_proto_file_name(
+      "google/protobuf/wrappers.proto");
+  proto.mutable_proto_type()->set_file_descriptor_set_index(
+      file_descriptor_pool_index);
+  return proto;
+}
+
+TypeProto MakeTestEnumTypeProto(int file_descriptor_pool_index) {
+  TypeProto proto;
+  proto.set_type_kind(TYPE_ENUM);
+  proto.mutable_enum_type()->set_enum_name("zetasql_test.TestEnum");
+  proto.mutable_enum_type()->set_enum_file_name(
+      "zetasql/testdata/test_schema.proto");
+  proto.mutable_enum_type()->set_file_descriptor_set_index(
+      file_descriptor_pool_index);
+  return proto;
+}
+
+AnalyzerOptionsProto::QueryParameterProto MakeInt64QueryParameter(
+    absl::string_view parameter_name, int descriptor_pool_index) {
+  AnalyzerOptionsProto::QueryParameterProto proto;
+  proto.set_name(std::string(parameter_name));
+  *proto.mutable_type() = MakeInt64TypeProto(descriptor_pool_index);
+  return proto;
+}
+
+AnalyzerOptionsProto::QueryParameterProto MakeTestEnumQueryParameter(
+    absl::string_view parameter_name, int descriptor_pool_index) {
+  AnalyzerOptionsProto::QueryParameterProto proto;
+  proto.set_name(std::string(parameter_name));
+  *proto.mutable_type() = MakeTestEnumTypeProto(descriptor_pool_index);
+  return proto;
+}
+
+EvaluateRequest::Parameter MakeInt64ValueParameter(absl::string_view name,
+                                                   int64_t v) {
+  EvaluateRequest::Parameter parameter;
+  parameter.set_name(std::string(name));
+  google::protobuf::Int64Value value;
+  value.set_value(v);
+
+  TypeFactory factory;
+  const ProtoType* type;
+  ZETASQL_EXPECT_OK(
+      factory.MakeProtoType(google::protobuf::Int64Value::descriptor(), &type));
+  ZETASQL_EXPECT_OK(values::Proto(type, value).Serialize(parameter.mutable_value()));
+  return parameter;
+}
+
+EvaluateRequest::Parameter MakeTestEnumParameter(absl::string_view name,
+                                                 zetasql_test::TestEnum v) {
+  EvaluateRequest::Parameter parameter;
+  parameter.set_name(std::string(name));
+
+  TypeFactory factory;
+  const EnumType* type;
+  ZETASQL_EXPECT_OK(factory.MakeEnumType(zetasql_test::TestEnum_descriptor(), &type));
+  ZETASQL_EXPECT_OK(values::Enum(type, v).Serialize(parameter.mutable_value()));
+  return parameter;
+}
+
+// We can use the builtin DescriptorPool for parameters, even if that
+// pool is not used in the catalog (or there is no catalog).
+TEST_F(ZetaSqlLocalServiceImplTest,
+       AnalyzeWithDescriptorPoolListProtoBuiltinOnlyForParameter) {
+  AnalyzeRequest request;
+  request.set_sql_statement(R"(select @p1.value, @p1)");
+  // We add a useless descriptor set, this ensures that 'zero' is not somehow
+  // magic.
+  AddEmptyFileDescriptorSet(request.mutable_descriptor_pool_list());
+  AddBuiltin(request.mutable_descriptor_pool_list());
+
+  TypeFactory factory;
+  AnalyzerOptions options;
+  const ProtoType* int64_proto_type = nullptr;
+  ZETASQL_CHECK_OK(factory.MakeProtoType(google::protobuf::Int64Value::descriptor(),
+                                 &int64_proto_type));
+  ZETASQL_CHECK_OK(options.AddQueryParameter("p1", int64_proto_type));
+
+  google::protobuf::DescriptorPool empty;
+  FileDescriptorSetMap descriptor_map;
+  // Add an empty entry to ensure 'zero' is not magic, this won't be used.
+  descriptor_map.emplace(&empty, std::make_unique<Type::FileDescriptorEntry>());
+  ZETASQL_CHECK_OK(options.Serialize(&descriptor_map, request.mutable_options()));
+  // We expect the generated pool (i.e. what Int64Value is using) as the 2nd
+  // entry.
+  ZETASQL_CHECK_EQ(descriptor_map.size(), 2);
+  EXPECT_THAT(descriptor_map[&empty]->file_descriptors, ::testing::IsEmpty());
+
+  AnalyzeResponse response;
+  ZETASQL_EXPECT_OK(Analyze(request, &response));
+  TypeProto expected_proto_type =
+      MakeInt64TypeProto(/*file_descriptor_pool_index=*/1);
+  auto output_columns = response.resolved_statement()
+                            .resolved_query_stmt_node()
+                            .output_column_list();
+  ASSERT_EQ(output_columns.size(), 2);
+  // Note, this is zetasql::TypeKind
+  EXPECT_EQ(output_columns[0].column().type().type_kind(), TYPE_INT64);
+  // Note, this is a representation of google.protobuf.Int64Value.
+  EXPECT_THAT(output_columns[1].column().type(),
+              EqualsProto(expected_proto_type));
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest, RegisterCatalogEmptyDescriptorPoolList) {
+  RegisterCatalogRequest request;
+  request.mutable_simple_catalog();
+  // Add an empty list, to trigger the correct response codepath.
+  request.mutable_descriptor_pool_list();
+  RegisterResponse response;
+  ZETASQL_ASSERT_OK(RegisterCatalog(request, &response));
+  // We expect an empty (but present) descriptor_pool_id_list.
+  EXPECT_FALSE(response.has_descriptor_pool_id_list());
+  EXPECT_THAT(response.descriptor_pool_id_list().registered_ids(), IsEmpty());
+  ZETASQL_ASSERT_OK(UnregisterCatalog(response.registered_id()));
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest,
+       RegisterCatalogReturnsIdsForDescriptorPoolInputs) {
+  RegisterCatalogRequest request;
+  request.mutable_simple_catalog();
+  AddEmptyFileDescriptorSet(request.mutable_descriptor_pool_list());
+  AddBuiltin(request.mutable_descriptor_pool_list());
+
+  RegisterResponse response;
+  ZETASQL_ASSERT_OK(RegisterCatalog(request, &response));
+  EXPECT_THAT(response.descriptor_pool_id_list().registered_ids_size(), 2);
+
+  ZETASQL_ASSERT_OK(UnregisterCatalog(response.registered_id()));
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest,
+       RegisterCatalogCleanupsDescriptorPoolsOnError) {
+  RegisterCatalogRequest request;
+  request.mutable_simple_catalog();
+  AddEmptyFileDescriptorSet(request.mutable_descriptor_pool_list());
+  AddBuiltin(request.mutable_descriptor_pool_list());
+  // Force an missing name error.
+  request.mutable_simple_catalog()->add_constant();
+
+  RegisterResponse response;
+  ASSERT_FALSE(RegisterCatalog(request, &response).ok());
+}
+
+std::vector<TypeProto> GetOutputTypes(
+    const AnyResolvedStatementProto& resolved_statement) {
+  EXPECT_TRUE(resolved_statement.has_resolved_query_stmt_node());
+  const ResolvedQueryStmtProto& query_proto =
+      resolved_statement.resolved_query_stmt_node();
+  std::vector<TypeProto> types;
+  for (const auto& output_column : query_proto.output_column_list()) {
+    types.push_back(output_column.column().type());
+  }
+  return types;
+}
+
+TypeProto GetOutputType(const AnyResolvedStatementProto& resolved_statement) {
+  std::vector<TypeProto> types = GetOutputTypes(resolved_statement);
+  ZETASQL_CHECK_EQ(types.size(), 1);
+  return types[0];
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest, AnalyzeWithRegisteredCatalog) {
+  int64_t catalog_id;
+  int64_t kitchen_sink_pool_id;
+  {
+    RegisterCatalogRequest catalog_request;
+    catalog_request.mutable_simple_catalog();
+    AddKitchenSinkDescriptorPool(
+        catalog_request.mutable_descriptor_pool_list());
+    catalog_request.mutable_simple_catalog()->set_file_descriptor_set_index(0);
+    RegisterResponse catalog_response;
+    ZETASQL_ASSERT_OK(RegisterCatalog(catalog_request, &catalog_response));
+    catalog_id = catalog_response.registered_id();
+    EXPECT_THAT(
+        catalog_response.descriptor_pool_id_list().registered_ids_size(), 1);
+    kitchen_sink_pool_id =
+        catalog_response.descriptor_pool_id_list().registered_ids(0);
+  }
+
+  AnalyzeRequest analyze_request;
+  AddBuiltin(analyze_request.mutable_descriptor_pool_list());
+  AddRegisteredDescriptorPool(analyze_request.mutable_descriptor_pool_list(),
+                              kitchen_sink_pool_id);
+  constexpr int32_t kKitchenSinkPoolIndex = 1;
+
+  analyze_request.set_registered_catalog_id(catalog_id);
+  analyze_request.set_sql_statement(
+      R"(select new zetasql_test.KitchenSinkPB(1 as int64_key_1, 2 as int64_key_2))");
+
+  AnalyzeResponse analyze_response;
+
+  ZETASQL_ASSERT_OK(Analyze(analyze_request, &analyze_response));
+  TypeProto output_column_type =
+      GetOutputType(analyze_response.resolved_statement());
+  EXPECT_EQ(output_column_type.type_kind(), TYPE_PROTO);
+  EXPECT_EQ(output_column_type.proto_type().proto_name(),
+            "zetasql_test.KitchenSinkPB");
+  EXPECT_EQ(output_column_type.proto_type().file_descriptor_set_index(),
+            kKitchenSinkPoolIndex);
+  ZETASQL_ASSERT_OK(UnregisterCatalog(catalog_id));
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest,
+       AnalyzeWithRegisteredCatalogShouldFailWithMissingPool) {
+  int64_t catalog_id;
+  {
+    RegisterCatalogRequest catalog_request;
+    catalog_request.mutable_simple_catalog();
+    AddKitchenSinkDescriptorPool(
+        catalog_request.mutable_descriptor_pool_list());
+    catalog_request.mutable_simple_catalog()->set_file_descriptor_set_index(0);
+    RegisterResponse catalog_response;
+    ZETASQL_ASSERT_OK(RegisterCatalog(catalog_request, &catalog_response));
+    catalog_id = catalog_response.registered_id();
+    EXPECT_THAT(
+        catalog_response.descriptor_pool_id_list().registered_ids_size(), 1);
+  }
+
+  AnalyzeRequest analyze_request;
+  AddBuiltin(analyze_request.mutable_descriptor_pool_list());
+  // Notice, we don't add KitchenPool to descriptor_pool_list
+  // While we can _analyze_ the query without problem, we cannot serialize
+  // the result, we rely on the client side to pass in all possibly-needed
+  // descriptor pools as part of the request.
+  analyze_request.set_registered_catalog_id(catalog_id);
+  analyze_request.set_sql_statement(
+      R"(select new zetasql_test.KitchenSinkPB(1 as int64_key_1, 2 as int64_key_2))");
+
+  AnalyzeResponse analyze_response;
+  EXPECT_THAT(Analyze(analyze_request, &analyze_response),
+              StatusIs(absl::StatusCode::kInternal));
+  ZETASQL_ASSERT_OK(UnregisterCatalog(catalog_id));
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest,
+       UnregisterCatalogAlsoUnregistersOwnedDescriptorPools) {
+  int64_t catalog1_id;
+  int64_t kitchen_sink_pool_id;  // kitchen
+  int64_t pool_b_id;
+  int64_t builtin_pool_id;
+  // REGISTER CATALOG 1
+  {
+    RegisterCatalogRequest request1;
+    request1.mutable_simple_catalog();
+    AddKitchenSinkDescriptorPool(request1.mutable_descriptor_pool_list());
+    AddEmptyFileDescriptorSet(request1.mutable_descriptor_pool_list());
+    // Add builtin twice to validate they have the same id.
+    AddBuiltin(request1.mutable_descriptor_pool_list());
+    AddBuiltin(request1.mutable_descriptor_pool_list());
+
+    RegisterResponse response1;
+    ZETASQL_ASSERT_OK(RegisterCatalog(request1, &response1));
+    catalog1_id = response1.registered_id();
+    EXPECT_THAT(response1.descriptor_pool_id_list().registered_ids_size(), 4);
+    kitchen_sink_pool_id =
+        response1.descriptor_pool_id_list().registered_ids(0);
+    pool_b_id = response1.descriptor_pool_id_list().registered_ids(1);
+    builtin_pool_id = response1.descriptor_pool_id_list().registered_ids(2);
+    EXPECT_EQ(response1.descriptor_pool_id_list().registered_ids(3),
+              builtin_pool_id);
+  }
+
+  // Use an AnalyzeRequest to 'probe' the descriptor pool.
+  AnalyzeRequest analyze_request;
+  AddRegisteredDescriptorPool(analyze_request.mutable_descriptor_pool_list(),
+                              kitchen_sink_pool_id);
+  AddRegisteredDescriptorPool(analyze_request.mutable_descriptor_pool_list(),
+                              builtin_pool_id);
+  analyze_request.mutable_simple_catalog()->set_file_descriptor_set_index(0);
+  analyze_request.set_sql_statement(
+      R"(select new zetasql_test.KitchenSinkPB(1 as int64_key_1, 2 as int64_key_2))");
+
+  AnalyzeResponse analyze_response;
+
+  ZETASQL_ASSERT_OK(Analyze(analyze_request, &analyze_response));
+
+  // UNREGISTER CATALOG 1 - This should drop pool_b
+  ZETASQL_ASSERT_OK(UnregisterCatalog(catalog1_id));
+
+  // Same request again, not it is an error because the descriptor pool is gone.
+  EXPECT_THAT(Analyze(analyze_request, &analyze_response),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+void ExpectTypeIsDate(const TypeProto& type) {
+  EXPECT_EQ(type.type_kind(), TYPE_DATE);
+}
+void ExpectOutputTypeIsDate(const PrepareResponse& response) {
+  ExpectTypeIsDate(response.prepared().output_type());
+}
+
+void ExpectOutputTypeIsDate(const EvaluateResponse& response) {
+  ExpectTypeIsDate(response.prepared().output_type());
+}
+
+void ExpectOutputIsDate(const EvaluateResponse& response, int year, int month,
+                        int day) {
+  int32_t expected_date;
+  ZETASQL_EXPECT_OK(functions::ConstructDate(year, month, day, &expected_date));
+  EXPECT_EQ(response.value().date_value(), expected_date);
+}
+
+void ExpectTypeIsTestEnum(const TypeProto& type,
+                          int file_descriptor_set_index) {
+  EXPECT_EQ(type.type_kind(), TYPE_ENUM);
+  EXPECT_EQ(type.enum_type().enum_name(), "zetasql_test.TestEnum");
+  EXPECT_EQ(type.enum_type().enum_file_name(),
+            "zetasql/testdata/test_schema.proto");
+  EXPECT_EQ(type.enum_type().file_descriptor_set_index(),
+            file_descriptor_set_index);
+}
+
+void ExpectValueIsTestEnum(const ValueProto& value,
+                           zetasql_test::TestEnum expected) {
+  EXPECT_EQ(value.enum_value(), expected);
+}
+
+void ExpectTypeIsKitchenSink3(const TypeProto& type,
+                              int64_t file_descriptor_set_index) {
+  EXPECT_EQ(type.type_kind(), TYPE_PROTO);
+  EXPECT_EQ(type.proto_type().proto_name(), "zetasql_test.Proto3KitchenSink");
+  EXPECT_EQ(type.proto_type().proto_file_name(),
+            "zetasql/testdata/test_proto3.proto");
+  EXPECT_EQ(type.proto_type().file_descriptor_set_index(),
+            file_descriptor_set_index);
+}
+
+void ExpectValueIsKitchenSink3(
+    const ValueProto& value,
+    const zetasql_test::Proto3KitchenSink& expected) {
+  zetasql_test::Proto3KitchenSink actual;
+  ASSERT_TRUE(ParseFromCord(absl::Cord(value.proto_value()), &actual));
+  EXPECT_THAT(actual, EqualsProto(expected));
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest,
+       PrepareFailuresNoRegisterDescriptorPoolList) {
+  PrepareRequest request;
+  PrepareResponse response;
+
+  request.set_sql("foo");
+  AddKitchenSink3DescriptorPool(request.mutable_descriptor_pool_list());
+  ASSERT_FALSE(Prepare(request, &response).ok());
+  // No prepared state saved on failure.
+  EXPECT_EQ(0, NumSavedPreparedExpression());
+
+  request.set_sql("foo + @bar");
+  auto* param = request.mutable_options()->add_query_parameters();
+  param->set_name("bar");
+  param->mutable_type()->set_type_kind(TYPE_INT64);
+
+  ASSERT_FALSE(Prepare(request, &response).ok());
+  EXPECT_EQ(0, NumSavedPreparedExpression());
+
+  auto* column = request.mutable_options()->add_expression_columns();
+  column->set_name("foo");
+  column->mutable_type()->set_type_kind(TYPE_STRING);
+
+  ASSERT_FALSE(Prepare(request, &response).ok());
+  EXPECT_EQ(0, NumSavedPreparedExpression());
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest, EvaluateWithDescriptorPoolList) {
+  EvaluateRequest evaluate_request;
+  evaluate_request.set_sql(R"(DATE "2020-10-20")");
+
+  // Note, it is always recommended to include at least the
+  // builtin descriptor pool, but it shouldn't be necessary for this particular
+  // query.
+  evaluate_request.mutable_descriptor_pool_list();
+
+  EvaluateResponse evaluate_response;
+  ZETASQL_EXPECT_OK(Evaluate(evaluate_request, &evaluate_response));
+  EXPECT_EQ(evaluate_response.prepared()
+                .descriptor_pool_id_list()
+                .registered_ids_size(),
+            0);
+  ExpectOutputTypeIsDate(evaluate_response);
+  ExpectOutputIsDate(evaluate_response, 2020, 10, 20);
+
+  // Evaluate always creates a prepared expression, make sure we delete it.
+  ZETASQL_EXPECT_OK(Unprepare(evaluate_response.prepared().prepared_expression_id()));
+}
+
+// As above, but using prepared request.
+TEST_F(ZetaSqlLocalServiceImplTest,
+       PrepareAndEvaluateWithDescriptorPoolList) {
+  // PREPARE
+  PrepareRequest prepare_request;
+  prepare_request.set_sql(R"(DATE "2020-10-20")");
+
+  // Note, it is always recommended to include at least the
+  // builtin descriptor pool, but it shouldn't be necessary for this particular
+  // query.
+  prepare_request.mutable_descriptor_pool_list();
+
+  PrepareResponse prepare_response;
+  ZETASQL_EXPECT_OK(Prepare(prepare_request, &prepare_response));
+  ExpectOutputTypeIsDate(prepare_response);
+  EXPECT_EQ(prepare_response.prepared()
+                .descriptor_pool_id_list()
+                .registered_ids_size(),
+            0);
+
+  // EVALUATE
+  EvaluateRequest evaluate_request;
+  evaluate_request.mutable_descriptor_pool_list();
+  evaluate_request.set_prepared_expression_id(
+      prepare_response.prepared().prepared_expression_id());
+  EvaluateResponse evaluate_response;
+  ZETASQL_EXPECT_OK(Evaluate(evaluate_request, &evaluate_response));
+
+  ExpectOutputIsDate(evaluate_response, 2020, 10, 20);
+  ZETASQL_EXPECT_OK(Unprepare(prepare_response.prepared().prepared_expression_id()));
+}
+
+// We use query parameters as a proxy for descriptor pool resolution across
+// all the of various types potentially encoded inside AnalyzerOptions
+// The assumption is that if it works for params, it will work for everything
+// else as well (of course, there could be bugs in AnalyzerOptions
+// deserialization, but this isn't the place to test for that).
+TEST_F(ZetaSqlLocalServiceImplTest,
+       EvaluateWithDescriptorPoolListProtoWithParam) {
+  EvaluateRequest evaluate_request;
+  // Note: for now, evaluate without prepare always creates a default simple
+  // catalog with all builtin function included.
+  evaluate_request.set_sql(R"(IF(@p1 is null, null, @p2))");
+
+  // fake empty pool to ensure '0' isn't magic
+  AddEmptyFileDescriptorSet(evaluate_request.mutable_descriptor_pool_list());
+  AddBuiltin(evaluate_request.mutable_descriptor_pool_list());
+  AddKitchenSinkDescriptorPool(evaluate_request.mutable_descriptor_pool_list());
+  // Use the builtin pool
+  *evaluate_request.mutable_options()->add_query_parameters() =
+      MakeInt64QueryParameter("p1", 1);
+  // Use kitchen sink
+  *evaluate_request.mutable_options()->add_query_parameters() =
+      MakeTestEnumQueryParameter("p2", 2);
+
+  *evaluate_request.add_params() = MakeInt64ValueParameter("p1", 5);
+  *evaluate_request.add_params() =
+      MakeTestEnumParameter("p2", zetasql_test::TestEnum::TESTENUM1);
+
+  EvaluateResponse evaluate_response;
+  ZETASQL_EXPECT_OK(Evaluate(evaluate_request, &evaluate_response));
+  EXPECT_EQ(evaluate_response.prepared()
+                .descriptor_pool_id_list()
+                .registered_ids_size(),
+            3);
+  ExpectTypeIsTestEnum(evaluate_response.prepared().output_type(),
+                       /*file_descriptor_set_index=*/2);
+  ExpectValueIsTestEnum(evaluate_response.value(),
+                        zetasql_test::TestEnum::TESTENUM1);
+  // Evaluate always creates a prepared expression, make sure we delete it.
+  ZETASQL_EXPECT_OK(Unprepare(evaluate_response.prepared().prepared_expression_id()));
+}
+
+// As above, but with prepare
+TEST_F(ZetaSqlLocalServiceImplTest,
+       PreparedAndEvaluateWithDescriptorPoolListProtoWithParam) {
+  // PREPARE
+  PrepareRequest prepare_request;
+  prepare_request.set_sql(R"(IF(@p1 is null, null, @p2))");
+
+  // Ensure we have the builtin functions
+  prepare_request.mutable_simple_catalog()->mutable_builtin_function_options();
+
+  // fake empty pool to ensure '0' isn't magic
+  AddEmptyFileDescriptorSet(prepare_request.mutable_descriptor_pool_list());
+  AddBuiltin(prepare_request.mutable_descriptor_pool_list());
+  AddKitchenSinkDescriptorPool(prepare_request.mutable_descriptor_pool_list());
+  // Use the builtin pool
+  *prepare_request.mutable_options()->add_query_parameters() =
+      MakeInt64QueryParameter("p1", 1);
+  // Use kitchen sink
+  *prepare_request.mutable_options()->add_query_parameters() =
+      MakeTestEnumQueryParameter("p2", 2);
+  PrepareResponse prepare_response;
+  ZETASQL_EXPECT_OK(Prepare(prepare_request, &prepare_response));
+  ExpectTypeIsTestEnum(prepare_response.prepared().output_type(), 2);
+  EXPECT_EQ(prepare_response.prepared()
+                .descriptor_pool_id_list()
+                .registered_ids_size(),
+            3);
+
+  // EVALUATE
+  EvaluateRequest evaluate_request;
+  evaluate_request.set_prepared_expression_id(
+      prepare_response.prepared().prepared_expression_id());
+
+  *evaluate_request.add_params() = MakeInt64ValueParameter("p1", 5);
+  *evaluate_request.add_params() =
+      MakeTestEnumParameter("p2", zetasql_test::TestEnum::TESTENUM1);
+
+  EvaluateResponse evaluate_response;
+  ZETASQL_EXPECT_OK(Evaluate(evaluate_request, &evaluate_response));
+  // On an already prepared expression, we should not return the registered
+  // ids.
+  EXPECT_EQ(evaluate_response.prepared()
+                .descriptor_pool_id_list()
+                .registered_ids_size(),
+            0);
+  ExpectValueIsTestEnum(evaluate_response.value(),
+                        zetasql_test::TestEnum::TESTENUM1);
+
+  // Evaluate always creates a prepared expression, make sure we delete it.
+  ZETASQL_EXPECT_OK(Unprepare(evaluate_response.prepared().prepared_expression_id()));
+}
+
+// As above, but with prepare and a registered catalog
+TEST_F(ZetaSqlLocalServiceImplTest,
+       RegisterPreparedAndEvaluateWithDescriptorPoolListProtoWithParam) {
+  // REGISTER
+  RegisterCatalogRequest catalog_request;
+  // Ensure we have the builtin functions
+  catalog_request.mutable_simple_catalog()->mutable_builtin_function_options();
+
+  // We register the pools with the catalog, even though it doesn't use them
+  // it should 'owned' these pools, and let us reference them in the future.
+  // fake empty pool to ensure '0' isn't magic
+  AddEmptyFileDescriptorSet(catalog_request.mutable_descriptor_pool_list());
+  AddBuiltin(catalog_request.mutable_descriptor_pool_list());
+  AddKitchenSinkDescriptorPool(catalog_request.mutable_descriptor_pool_list());
+
+  RegisterResponse catalog_response;
+  ZETASQL_ASSERT_OK(RegisterCatalog(catalog_request, &catalog_response));
+  const int64_t catalog_id = catalog_response.registered_id();
+
+  const int64_t empty_descriptor_pool_id =
+      catalog_response.descriptor_pool_id_list().registered_ids(0);
+  const int64_t kitchen_sink_pool_id =
+      catalog_response.descriptor_pool_id_list().registered_ids(2);
+
+  // PREPARE
+  PrepareRequest prepare_request;
+  prepare_request.set_registered_catalog_id(catalog_id);
+  prepare_request.set_sql(R"(IF(@p1 is null, null, @p2))");
+
+  AddRegisteredDescriptorPool(prepare_request.mutable_descriptor_pool_list(),
+                              empty_descriptor_pool_id);
+  AddBuiltin(prepare_request.mutable_descriptor_pool_list());
+  AddRegisteredDescriptorPool(prepare_request.mutable_descriptor_pool_list(),
+                              kitchen_sink_pool_id);
+
+  // Use the builtin pool
+  *prepare_request.mutable_options()->add_query_parameters() =
+      MakeInt64QueryParameter("p1", 1);
+  // Use kitchen sink
+  *prepare_request.mutable_options()->add_query_parameters() =
+      MakeTestEnumQueryParameter("p2", 2);
+  PrepareResponse prepare_response;
+  ZETASQL_EXPECT_OK(Prepare(prepare_request, &prepare_response));
+  ExpectTypeIsTestEnum(prepare_response.prepared().output_type(), 2);
+  EXPECT_THAT(
+      catalog_response.descriptor_pool_id_list(),
+      EqualsProto(prepare_response.prepared().descriptor_pool_id_list()));
+
+  // EVALUATE
+  EvaluateRequest evaluate_request;
+  evaluate_request.set_prepared_expression_id(
+      prepare_response.prepared().prepared_expression_id());
+
+  *evaluate_request.add_params() = MakeInt64ValueParameter("p1", 5);
+  *evaluate_request.add_params() =
+      MakeTestEnumParameter("p2", zetasql_test::TestEnum::TESTENUM1);
+
+  EvaluateResponse evaluate_response;
+  ZETASQL_EXPECT_OK(Evaluate(evaluate_request, &evaluate_response));
+  EXPECT_EQ(evaluate_response.prepared()
+                .descriptor_pool_id_list()
+                .registered_ids_size(),
+            0);
+  ExpectValueIsTestEnum(evaluate_response.value(),
+                        zetasql_test::TestEnum::TESTENUM1);
+
+  ZETASQL_EXPECT_OK(Unprepare(evaluate_response.prepared().prepared_expression_id()));
+  ZETASQL_EXPECT_OK(UnregisterCatalog(catalog_response.registered_id()));
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest,
+       RegisterPreparedAndEvaluateWithDescriptorPoolListProtoWithParamComplex) {
+  int64_t catalog_id;
+  int64_t kitchen_sink3_pool_id;
+  {
+    RegisterCatalogRequest catalog_request;
+    // Ensure we have the builtin functions
+    catalog_request.mutable_simple_catalog()
+        ->mutable_builtin_function_options();
+    AddKitchenSink3DescriptorPool(
+        catalog_request.mutable_descriptor_pool_list());
+    catalog_request.mutable_simple_catalog()->set_file_descriptor_set_index(0);
+    RegisterResponse catalog_response;
+    ZETASQL_ASSERT_OK(RegisterCatalog(catalog_request, &catalog_response));
+    catalog_id = catalog_response.registered_id();
+    EXPECT_THAT(
+        catalog_response.descriptor_pool_id_list().registered_ids_size(), 1);
+    kitchen_sink3_pool_id =
+        catalog_response.descriptor_pool_id_list().registered_ids(0);
+  }
+
+  PrepareRequest prepare_request;
+  prepare_request.set_registered_catalog_id(catalog_id);
+  prepare_request.set_sql(R"(new zetasql_test.Proto3KitchenSink(
+      @p1.value as int64_val,
+      if (cast(@p2 as INT32) = 1,
+          cast('ENUM1' as zetasql_test.TestProto3Enum),
+          cast('ENUM2' as zetasql_test.TestProto3Enum)) as test_enum))");
+
+  // Used for p1
+  AddBuiltin(prepare_request.mutable_descriptor_pool_list());
+  // Used for p2
+  AddKitchenSinkDescriptorPool(prepare_request.mutable_descriptor_pool_list());
+  // Used in the output value.
+  AddRegisteredDescriptorPool(prepare_request.mutable_descriptor_pool_list(),
+                              kitchen_sink3_pool_id);
+
+  // Use the builtin pool
+  *prepare_request.mutable_options()->add_query_parameters() =
+      MakeInt64QueryParameter("p1", 0);
+  // Use kitchen sink
+  *prepare_request.mutable_options()->add_query_parameters() =
+      MakeTestEnumQueryParameter("p2", 1);
+  PrepareResponse prepare_response;
+  ZETASQL_EXPECT_OK(Prepare(prepare_request, &prepare_response));
+  ExpectTypeIsKitchenSink3(prepare_response.prepared().output_type(), 2);
+  EXPECT_EQ(prepare_response.prepared()
+                .descriptor_pool_id_list()
+                .registered_ids_size(),
+            3);
+  EXPECT_EQ(
+      prepare_response.prepared().descriptor_pool_id_list().registered_ids(2),
+      kitchen_sink3_pool_id);
+
+  // EVALUATE
+  EvaluateRequest base_evaluate_request;
+  base_evaluate_request.set_prepared_expression_id(
+      prepare_response.prepared().prepared_expression_id());
+
+  {
+    EvaluateRequest evaluate_request = base_evaluate_request;
+    *evaluate_request.add_params() = MakeInt64ValueParameter("p1", 5);
+    *evaluate_request.add_params() =
+        MakeTestEnumParameter("p2", zetasql_test::TestEnum::TESTENUM1);
+    EvaluateResponse evaluate_response;
+    ZETASQL_EXPECT_OK(Evaluate(evaluate_request, &evaluate_response));
+    EXPECT_EQ(evaluate_response.prepared()
+                  .descriptor_pool_id_list()
+                  .registered_ids_size(),
+              0);
+    zetasql_test::Proto3KitchenSink expected_output_1;
+    expected_output_1.set_int64_val(5);
+    expected_output_1.set_test_enum(zetasql_test::TestProto3Enum::ENUM1);
+    ExpectValueIsKitchenSink3(evaluate_response.value(), expected_output_1);
+  }
+  {
+    EvaluateRequest evaluate_request = base_evaluate_request;
+    *evaluate_request.add_params() = MakeInt64ValueParameter("p1", 7);
+    *evaluate_request.add_params() = MakeTestEnumParameter(
+        "p2", zetasql_test::TestEnum::TESTENUM2147483647);
+    EvaluateResponse evaluate_response;
+    ZETASQL_EXPECT_OK(Evaluate(evaluate_request, &evaluate_response));
+    EXPECT_EQ(evaluate_response.prepared()
+                  .descriptor_pool_id_list()
+                  .registered_ids_size(),
+              0);
+    zetasql_test::Proto3KitchenSink expected_output_1;
+    expected_output_1.set_int64_val(7);
+    expected_output_1.set_test_enum(zetasql_test::TestProto3Enum::ENUM2);
+    ExpectValueIsKitchenSink3(evaluate_response.value(), expected_output_1);
+  }
+
+  ZETASQL_EXPECT_OK(Unprepare(prepare_response.prepared().prepared_expression_id()));
+  ZETASQL_EXPECT_OK(UnregisterCatalog(catalog_id));
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest, PrepareRegistersCatalog) {
+  PrepareRequest prepare_request;
+  prepare_request.set_sql("1");
+  prepare_request.mutable_simple_catalog();
+  AddBuiltin(prepare_request.mutable_descriptor_pool_list());
+
+  PrepareResponse prepare_response;
+  ZETASQL_ASSERT_OK(Prepare(prepare_request, &prepare_response));
+  /*
+  ASSERT_EQ(NumRegisteredDescriptorPools(), 1);
+  ASSERT_EQ(NumRegisteredCatalogs(), 1);
+  ASSERT_EQ(NumSavedPreparedExpression(), 1);
+  */
+  ZETASQL_ASSERT_OK(Unprepare(prepare_response.prepared().prepared_expression_id()));
+}
+
+TEST_F(ZetaSqlLocalServiceImplTest,
+       UnprepareAlsoUnregistersOwnedCatalogsAndDescriptorPools) {
+  int64_t catalog1_id;
+  int64_t kitchen_sink_pool_id;
+  int64_t builtin_pool_id;
+
+  // REGISTER CATALOG 1
+  {
+    RegisterCatalogRequest request1;
+    request1.mutable_simple_catalog();
+    AddKitchenSinkDescriptorPool(request1.mutable_descriptor_pool_list());
+    AddBuiltin(request1.mutable_descriptor_pool_list());
+
+    RegisterResponse response1;
+    ZETASQL_ASSERT_OK(RegisterCatalog(request1, &response1));
+    catalog1_id = response1.registered_id();
+    EXPECT_THAT(response1.descriptor_pool_id_list().registered_ids_size(), 2);
+    kitchen_sink_pool_id =
+        response1.descriptor_pool_id_list().registered_ids(0);
+    builtin_pool_id = response1.descriptor_pool_id_list().registered_ids(1);
+  }
+  int64_t kitchen_sink3_pool_id;
+  int64_t prepared_expression_id;
+  {
+    PrepareRequest prepare_request;
+    prepare_request.set_sql("1");
+    prepare_request.set_registered_catalog_id(catalog1_id);
+    // We don't actually reference the kitchen_sink_pool_id;
+    AddRegisteredDescriptorPool(prepare_request.mutable_descriptor_pool_list(),
+                                builtin_pool_id);
+    AddKitchenSink3DescriptorPool(
+        prepare_request.mutable_descriptor_pool_list());
+
+    PrepareResponse prepare_response;
+    ZETASQL_ASSERT_OK(Prepare(prepare_request, &prepare_response));
+    prepared_expression_id =
+        prepare_response.prepared().prepared_expression_id();
+    kitchen_sink3_pool_id =
+        prepare_response.prepared().descriptor_pool_id_list().registered_ids(1);
+  }
+  // Use an AnalyzeRequest to 'probe' kitchen_sink_pool_id.
+  AnalyzeRequest analyze_request;
+  AddRegisteredDescriptorPool(analyze_request.mutable_descriptor_pool_list(),
+                              kitchen_sink_pool_id);
+  AddRegisteredDescriptorPool(analyze_request.mutable_descriptor_pool_list(),
+                              builtin_pool_id);
+  analyze_request.mutable_simple_catalog()->set_file_descriptor_set_index(0);
+  analyze_request.set_sql_statement(
+      R"(select new zetasql_test.KitchenSinkPB(1 as int64_key_1, 2 as int64_key_2))");
+
+  {
+    AnalyzeResponse analyze_response;
+    ZETASQL_ASSERT_OK(Analyze(analyze_request, &analyze_response));
+  }
+
+  AnalyzeRequest analyze_kitchen_sink3_request;
+  AddRegisteredDescriptorPool(
+      analyze_kitchen_sink3_request.mutable_descriptor_pool_list(),
+      kitchen_sink3_pool_id);
+  AddRegisteredDescriptorPool(
+      analyze_kitchen_sink3_request.mutable_descriptor_pool_list(),
+      builtin_pool_id);
+  analyze_kitchen_sink3_request.mutable_simple_catalog()
+      ->set_file_descriptor_set_index(0);
+  analyze_kitchen_sink3_request.set_sql_statement(
+      R"(select new zetasql_test.Proto3KitchenSink(1 as int32_val))");
+
+  {
+    AnalyzeResponse analyze_response;
+    ZETASQL_ASSERT_OK(Analyze(analyze_kitchen_sink3_request, &analyze_response));
+  }
+  // Unprepare, this should drop kitchen_sink3_pool
+  // but kitchen_sink_pool should be okay.
+  ZETASQL_ASSERT_OK(Unprepare(prepared_expression_id));
+
+  {
+    // Test that the kitchen_sink_pool is okay.
+    AnalyzeResponse analyze_response;
+    ZETASQL_ASSERT_OK(Analyze(analyze_request, &analyze_response));
+  }
+
+  {
+    // Test that the kitchen_sink3_pool now fails because the pool is gone..
+    AnalyzeResponse analyze_response;
+    // Same request again, not it is an error because the descriptor pool is
+    // gone.
+    EXPECT_THAT(Analyze(analyze_kitchen_sink3_request, &analyze_response),
+                StatusIs(absl::StatusCode::kInvalidArgument));
+  }
+  ZETASQL_ASSERT_OK(UnregisterCatalog(catalog1_id));
+}
+
 TEST_F(ZetaSqlLocalServiceImplTest, AnalyzeExpression) {
   SimpleCatalogProto catalog;
 
@@ -807,13 +1590,17 @@ TEST_F(ZetaSqlLocalServiceImplTest, AnalyzeExpression) {
   ZETASQL_CHECK(google::protobuf::TextFormat::ParseFromString(
       R"pb(resolved_expression {
              resolved_literal_node {
-               parent { type { type_kind: TYPE_INT64 } }
+               parent {
+                 type { type_kind: TYPE_INT64 }
+                 type_annotation_map {}
+               }
                value {
                  type { type_kind: TYPE_INT64 }
                  value { int64_value: 123 }
                }
                has_explicit_type: false
                float_literal_id: 0
+               preserve_in_literal_remover: false
              }
            })pb",
       &expectedResponse));
@@ -835,7 +1622,10 @@ TEST_F(ZetaSqlLocalServiceImplTest, AnalyzeExpression) {
              resolved_function_call_base_node {
                resolved_function_call_node {
                  parent {
-                   parent { type { type_kind: TYPE_BOOL } }
+                   parent {
+                     type { type_kind: TYPE_BOOL }
+                     type_annotation_map {}
+                   }
                    function { name: "ZetaSQL:$less" }
                    signature {
                      argument {
@@ -870,19 +1660,26 @@ TEST_F(ZetaSqlLocalServiceImplTest, AnalyzeExpression) {
                    }
                    argument_list {
                      resolved_expression_column_node {
-                       parent { type { type_kind: TYPE_INT32 } }
+                       parent {
+                         type { type_kind: TYPE_INT32 }
+                         type_annotation_map {}
+                       }
                        name: "foo"
                      }
                    }
                    argument_list {
                      resolved_literal_node {
-                       parent { type { type_kind: TYPE_INT32 } }
+                       parent {
+                         type { type_kind: TYPE_INT32 }
+                         type_annotation_map {}
+                       }
                        value {
                          type { type_kind: TYPE_INT32 }
                          value { int32_value: 123 }
                        }
                        has_explicit_type: false
                        float_literal_id: 0
+                       preserve_in_literal_remover: false
                      }
                    }
                    error_mode: DEFAULT_ERROR_MODE
@@ -1198,6 +1995,8 @@ TEST_F(ZetaSqlLocalServiceImplTest, GetBuiltinFunctions) {
         uses_upper_case_sql_name: true
       })",
                                       &function2);
+  function1.mutable_options()->set_supports_clamped_between_modifier(false);
+  function2.mutable_options()->set_supports_clamped_between_modifier(false);
 
   ASSERT_TRUE(GetBuiltinFunctions(proto, &response).ok());
   EXPECT_EQ(2, response.function_size());

@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <type_traits>
@@ -31,6 +32,7 @@
 #include "zetasql/base/logging.h"
 #include "zetasql/common/errors.h"
 #include "zetasql/common/multiprecision_int.h"
+#include "zetasql/public/numeric_parser.h"
 #include "absl/base/optimization.h"
 #include "absl/hash/hash.h"
 #include "absl/status/status.h"
@@ -71,8 +73,8 @@ constexpr FixedUint<64, 1> NumericScalingFactorSquared() {
 
 constexpr FixedUint<64, 4> BigNumericScalingFactorSquared() {
   return FixedUint<64, 4>(std::array<uint64_t, 4>{0ULL, 0x7775a5f171951000ULL,
-                                                0x0764b4abe8652979ULL,
-                                                0x161bcca7119915b5ULL});
+                                                  0x0764b4abe8652979ULL,
+                                                  0x161bcca7119915b5ULL});
 }
 
 template <int n>
@@ -110,7 +112,7 @@ inline void SerializeFixedInt(std::string* dest, const FixedInt<64, n1>& num1,
   size_t old_size = dest->size();
   dest->push_back('\0');  // add a place holder for size
   num1.SerializeToBytes(dest);
-  DCHECK_LE(dest->size() - old_size, 128);
+  ZETASQL_DCHECK_LE(dest->size() - old_size, 128);
   (*dest)[old_size] = static_cast<char>(dest->size() - old_size - 1);
   SerializeFixedInt(dest, num...);
 }
@@ -206,148 +208,6 @@ constexpr std::array<Word, size> PowersDesc(T... v) {
   }
 }
 
-struct ENotationParts {
-  bool negative = false;
-  absl::string_view int_part;
-  absl::string_view fract_part;
-  absl::string_view exp_part;
-};
-
-#define RETURN_FALSE_IF(x) \
-  if (ABSL_PREDICT_FALSE(x)) return false
-
-bool SplitENotationParts(absl::string_view str, ENotationParts* parts) {
-  const char* start = str.data();
-  const char* end = str.data() + str.size();
-
-  // Skip whitespace.
-  for (; start < end && (absl::ascii_isspace(*start)); ++start) {
-  }
-  for (; start < end && absl::ascii_isspace(*(end - 1)); --end) {
-  }
-
-  // Empty or only spaces
-  RETURN_FALSE_IF(start == end);
-  *parts = ENotationParts();
-
-  parts->negative = (*start == '-');
-  start += (*start == '-' || *start == '+');
-  for (const char* c = end; --c >= start;) {
-    if (*c == 'e' || *c == 'E') {
-      parts->exp_part = absl::string_view(c + 1, end - c - 1);
-      RETURN_FALSE_IF(parts->exp_part.empty());
-      end = c;
-      break;
-    }
-  }
-  for (const char* c = start; c < end; ++c) {
-    if (*c == '.') {
-      parts->fract_part = absl::string_view(c + 1, end - c - 1);
-      end = c;
-      break;
-    }
-  }
-  parts->int_part = absl::string_view(start, end - start);
-  return true;
-}
-
-// Parses <exp_part> and add <extra_scale> to the result.
-// If <exp_part> represents an integer that is below int64min, the result is
-// int64min.
-bool ParseExponent(absl::string_view exp_part, uint extra_scale, int64_t* exp) {
-  *exp = extra_scale;
-  if (!exp_part.empty()) {
-    FixedInt<64, 1> exp_fixed_int;
-    if (ABSL_PREDICT_TRUE(exp_fixed_int.ParseFromStringStrict(exp_part))) {
-      RETURN_FALSE_IF(exp_fixed_int.AddOverflow(*exp));
-      *exp = exp_fixed_int.number()[0];
-    } else if (exp_part.size() > 1 && exp_part[0] == '-') {
-      // Still need to check whether exp_part contains only digits after '-'.
-      exp_part.remove_prefix(1);
-      for (char c : exp_part) {
-        RETURN_FALSE_IF(!std::isdigit(c));
-      }
-      *exp = std::numeric_limits<int64_t>::min();
-    } else {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Parses <int_part>.<fract_part>E<exp> to FixedUint.
-// If <strict> is true, treats the input as invalid if it does not represent
-// a whole number. If <strict> is false, rounds the input away from zero to a
-// whole number. Returns true iff the input is valid.
-template <int n>
-bool ParseNumber(absl::string_view int_part, absl::string_view fract_part,
-                 int64_t exp, bool strict, FixedUint<64, n>* output) {
-  *output = FixedUint<64, n>();
-  bool round_up = false;
-  if (exp >= 0) {
-    // Promote up to exp fractional digits to the integer part.
-    size_t num_promoted_fract_digits = fract_part.size();
-    if (exp < fract_part.size()) {
-      round_up = fract_part[exp] >= '5';
-      num_promoted_fract_digits = exp;
-    }
-    absl::string_view promoted_fract_part(fract_part.data(),
-                                          num_promoted_fract_digits);
-    fract_part.remove_prefix(num_promoted_fract_digits);
-    if (int_part.empty()) {
-      RETURN_FALSE_IF(!output->ParseFromStringStrict(promoted_fract_part));
-    } else {
-      RETURN_FALSE_IF(
-          !output->ParseFromStringSegments(int_part, {promoted_fract_part}));
-      int_part = absl::string_view();
-    }
-
-    // If exp is greater than the number of promoted fractional digits,
-    // scale the result up by pow(10, exp - num_promoted_fract_digits).
-    size_t extra_exp = static_cast<size_t>(exp) - num_promoted_fract_digits;
-    for (; extra_exp >= 19; extra_exp -= 19) {
-      RETURN_FALSE_IF(output->MultiplyOverflow(internal::k1e19));
-    }
-    if (extra_exp != 0) {
-      static constexpr std::array<uint64_t, 19> kPowers =
-          PowersAsc<uint64_t, 1, 10, 19>();
-      RETURN_FALSE_IF(output->MultiplyOverflow(kPowers[extra_exp]));
-    }
-  } else {  // exp < 0
-    RETURN_FALSE_IF(int_part.size() + fract_part.size() == 0);
-    // Demote up to -exp digits from int_part
-    if (exp >= static_cast<int64_t>(-int_part.size())) {
-      size_t int_digits = int_part.size() + exp;
-      round_up = int_part[int_digits] >= '5';
-      RETURN_FALSE_IF(int_digits != 0 &&
-                      !output->ParseFromStringStrict(
-                          absl::string_view(int_part.data(), int_digits)));
-      int_part.remove_prefix(int_digits);
-    }
-  }
-  // The remaining characters in int_part and fract_part have not been visited.
-  // They represent the fractional digits to be discarded. In strict mode, they
-  // must be zeros; otherwise they must be digits.
-  if (strict) {
-    for (char c : int_part) {
-      RETURN_FALSE_IF(c != '0');
-    }
-    for (char c : fract_part) {
-      RETURN_FALSE_IF(c != '0');
-    }
-  } else {
-    for (char c : int_part) {
-      RETURN_FALSE_IF(!std::isdigit(c));
-    }
-    for (char c : fract_part) {
-      RETURN_FALSE_IF(!std::isdigit(c));
-    }
-  }
-  RETURN_FALSE_IF(round_up && output->AddOverflow(uint64_t{1}));
-  return true;
-}
-#undef RETURN_FALSE_IF
-
 // Computes static_cast<double>(value / kScalingFactor) with minimal precision
 // loss.
 double RemoveScaleAndConvertToDouble(__int128 value) {
@@ -415,9 +275,9 @@ FixedUint<64, 4> UnsignedCeiling(FixedUint<64, 4> value) {
 
 template <int n>
 void ShiftRightAndRound(uint num_bits, FixedUint<64, n>* value) {
-  DCHECK_GT(num_bits, 0);
+  ZETASQL_DCHECK_GT(num_bits, 0);
   constexpr uint kNumBits = n * 64;
-  DCHECK_LT(num_bits, kNumBits);
+  ZETASQL_DCHECK_LT(num_bits, kNumBits);
   uint bit_idx = num_bits - 1;
   uint64_t round_up = (value->number()[bit_idx / 64] >> (bit_idx % 64)) & 1;
   *value >>= num_bits;
@@ -443,8 +303,8 @@ class UnsignedBinaryFraction {
   }
   // Constructs an instance representing value * 2 ^ scale_bits.
   UnsignedBinaryFraction(uint64_t value, int scale_bits) : value_(value) {
-    DCHECK_GE(scale_bits, -kFractionalBits);
-    DCHECK_LE(kFractionalBits + scale_bits + 64, kNumWords * 64);
+    ZETASQL_DCHECK_GE(scale_bits, -kFractionalBits);
+    ZETASQL_DCHECK_LE(kFractionalBits + scale_bits + 64, kNumWords * 64);
     value_ <<= (kFractionalBits + scale_bits);
   }
   static UnsignedBinaryFraction FromScaledValue(
@@ -724,7 +584,7 @@ FixedUint<64, 6> MultiplyByScaledLn2(uint64_t x, uint scale_bits) {
   static constexpr FixedUint<64, 5> kScaledLn2(std::array<uint64_t, 5>{
       0xe7b876206debac98, 0x8a0d175b8baafa2b, 0x40f343267298b62d,
       0xc9e3b39803f2f6af, 0xb17217f7d1cf79ab});
-  DCHECK_LE(scale_bits, 320);
+  ZETASQL_DCHECK_LE(scale_bits, 320);
   FixedUint<64, 6> result = ExtendAndMultiply(kScaledLn2, FixedUint<64, 1>(x));
   ShiftRightAndRound(320 - scale_bits, &result);
   return result;
@@ -1006,11 +866,11 @@ zetasql_base::StatusOr<T> PowerInternal(const T& base, const T& exp) {
 
 zetasql_base::StatusOr<NumericValue> NumericValue::FromStringStrict(
     absl::string_view str) {
-  return FromStringInternal(str, /*is_strict=*/true);
+  return FromStringInternal</*is_strict=*/true>(str);
 }
 
 zetasql_base::StatusOr<NumericValue> NumericValue::FromString(absl::string_view str) {
-  return FromStringInternal(str, /*is_strict=*/false);
+  return FromStringInternal</*is_strict=*/false>(str);
 }
 
 size_t NumericValue::HashCode() const {
@@ -1036,17 +896,14 @@ void NumericValue::AppendToString(std::string* output) const {
 // return an error if there are more that 9 digits in the fractional part,
 // otherwise the number will be rounded to contain no more than 9 fractional
 // digits.
+template <bool is_strict>
 zetasql_base::StatusOr<NumericValue> NumericValue::FromStringInternal(
-    absl::string_view str, bool is_strict) {
-  ENotationParts parts;
-  int64_t exp;
-  FixedUint<64, 2> abs;
-  if (ABSL_PREDICT_TRUE(SplitENotationParts(str, &parts)) &&
-      ABSL_PREDICT_TRUE(
-          ParseExponent(parts.exp_part, kMaxFractionalDigits, &exp)) &&
-      ABSL_PREDICT_TRUE(ParseNumber(parts.int_part, parts.fract_part, exp,
-                                    is_strict, &abs))) {
-    auto number_or_status = FromFixedUint(abs, parts.negative);
+    absl::string_view str) {
+  constexpr uint8_t word_count = 2;
+  FixedPointRepresentation<word_count> parsed;
+  absl::Status parse_status = ParseNumeric<is_strict>(str, parsed);
+  if (ABSL_PREDICT_TRUE(parse_status.ok())) {
+    auto number_or_status = FromFixedUint(parsed.output, parsed.is_negative);
     if (number_or_status.ok()) {
       return number_or_status;
     }
@@ -1075,7 +932,7 @@ bool ScaleAndRoundAwayFromZero(S scale, double value, T* result) {
   }
   constexpr int kNumOutputBits = sizeof(T) * 8;
   zetasql_base::MathUtil::DoubleParts parts = zetasql_base::MathUtil::Decompose(value);
-  DCHECK_NE(parts.mantissa, 0) << value;
+  ZETASQL_DCHECK_NE(parts.mantissa, 0) << value;
   if (parts.exponent <= -kNumOutputBits) {
     *result = T();
     return true;
@@ -1113,7 +970,7 @@ bool ScaleAndRoundAwayFromZero(S scale, double value, T* result) {
   // where parts.exponent != 0. Therefore, we do not need to check overflow in
   // negation.
   T rv(abs_result);
-  DCHECK(rv >= T()) << value;
+  ZETASQL_DCHECK(rv >= T()) << value;
   *result = negative ? -rv : rv;
   return true;
 }
@@ -1246,7 +1103,9 @@ zetasql_base::StatusOr<NumericValue> NumericValue::Log(NumericValue base) const 
   if (as_packed_int() <= 0 || base.as_packed_int() <= 0 ||
       base == NumericValue(1)) {
     return MakeEvalError() << "LOG is undefined for zero or negative value, or "
-                              "when base equals 1: LOG("
+                              "when base equals 1: "
+
+                              "LOG("
                            << ToString() << ", " << base.ToString() << ")";
   }
   UnsignedBinaryFraction<3, 94> abs_value =
@@ -1265,12 +1124,14 @@ zetasql_base::StatusOr<NumericValue> NumericValue::Log(NumericValue base) const 
     return result;
   }
   // A theoretical max is
-  // LOG(99999999999999999999999999999.999999999, 1.000000001) ~=
+  // ZETASQL_LOG(99999999999999999999999999999.999999999, 1.000000001) ~=
   // 66774967730.214808679 and theoretical min is
-  // LOG(99999999999999999999999999999.999999999, 0.999999999) ~=
+  // ZETASQL_LOG(99999999999999999999999999999.999999999, 0.999999999) ~=
   // -66774967663.439840983
   return zetasql_base::InternalErrorBuilder()
-         << "LOG(NumericValue, NumericValue) should never overflow: LOG("
+         << "LOG(NumericValue, NumericValue) should never overflow: "
+
+            "LOG("
          << ToString() << ", " << base.ToString() << ")";
 }
 
@@ -1508,7 +1369,7 @@ void AppendExponent(int exponent, char e, std::string* output) {
     exponent_sign = '-';
     exponent = -exponent;
   }
-  DCHECK_LE(exponent, 99);
+  ZETASQL_DCHECK_LE(exponent, 99);
   char* p = &(*output)[size];
   p[0] = e;
   p[1] = exponent_sign;
@@ -1850,8 +1711,8 @@ zetasql_base::StatusOr<FixedInt<64, 4>> FixedIntFromScaledValue(
                                             scale);
     }
     int scale_up_digits = max_fractional_digits - scale;
-    DCHECK_GE(scale_up_digits, 0);
-    DCHECK_LT(scale_up_digits, max_fractional_digits + max_integer_digits);
+    ZETASQL_DCHECK_GE(scale_up_digits, 0);
+    ZETASQL_DCHECK_LT(scale_up_digits, max_fractional_digits + max_integer_digits);
     if (scale_up_digits > 0 &&
         value.MultiplyOverflow(FixedInt<64, 4>::PowerOf10(scale_up_digits))) {
       return FromScaledValueOutOfRangeError(type_name, original_input_len,
@@ -1865,7 +1726,7 @@ zetasql_base::StatusOr<FixedInt<64, 4>> FixedIntFromScaledValue(
       (little_endian_value.size() + sizeof(uint32_t) - 1) / sizeof(uint32_t));
   VarIntRef<32> var_int_ref(dividend);
   bool success = var_int_ref.DeserializeFromBytes(little_endian_value);
-  DCHECK(success);
+  ZETASQL_DCHECK(success);
   if (is_negative) {
     var_int_ref.Negate();
     if (dividend.back() == 0) {
@@ -1887,8 +1748,8 @@ zetasql_base::StatusOr<FixedInt<64, 4>> FixedIntFromScaledValue(
     remainder = 0;
     VarUintRef<32> var_int_ref(dividend);
     if (scale_down_digits >= 9) {
-      remainder =
-          var_int_ref.DivMod(std::integral_constant<uint32_t, internal::k1e9>());
+      remainder = var_int_ref.DivMod(
+          std::integral_constant<uint32_t, internal::k1e9>());
     } else {
       divisor = FixedUint<32, 1>::PowerOf10(scale_down_digits).number()[0];
       remainder = var_int_ref.DivMod(divisor);
@@ -2083,7 +1944,8 @@ NumericValue::CovarianceAggregator::GetPopulationCovariance(
 }
 
 absl::optional<double>
-NumericValue::CovarianceAggregator::GetSamplingCovariance(uint64_t count) const {
+NumericValue::CovarianceAggregator::GetSamplingCovariance(
+    uint64_t count) const {
   if (count > 1) {
     return GetCovariance(sum_x_, sum_y_, sum_product_,
                          NumericScalingFactorSquared(), count, 1);
@@ -2132,8 +1994,8 @@ void NumericValue::CorrelationAggregator::Subtract(NumericValue x,
   sum_square_y_ -= FixedInt<64, 5>(ExtendAndMultiply(y_num, y_num));
 }
 
-absl::optional<double>
-NumericValue::CorrelationAggregator::GetCorrelation(uint64_t count) const {
+absl::optional<double> NumericValue::CorrelationAggregator::GetCorrelation(
+    uint64_t count) const {
   if (count > 1) {
     FixedInt<64, 6> numerator = GetScaledCovarianceNumerator(
         cov_agg_.sum_x_, cov_agg_.sum_y_, cov_agg_.sum_product_, count);
@@ -2326,14 +2188,14 @@ double BigNumericValue::RemoveScaleAndConvertToDouble(
       binary_scaling_factor = static_cast<double>(__int128{1} << 38);
   }
   uint32_t remainder_bits;
-  abs_value.DivMod(std::integral_constant<uint32_t, kPowersOf5[13]>(), &abs_value,
-                   &remainder_bits);
+  abs_value.DivMod(std::integral_constant<uint32_t, kPowersOf5[13]>(),
+                   &abs_value, &remainder_bits);
   uint32_t remainder;
-  abs_value.DivMod(std::integral_constant<uint32_t, kPowersOf5[13]>(), &abs_value,
-                   &remainder);
+  abs_value.DivMod(std::integral_constant<uint32_t, kPowersOf5[13]>(),
+                   &abs_value, &remainder);
   remainder_bits |= remainder;
-  abs_value.DivMod(std::integral_constant<uint32_t, kPowersOf5[12]>(), &abs_value,
-                   &remainder);
+  abs_value.DivMod(std::integral_constant<uint32_t, kPowersOf5[12]>(),
+                   &abs_value, &remainder);
   remainder_bits |= remainder;
   std::array<uint64_t, 4> n = abs_value.number();
   n[0] |= (remainder_bits != 0);
@@ -2460,7 +2322,9 @@ zetasql_base::StatusOr<BigNumericValue> BigNumericValue::Log(
   if (value_.is_negative() || value_.is_zero() || base.value_.is_negative() ||
       base.value_.is_zero() || base == BigNumericValue(1)) {
     return MakeEvalError() << "LOG is undefined for zero or negative value, or "
-                              "when base equals 1: LOG("
+                              "when base equals 1: "
+
+                              "LOG("
                            << ToString() << ", " << base.ToString() << ")";
   }
   UnsignedBinaryFraction<6, 254> abs_value =
@@ -2478,8 +2342,10 @@ zetasql_base::StatusOr<BigNumericValue> BigNumericValue::Log(
       ABSL_PREDICT_TRUE(log.To(&result))) {
     return result;
   }
-  return MakeEvalError() << "BIGNUMERIC overflow: LOG(" << ToString() << ", "
-                         << base.ToString() << ")";
+  return MakeEvalError() << "BIGNUMERIC overflow: "
+
+                            "LOG("
+                         << ToString() << ", " << base.ToString() << ")";
 }
 
 zetasql_base::StatusOr<BigNumericValue> BigNumericValue::Sqrt() const {
@@ -2512,18 +2378,16 @@ zetasql_base::StatusOr<BigNumericValue> BigNumericValue::Sqrt() const {
 // return an error if there are more that 38 digits in the fractional part,
 // otherwise the number will be rounded to contain no more than 38 fractional
 // digits.
+template <bool is_strict>
 zetasql_base::StatusOr<BigNumericValue> BigNumericValue::FromStringInternal(
-    absl::string_view str, bool is_strict) {
-  ENotationParts parts;
-  int64_t exp;
-  FixedUint<64, 4> abs;
+    absl::string_view str) {
+  constexpr uint8_t word_count = 4;
   BigNumericValue result;
-  if (ABSL_PREDICT_TRUE(SplitENotationParts(str, &parts)) &&
+  FixedPointRepresentation<word_count> parsed;
+  absl::Status parse_status = ParseBigNumeric<is_strict>(str, parsed);
+  if (ABSL_PREDICT_TRUE(parse_status.ok()) &&
       ABSL_PREDICT_TRUE(
-          ParseExponent(parts.exp_part, kMaxFractionalDigits, &exp)) &&
-      ABSL_PREDICT_TRUE(ParseNumber(parts.int_part, parts.fract_part, exp,
-                                    is_strict, &abs)) &&
-      ABSL_PREDICT_TRUE(result.value_.SetSignAndAbs(parts.negative, abs))) {
+          result.value_.SetSignAndAbs(parsed.is_negative, parsed.output))) {
     return result;
   }
   return MakeInvalidBigNumericError(str);
@@ -2531,12 +2395,12 @@ zetasql_base::StatusOr<BigNumericValue> BigNumericValue::FromStringInternal(
 
 zetasql_base::StatusOr<BigNumericValue> BigNumericValue::FromStringStrict(
     absl::string_view str) {
-  return FromStringInternal(str, /*is_strict=*/true);
+  return FromStringInternal</*is_strict=*/true>(str);
 }
 
 zetasql_base::StatusOr<BigNumericValue> BigNumericValue::FromString(
     absl::string_view str) {
-  return FromStringInternal(str, /*is_strict=*/false);
+  return FromStringInternal</*is_strict=*/false>(str);
 }
 
 size_t BigNumericValue::HashCode() const {
@@ -2623,9 +2487,10 @@ zetasql_base::StatusOr<BigNumericValue> BigNumericValue::SumAggregator::GetAvera
 
   FixedInt<64, 5> dividend = sum_;
   dividend.DivAndRoundAwayFromZero(count);
-  if (ABSL_PREDICT_TRUE(dividend.number()[4] ==
-                        static_cast<uint64_t>(
-                            static_cast<int64_t>(dividend.number()[3]) >> 63))) {
+  if (ABSL_PREDICT_TRUE(
+          dividend.number()[4] ==
+          static_cast<uint64_t>(static_cast<int64_t>(dividend.number()[3]) >>
+                                63))) {
     FixedInt<64, 4> dividend_trunc(dividend);
     return BigNumericValue(dividend_trunc);
   }
@@ -2661,7 +2526,8 @@ void BigNumericValue::VarianceAggregator::Subtract(BigNumericValue value) {
 }
 
 absl::optional<double>
-BigNumericValue::VarianceAggregator::GetPopulationVariance(uint64_t count) const {
+BigNumericValue::VarianceAggregator::GetPopulationVariance(
+    uint64_t count) const {
   if (count > 0) {
     return GetCovariance(sum_, sum_, sum_square_,
                          BigNumericScalingFactorSquared(), count, 0);
@@ -2859,13 +2725,13 @@ VarNumericValue VarNumericValue::FromScaledValue(
                          sizeof(uint32_t));
     VarIntRef<32> var_int_ref(result.value_);
     bool success = var_int_ref.DeserializeFromBytes(little_endian_value);
-    DCHECK(success);
+    ZETASQL_DCHECK(success);
   }
   return result;
 }
 
 void VarNumericValue::AppendToString(std::string* output) const {
-  DCHECK(output != nullptr);
+  ZETASQL_DCHECK(output != nullptr);
   size_t first_digit_index = output->size();
   ConstVarIntRef<32>(value_).AppendToString(output);
   if (output->size() == first_digit_index + 1 &&

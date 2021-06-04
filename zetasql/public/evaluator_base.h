@@ -60,7 +60,7 @@
 //   ZETASQL_CHECK_OK(options.AddQueryParameter("param1", types::Int64Type()));
 //   ZETASQL_CHECK_OK(options.AddQueryParameter("param2", types::Int64Type()));
 //   ZETASQL_CHECK_OK(expr.Prepare(options));
-//   CHECK(types::Int64Type()->Equals(expr.output_type()));
+//   ZETASQL_CHECK(types::Int64Type()->Equals(expr.output_type()));
 //   Value result = expr.Execute(
 //     {{"col", Value::Int64(5)}},
 //     {{"param1", Value::Int64(1)}, {"param2", Value::Int64(2)}}).value();
@@ -86,14 +86,14 @@
 //   function_options.set_evaluator(
 //       [](const absl::Span<const Value>& args) {
 //         // Returns string length as int64_t.
-//         DCHECK_EQ(args.size(), 1);
-//         DCHECK(args[0].type()->Equals(zetasql::types::StringType()));
+//         ZETASQL_DCHECK_EQ(args.size(), 1);
+//         ZETASQL_DCHECK(args[0].type()->Equals(zetasql::types::StringType()));
 //         return Value::Int64(args[0].string_value().size());
 //       });
 //
 //   AnalyzerOptions options;
 //   SimpleCatalog catalog{"udf_catalog"};
-//   catalog.AddZetaSQLFunctions(options.language_options());
+//   catalog.AddZetaSQLFunctions(options.language());
 //   catalog.AddOwnedFunction(new Function(
 //       "MyStrLen", "udf", zetasql::Function::SCALAR,
 //       {{zetasql::types::Int64Type(), {zetasql::types::StringType()},
@@ -163,6 +163,7 @@
 //     statement.Execute().value();
 //   ... Iterate over `result` (which lists deleted rows) ...
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -293,7 +294,7 @@ class PreparedExpressionBase {
   // details). Calling any user-defined function that does not provide an
   // evaluator returns an error. 'catalog' must outlive Execute() and
   // output_type() calls.  'catalog' should contain ZetaSQL built-in functions
-  // added by calling AddZetaSQLFunctions with 'options.language_options'.
+  // added by calling AddZetaSQLFunctions with 'options.language'.
   //
   // If a ResolvedExpr was already supplied to the PreparedExpression
   // constructor, 'catalog' is ignored.
@@ -488,7 +489,7 @@ class PreparedQueryBase {
   // details). Calling any user-defined function that does not provide an
   // evaluator returns an error. 'catalog' must outlive Execute() and
   // output_type() calls.  'catalog' should contain ZetaSQL built-in functions
-  // added by calling AddZetaSQLFunctions with 'options.language_options'.
+  // added by calling AddZetaSQLFunctions with 'options.language'.
   //
   // If a ResolvedQueryStmt was already supplied to the PreparedQuery
   // constructor, 'catalog' is ignored.
@@ -709,7 +710,7 @@ class PreparedModifyBase {
   // details). Calling any user-defined function that does not provide an
   // evaluator returns an error. `catalog` must outlive Execute() and
   // output_type() calls.  `catalog` should contain ZetaSQL built-in functions
-  // added by calling AddZetaSQLFunctions with `options.language_options`.
+  // added by calling AddZetaSQLFunctions with `options.language`.
   //
   // If a ResolvedStatement was already supplied to the PreparedModifyBase
   // constructor, `catalog` is ignored.

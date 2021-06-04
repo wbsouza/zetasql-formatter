@@ -17,6 +17,7 @@
 #include "zetasql/public/function.h"
 
 #include <ctype.h>
+
 #include <algorithm>
 #include <map>
 #include <utility>
@@ -24,14 +25,17 @@
 #include "zetasql/base/logging.h"
 #include "zetasql/common/errors.h"
 #include "zetasql/proto/function.pb.h"
+#include "zetasql/public/function_signature.h"
 #include "zetasql/public/language_options.h"
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
 #include "zetasql/base/case.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_replace.h"
 #include "absl/strings/strip.h"
+#include "absl/types/span.h"
 #include "zetasql/base/ret_check.h"
 #include "zetasql/base/status_macros.h"
 
@@ -69,6 +73,8 @@ absl::Status FunctionOptions::Deserialize(
   options->set_supports_null_handling_modifier(
       proto.supports_null_handling_modifier());
   options->set_supports_having_modifier(proto.supports_having_modifier());
+  options->set_supports_clamped_between_modifier(
+      proto.supports_clamped_between_modifier());
   options->set_uses_upper_case_sql_name(proto.uses_upper_case_sql_name());
 
   *result = std::move(options);
@@ -89,6 +95,8 @@ void FunctionOptions::Serialize(FunctionOptionsProto* proto) const {
   proto->set_supports_order_by(supports_order_by);
   proto->set_supports_safe_error_mode(supports_safe_error_mode);
   proto->set_supports_having_modifier(supports_having_modifier);
+  proto->set_supports_clamped_between_modifier(
+      supports_clamped_between_modifier);
   proto->set_uses_upper_case_sql_name(uses_upper_case_sql_name);
 
   for (const LanguageFeature each : required_language_features) {
@@ -120,40 +128,47 @@ const FunctionEnums::Mode Function::SCALAR;
 const FunctionEnums::Mode Function::AGGREGATE;
 const FunctionEnums::Mode Function::ANALYTIC;
 
-Function::Function(const std::string& name, const std::string& group, Mode mode,
-                   const FunctionOptions& function_options)
-    : group_(group), mode_(mode), function_options_(function_options) {
-  function_name_path_.push_back(name);
-  ZETASQL_CHECK_OK(CheckWindowSupportOptions());
-}
-
-Function::Function(const std::string& name, const std::string& group, Mode mode,
-                   const std::vector<FunctionSignature>& function_signatures,
-                   const FunctionOptions& function_options)
-    : group_(group), mode_(mode), function_options_(function_options) {
-  function_name_path_.push_back(name);
-  function_signatures_ = function_signatures;
-  ZETASQL_CHECK_OK(CheckWindowSupportOptions());
-  for (const FunctionSignature& signature : function_signatures) {
-    ZETASQL_CHECK_OK(signature.IsValidForFunction())
-        << signature.DebugString(FullName());
-  }
-}
-
-Function::Function(const std::vector<std::string>& name_path,
-                   const std::string& group, Mode mode,
-                   const std::vector<FunctionSignature>& function_signatures,
-                   const FunctionOptions& function_options)
-    : function_name_path_(name_path),
-      group_(group),
+Function::Function(absl::string_view name, absl::string_view group, Mode mode,
+                   FunctionOptions function_options)
+    : group_(group),
       mode_(mode),
-      function_options_(function_options) {
-  function_signatures_ = function_signatures;
+      function_options_(std::move(function_options)) {
+  function_name_path_.emplace_back(name);
   ZETASQL_CHECK_OK(CheckWindowSupportOptions());
-  for (const FunctionSignature& signature : function_signatures) {
+  ZETASQL_CHECK_OK(CheckMultipleSignatureMatchingSameFunctionCall());
+}
+
+Function::Function(absl::string_view name, absl::string_view group, Mode mode,
+                   std::vector<FunctionSignature> function_signatures,
+                   FunctionOptions function_options)
+    : group_(group),
+      mode_(mode),
+      function_signatures_(std::move(function_signatures)),
+      function_options_(std::move(function_options)) {
+  function_name_path_.emplace_back(name);
+  ZETASQL_CHECK_OK(CheckWindowSupportOptions());
+  for (const FunctionSignature& signature : function_signatures_) {
     ZETASQL_CHECK_OK(signature.IsValidForFunction())
         << signature.DebugString(FullName());
   }
+  ZETASQL_CHECK_OK(CheckMultipleSignatureMatchingSameFunctionCall());
+}
+
+Function::Function(std::vector<std::string> name_path, absl::string_view group,
+                   Mode mode,
+                   std::vector<FunctionSignature> function_signatures,
+                   FunctionOptions function_options)
+    : function_name_path_(std::move(name_path)),
+      group_(std::move(group)),
+      mode_(mode),
+      function_signatures_(std::move(function_signatures)),
+      function_options_(std::move(function_options)) {
+  ZETASQL_CHECK_OK(CheckWindowSupportOptions());
+  for (const FunctionSignature& signature : function_signatures_) {
+    ZETASQL_CHECK_OK(signature.IsValidForFunction())
+        << signature.DebugString(FullName());
+  }
+  ZETASQL_CHECK_OK(CheckMultipleSignatureMatchingSameFunctionCall());
 }
 
 // A FunctionDeserializer for functions by group name. Case-sensitive. Thread
@@ -226,8 +241,8 @@ absl::Status Function::Serialize(
 // static
 void Function::RegisterDeserializer(const std::string& group_name,
                                     FunctionDeserializer deserializer) {
-  // CHECK validated -- This is used at initialization time only.
-  CHECK(zetasql_base::InsertIfNotPresent(FunctionDeserializers(), group_name,
+  // ZETASQL_CHECK validated -- This is used at initialization time only.
+  ZETASQL_CHECK(zetasql_base::InsertIfNotPresent(FunctionDeserializers(), group_name,
                                 deserializer));
 }
 
@@ -295,7 +310,66 @@ void Function::ResetSignatures(
   }
 }
 
+// Check that `current_signature` and `new_signature` could possibly match one
+// function call with lambda.
+static bool SignaturesWithLambdaCouldMatchOneFunctionCall(
+    const FunctionSignature& current_signature,
+    const FunctionSignature& new_signature) {
+  if (current_signature.arguments().size() !=
+      new_signature.arguments().size()) {
+    return false;
+  }
+  bool has_lambda = false;
+  for (int i = 0; i < current_signature.arguments().size(); i++) {
+    const auto cur_arg = current_signature.argument(i);
+    const auto new_arg = new_signature.argument(i);
+    has_lambda = has_lambda || cur_arg.IsLambda() || new_arg.IsLambda();
+    if (cur_arg.IsLambda() && new_arg.IsLambda()) {
+      if (cur_arg.lambda().argument_types().size() ==
+          new_arg.lambda().argument_types().size()) {
+        continue;
+      }
+      return false;
+    }
+    // If one arg is lambda and the other is not.
+    if (cur_arg.IsLambda() != new_arg.IsLambda()) {
+      return false;
+    }
+  }
+  return has_lambda;
+}
+
+// Check that we don't have multiple signatures with lambda possibly matching
+// the same function call. An example is a function with following signatures:
+//     Func(T1, T1->BOOL)
+//     Func(INT64, INT64->BOOL);
+// for funcation call: Func(1, e->e>0); The two signatures both match the call.
+static absl::Status CheckLambdaSignatures(
+    const absl::Span<const FunctionSignature> current_signatures,
+    const FunctionSignature& new_signature) {
+  for (const auto& current_signature : current_signatures) {
+    ZETASQL_RET_CHECK(!SignaturesWithLambdaCouldMatchOneFunctionCall(current_signature,
+                                                             new_signature))
+        << "Having two signatures with the same lambda at the same argument "
+           "index is not allowed. Signature 1: "
+        << current_signature.DebugString()
+        << " Signature 2: " << new_signature.DebugString();
+  }
+  return absl::OkStatus();
+}
+
+absl::Status Function::CheckMultipleSignatureMatchingSameFunctionCall() const {
+  for (int i = 1; i < function_signatures_.size(); i++) {
+    ZETASQL_RETURN_IF_ERROR(CheckLambdaSignatures(
+        absl::MakeConstSpan(function_signatures_).subspan(0, i),
+        function_signatures_[i]));
+  }
+  return absl::OkStatus();
+}
+
 void Function::AddSignature(const FunctionSignature& signature) {
+  ZETASQL_CHECK_OK(CheckLambdaSignatures(function_signatures_, signature))
+      << signature.DebugString(FullName());
   function_signatures_.push_back(signature);
   ZETASQL_CHECK_OK(signature.IsValidForFunction()) << signature.DebugString(FullName());
 }
@@ -368,7 +442,7 @@ std::string Function::GetSQL(std::vector<std::string> inputs,
         break;
       }
       if (signature->argument(i).options().argument_name_is_mandatory()) {
-        DCHECK(!signature->argument(i).argument_name().empty());
+        ZETASQL_DCHECK(!signature->argument(i).argument_name().empty());
         inputs[i] = absl::StrCat(signature->argument(i).argument_name(), " => ",
                                  inputs[i]);
       }
@@ -377,14 +451,30 @@ std::string Function::GetSQL(std::vector<std::string> inputs,
   return absl::StrCat(name, "(", absl::StrJoin(inputs, ", "), ")");
 }
 
-absl::Status Function::CheckArgumentConstraints(
+absl::Status Function::CheckPreResolutionArgumentConstraints(
     const std::vector<InputArgumentType>& arguments,
-    const LanguageOptions& language_options,
-    const ArgumentConstraintsCallback& constraints_callback) {
-  if (constraints_callback == nullptr) {
+    const LanguageOptions& language_options) const {
+  if (PreResolutionConstraints() == nullptr) {
     return absl::OkStatus();
   }
-  return constraints_callback(arguments, language_options);
+  return PreResolutionConstraints()(arguments, language_options);
+}
+
+absl::Status Function::CheckPostResolutionArgumentConstraints(
+    const FunctionSignature& signature,
+    const std::vector<InputArgumentType>& arguments,
+    const LanguageOptions& language_options) const {
+  if (PostResolutionConstraints() == nullptr) {
+    return absl::OkStatus();
+  }
+  ZETASQL_RET_CHECK(signature.IsConcrete())
+      << "CheckPostResolutionArgumentConstraints of "
+      << QualifiedSQLName()
+      << " must be called with a concrete signature";
+  ZETASQL_RET_CHECK_EQ(signature.NumConcreteArguments(), arguments.size())
+      << "Concrete arguments of " << QualifiedSQLName()
+      << " must match the actual argument list";
+  return PostResolutionConstraints()(signature, arguments, language_options);
 }
 
 // static
@@ -450,7 +540,8 @@ const ArgumentConstraintsCallback& Function::PreResolutionConstraints() const {
   return function_options_.pre_resolution_constraint;
 }
 
-const ArgumentConstraintsCallback& Function::PostResolutionConstraints() const {
+const PostResolutionArgumentConstraintsCallback&
+Function::PostResolutionConstraints() const {
   return function_options_.post_resolution_constraint;
 }
 
@@ -534,6 +625,10 @@ bool Function::SupportsHavingModifier() const {
 
 bool Function::SupportsDistinctModifier() const {
   return function_options_.supports_distinct_modifier;
+}
+
+bool Function::SupportsClampedBetweenModifier() const {
+  return function_options_.supports_clamped_between_modifier;
 }
 
 }  // namespace zetasql

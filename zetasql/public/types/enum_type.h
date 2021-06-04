@@ -17,15 +17,29 @@
 #ifndef ZETASQL_PUBLIC_TYPES_ENUM_TYPE_H_
 #define ZETASQL_PUBLIC_TYPES_ENUM_TYPE_H_
 
+#include <cstdint>
+#include <string>
+
 #include "zetasql/public/types/type.h"
+#include "zetasql/public/types/type_parameters.h"
+#include "absl/types/span.h"
 
 namespace zetasql {
+
+namespace internal {
+struct CatalogName;
+}
 
 // An enum type.
 // Each EnumType object defines a set of legal numeric (int32_t) values.  Each
 // value has one (or more) string names.  The first name is treated as the
 // canonical name for that numeric value, and additional names are treated
 // as aliases.
+//
+// The type may contain a catalog path if it was explicitly provided during
+// construction, so it can be reproduced by SQLBuilder while rebuilding SQL and
+// error messages and SQLBuilder. Two types with the same descriptors but
+// different catalog names are not equal, but equivalent.
 //
 // We currently support creating a ZetaSQL EnumType from a protocol
 // buffer EnumDescriptor.  This is likely to be extended to support EnumTypes
@@ -52,9 +66,19 @@ class EnumType : public Type {
   // is just the descriptor full_name (without back-ticks).  The back-ticks
   // are not necessary for TypeName() to be reparseable, so should be removed.
   std::string TypeName(ProductMode mode_unused) const override;
+  // EnumType does not support type parameters, which is why TypeName(mode) is
+  // used.
+  zetasql_base::StatusOr<std::string> TypeNameWithParameters(
+      const TypeParameters& type_params, ProductMode mode) const override {
+    ZETASQL_DCHECK(type_params.IsEmpty());
+    return TypeName(mode);
+  }
   std::string ShortTypeName(
       ProductMode mode_unused = ProductMode::PRODUCT_INTERNAL) const override;
   std::string TypeName() const;  // Enum-specific version does not need mode.
+
+  // Nested catalog names, that were passed to the constructor.
+  absl::Span<const std::string> CatalogNamePath() const;
 
   bool UsingFeatureV12CivilTimeType() const override { return false; }
 
@@ -81,8 +105,8 @@ class EnumType : public Type {
   // Does not take ownership of <factory> or <enum_descr>.  The
   // <enum_descriptor> must outlive the type.  The <enum_descr> must not be
   // NULL.
-  EnumType(const TypeFactory* factory,
-           const google::protobuf::EnumDescriptor* enum_descr);
+  EnumType(const TypeFactory* factory, const google::protobuf::EnumDescriptor* enum_descr,
+           const internal::CatalogName* catalog_name);
   ~EnumType() override;
 
   bool SupportsGroupingImpl(const LanguageOptions& language_options,
@@ -128,6 +152,7 @@ class EnumType : public Type {
                                        ValueContent* value) const override;
 
   const google::protobuf::EnumDescriptor* enum_descriptor_;  // Not owned.
+  const internal::CatalogName* catalog_name_;      // Optional.
 
   friend class TypeFactory;
 };

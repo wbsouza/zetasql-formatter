@@ -16,16 +16,33 @@
 
 #include "zetasql/public/types/type_factory.h"
 
+#include <cstdint>
+#include <iterator>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/repeated_field.h"
 #include "zetasql/common/proto_helper.h"
 #include "zetasql/public/functions/datetime.pb.h"
 #include "zetasql/public/functions/normalize_mode.pb.h"
 #include "zetasql/public/proto/type_annotation.pb.h"
 #include "zetasql/public/proto/wire_format_annotation.pb.h"
+#include "zetasql/public/strings.h"
+#include "zetasql/public/types/annotation.h"
 #include "zetasql/public/types/internal_utils.h"
 #include "zetasql/public/types/type.h"
-#include "zetasql/base/cleanup.h"
+#include "absl/algorithm/container.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/flags/flag.h"
+#include "absl/meta/type_traits.h"
+#include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
+#include "absl/types/span.h"
 #include "zetasql/base/map_util.h"
+#include "zetasql/base/status_macros.h"
 
 ABSL_FLAG(int32_t, zetasql_type_factory_nesting_depth_limit,
           std::numeric_limits<int32_t>::max(),
@@ -47,9 +64,11 @@ TypeStore::~TypeStore() {
   for (const Type* type : owned_types_) {
     delete type;
   }
-
+  for (const AnnotationMap* annotation_map : owned_annotation_maps_) {
+    delete annotation_map;
+  }
   if (!factories_depending_on_this_.empty()) {
-    LOG(DFATAL) << "Destructing TypeFactory " << this
+    ZETASQL_LOG(DFATAL) << "Destructing TypeFactory " << this
                 << " is unsafe because TypeFactory "
                 << *factories_depending_on_this_.begin()
                 << " depends on it staying alive.\n"
@@ -87,7 +106,7 @@ void TypeStore::Unref() const {
 }
 
 void TypeStoreHelper::RefFromValue(const TypeStore* store) {
-  DCHECK(store);
+  ZETASQL_DCHECK(store);
 
   // We still do TypeStore reference counting in debug mode regardless of
   // whether keep_alive_while_referenced_from_value_ is true or not: this is
@@ -102,7 +121,7 @@ void TypeStoreHelper::RefFromValue(const TypeStore* store) {
 }
 
 void TypeStoreHelper::UnrefFromValue(const TypeStore* store) {
-  DCHECK(store);
+  ZETASQL_DCHECK(store);
 
 #ifdef NDEBUG
   if (!store->keep_alive_while_referenced_from_value_) return;
@@ -112,12 +131,12 @@ void TypeStoreHelper::UnrefFromValue(const TypeStore* store) {
 }
 
 const TypeStore* TypeStoreHelper::GetTypeStore(const TypeFactory* factory) {
-  DCHECK(factory);
+  ZETASQL_DCHECK(factory);
   return factory->store_;
 }
 
 int64_t TypeStoreHelper::Test_GetRefCount(const TypeStore* store) {
-  DCHECK(store);
+  ZETASQL_DCHECK(store);
   return store->ref_count_.load(std::memory_order_seq_cst);
 }
 
@@ -129,7 +148,7 @@ TypeFactory::TypeFactory(const TypeFactoryOptions& options)
       nesting_depth_limit_(
           absl::GetFlag(FLAGS_zetasql_type_factory_nesting_depth_limit)),
       estimated_memory_used_by_types_(0) {
-  VLOG(2) << "Created TypeFactory " << store_ << ":\n"
+  ZETASQL_VLOG(2) << "Created TypeFactory " << store_ << ":\n"
           ;
 }
 
@@ -139,7 +158,7 @@ TypeFactory::~TypeFactory() {
   // types from this TypeFactory.
   if (!store_->keep_alive_while_referenced_from_value_ &&
       store_->ref_count_.load(std::memory_order_seq_cst) != 1) {
-    LOG(DFATAL)
+    ZETASQL_LOG(DFATAL)
         << "Type factory is released while there are still some objects "
            "that reference it";
   }
@@ -156,7 +175,7 @@ int TypeFactory::nesting_depth_limit() const {
 void TypeFactory::set_nesting_depth_limit(int value) {
   // We don't want to have to check the depth for simple types, so a depth of
   // 0 must be allowed.
-  DCHECK_GE(value, 0);
+  ZETASQL_DCHECK_GE(value, 0);
   absl::MutexLock l(&store_->mutex_);
   nesting_depth_limit_ = value;
 }
@@ -177,12 +196,18 @@ int64_t TypeFactory::GetEstimatedOwnedMemoryBytesSize() const {
              store_->factories_depending_on_this_) +
          internal::GetExternallyAllocatedMemoryEstimate(cached_array_types_) +
          internal::GetExternallyAllocatedMemoryEstimate(cached_proto_types_) +
-         internal::GetExternallyAllocatedMemoryEstimate(cached_enum_types_);
+         internal::GetExternallyAllocatedMemoryEstimate(cached_enum_types_) +
+         internal::GetExternallyAllocatedMemoryEstimate(
+             cached_proto_types_with_catalog_name_) +
+         internal::GetExternallyAllocatedMemoryEstimate(
+             cached_enum_types_with_catalog_name_) +
+         internal::GetExternallyAllocatedMemoryEstimate(cached_catalog_names_);
 }
 
 template <class TYPE>
 const TYPE* TypeFactory::TakeOwnership(const TYPE* type) {
-  const int64_t type_owned_bytes_size = type->GetEstimatedOwnedMemoryBytesSize();
+  const int64_t type_owned_bytes_size =
+      type->GetEstimatedOwnedMemoryBytesSize();
   absl::MutexLock l(&store_->mutex_);
   return TakeOwnershipLocked(type, type_owned_bytes_size);
 }
@@ -195,8 +220,8 @@ const TYPE* TypeFactory::TakeOwnershipLocked(const TYPE* type) {
 template <class TYPE>
 const TYPE* TypeFactory::TakeOwnershipLocked(const TYPE* type,
                                              int64_t type_owned_bytes_size) {
-  DCHECK_EQ(type->type_store_, store_);
-  DCHECK_GT(type_owned_bytes_size, 0);
+  ZETASQL_DCHECK_EQ(type->type_store_, store_);
+  ZETASQL_DCHECK_GT(type_owned_bytes_size, 0);
   store_->owned_types_.push_back(type);
   estimated_memory_used_by_types_ += type_owned_bytes_size;
   return type;
@@ -215,20 +240,22 @@ const Type* TypeFactory::get_date() { return types::DateType(); }
 const Type* TypeFactory::get_timestamp() { return types::TimestampType(); }
 const Type* TypeFactory::get_time() { return types::TimeType(); }
 const Type* TypeFactory::get_datetime() { return types::DatetimeType(); }
+const Type* TypeFactory::get_interval() { return types::IntervalType(); }
 const Type* TypeFactory::get_geography() { return types::GeographyType(); }
 const Type* TypeFactory::get_numeric() { return types::NumericType(); }
 const Type* TypeFactory::get_bignumeric() { return types::BigNumericType(); }
 const Type* TypeFactory::get_json() { return types::JsonType(); }
+const Type* TypeFactory::get_tokenlist() { return types::TokenListType(); }
 
 const Type* TypeFactory::MakeSimpleType(TypeKind kind) {
-  CHECK(Type::IsSimpleType(kind)) << kind;
+  ZETASQL_CHECK(Type::IsSimpleType(kind)) << kind;
   const Type* type = types::TypeFromSimpleTypeKind(kind);
-  CHECK(type != nullptr);
+  ZETASQL_CHECK(type != nullptr);
   return type;
 }
 
-absl::Status TypeFactory::MakeArrayType(
-    const Type* element_type, const ArrayType** result) {
+absl::Status TypeFactory::MakeArrayType(const Type* element_type,
+                                        const ArrayType** result) {
   *result = nullptr;
   AddDependency(element_type);
   if (element_type->IsArray()) {
@@ -251,8 +278,8 @@ absl::Status TypeFactory::MakeArrayType(
   }
 }
 
-absl::Status TypeFactory::MakeArrayType(
-    const Type* element_type, const Type** result) {
+absl::Status TypeFactory::MakeArrayType(const Type* element_type,
+                                        const Type** result) {
   return MakeArrayType(element_type,
                        reinterpret_cast<const ArrayType**>(result));
 }
@@ -297,37 +324,92 @@ absl::Status TypeFactory::MakeStructTypeFromVector(
                                   reinterpret_cast<const StructType**>(result));
 }
 
-absl::Status TypeFactory::MakeProtoType(
-    const google::protobuf::Descriptor* descriptor, const ProtoType** result) {
+template <typename Descriptor>
+const auto* TypeFactory::MakeDescribedType(
+    const Descriptor* descriptor, std::vector<std::string> catalog_name_path) {
   absl::MutexLock lock(&store_->mutex_);
-  auto& cached_result = cached_proto_types_[descriptor];
-  if (cached_result == nullptr) {
-    cached_result = TakeOwnershipLocked(new ProtoType(this, descriptor));
+
+  const internal::CatalogName* cached_catalog =
+      FindOrCreateCatalogName(std::move(catalog_name_path));
+
+  const auto*& cached_type = FindOrCreateCachedType(descriptor, cached_catalog);
+  using DescribedType =
+      absl::remove_pointer_t<absl::remove_reference_t<decltype(cached_type)>>;
+
+  if (cached_type == nullptr) {
+    cached_type = TakeOwnershipLocked(
+        new DescribedType(this, descriptor, cached_catalog));
   }
-  *result = cached_result;
+  return cached_type;
+}
+
+template <>
+const auto*& TypeFactory::FindOrCreateCachedType<google::protobuf::Descriptor>(
+    const google::protobuf::Descriptor* descriptor,
+    const internal::CatalogName* catalog) {
+  if (catalog == nullptr)
+    return cached_proto_types_[descriptor];
+  else
+    return cached_proto_types_with_catalog_name_[std::make_pair(descriptor,
+                                                                catalog)];
+}
+
+template <>
+const auto*& TypeFactory::FindOrCreateCachedType<google::protobuf::EnumDescriptor>(
+    const google::protobuf::EnumDescriptor* descriptor,
+    const internal::CatalogName* catalog) {
+  if (catalog == nullptr)
+    return cached_enum_types_[descriptor];
+  else
+    return cached_enum_types_with_catalog_name_[std::make_pair(descriptor,
+                                                               catalog)];
+}
+
+const internal::CatalogName* TypeFactory::FindOrCreateCatalogName(
+    std::vector<std::string> catalog_name_path) {
+  if (catalog_name_path.empty()) return nullptr;
+
+  auto [it, was_inserted] = cached_catalog_names_.try_emplace(
+      IdentifierPathToString(catalog_name_path), internal::CatalogName());
+
+  // node_hash_map provides pointer stability for both key and value.
+  internal::CatalogName* catalog_name = &it->second;
+
+  if (was_inserted) {
+    catalog_name->path_string = &it->first;
+    catalog_name->path.reserve(catalog_name_path.size());
+    absl::c_move(catalog_name_path, std::back_inserter(catalog_name->path));
+  }
+
+  return catalog_name;
+}
+
+absl::Status TypeFactory::MakeProtoType(
+    const google::protobuf::Descriptor* descriptor, const ProtoType** result,
+    std::vector<std::string> catalog_name_path) {
+  *result = MakeDescribedType(descriptor, std::move(catalog_name_path));
   return absl::OkStatus();
 }
 
 absl::Status TypeFactory::MakeProtoType(
-    const google::protobuf::Descriptor* descriptor, const Type** result) {
-  return MakeProtoType(descriptor, reinterpret_cast<const ProtoType**>(result));
-}
-
-absl::Status TypeFactory::MakeEnumType(
-    const google::protobuf::EnumDescriptor* enum_descriptor, const EnumType** result) {
-  absl::MutexLock lock(&store_->mutex_);
-  auto& cached_result = cached_enum_types_[enum_descriptor];
-  if (cached_result == nullptr) {
-    cached_result = TakeOwnershipLocked(new EnumType(this, enum_descriptor));
-  }
-  *result = cached_result;
+    const google::protobuf::Descriptor* descriptor, const Type** result,
+    std::vector<std::string> catalog_name_path) {
+  *result = MakeDescribedType(descriptor, std::move(catalog_name_path));
   return absl::OkStatus();
 }
 
 absl::Status TypeFactory::MakeEnumType(
-    const google::protobuf::EnumDescriptor* enum_descriptor, const Type** result) {
-  return MakeEnumType(enum_descriptor,
-                      reinterpret_cast<const EnumType**>(result));
+    const google::protobuf::EnumDescriptor* enum_descriptor, const EnumType** result,
+    std::vector<std::string> catalog_name_path) {
+  *result = MakeDescribedType(enum_descriptor, std::move(catalog_name_path));
+  return absl::OkStatus();
+}
+
+absl::Status TypeFactory::MakeEnumType(
+    const google::protobuf::EnumDescriptor* enum_descriptor, const Type** result,
+    std::vector<std::string> catalog_name_path) {
+  *result = MakeDescribedType(enum_descriptor, std::move(catalog_name_path));
+  return absl::OkStatus();
 }
 
 absl::Status TypeFactory::MakeUnwrappedTypeFromProto(
@@ -386,7 +468,7 @@ absl::Status TypeFactory::MakeUnwrappedTypeFromProtoImpl(
   }
   // Always erase 'message' before returning so 'ancestor_messages' contains
   // only ancestors of the current message being unwrapped.
-  auto cleanup = ::zetasql_base::MakeCleanup(
+  auto cleanup = ::absl::MakeCleanup(
       [message, ancestor_messages] { ancestor_messages->erase(message); });
   absl::Status return_status;
   if (ProtoType::GetIsWrapperAnnotation(message)) {
@@ -435,8 +517,8 @@ absl::Status TypeFactory::MakeUnwrappedTypeFromProtoImpl(
     return_status = MakeStructType(struct_fields, result_type);
   } else if (existing_message_type != nullptr) {
     // Use the message_type we already have allocated.
-    DCHECK(existing_message_type->IsProto());
-    DCHECK_EQ(message->full_name(),
+    ZETASQL_DCHECK(existing_message_type->IsProto());
+    ZETASQL_DCHECK_EQ(message->full_name(),
               existing_message_type->AsProto()->descriptor()->full_name());
     *result_type = existing_message_type;
     return_status = absl::OkStatus();
@@ -506,15 +588,43 @@ absl::Status TypeFactory::GetProtoFieldType(
     ZETASQL_RETURN_IF_ERROR(ProtoType::FieldDescriptorToTypeKind(
         field_descr, use_obsolete_timestamp, &computed_type_kind));
     ZETASQL_RET_CHECK_EQ((*type)->kind(), computed_type_kind)
-        << (*type)->DebugString() << "\n" << field_descr->DebugString();
+        << (*type)->DebugString() << "\n"
+        << field_descr->DebugString();
   }
 
   return absl::OkStatus();
 }
 
+zetasql_base::StatusOr<const AnnotationMap*> TypeFactory::TakeOwnership(
+    std::unique_ptr<AnnotationMap> annotation_map) {
+  // TODO: look up in cache and return deduped AnnotationMap
+  // pointer.
+  ZETASQL_RET_CHECK(annotation_map != nullptr);
+  annotation_map->Normalize();
+  return TakeOwnershipInternal(annotation_map.release());
+}
+
+absl::Status TypeFactory::DeserializeAnnotationMap(
+    const AnnotationMapProto& proto, const AnnotationMap** annotation_map) {
+  *annotation_map = nullptr;
+  ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<AnnotationMap> deserialized_annotation_map,
+                   AnnotationMap::Deserialize(proto));
+  *annotation_map =
+      TakeOwnershipInternal(deserialized_annotation_map.release());
+  return absl::OkStatus();
+}
+
+const AnnotationMap* TypeFactory::TakeOwnershipInternal(
+    const AnnotationMap* annotation_map) {
+  absl::MutexLock lock(&store_->mutex_);
+  store_->owned_annotation_maps_.push_back(annotation_map);
+  estimated_memory_used_by_types_ +=
+      annotation_map->GetEstimatedOwnedMemoryBytesSize();
+  return annotation_map;
+}
+
 absl::Status TypeFactory::DeserializeFromProtoUsingExistingPool(
-    const TypeProto& type_proto,
-    const google::protobuf::DescriptorPool* pool,
+    const TypeProto& type_proto, const google::protobuf::DescriptorPool* pool,
     const Type** type) {
   return DeserializeFromProtoUsingExistingPools(type_proto, {pool}, type);
 }
@@ -592,7 +702,11 @@ absl::Status TypeFactory::DeserializeFromProtoUsingExistingPools(
                << enum_descr->file()->name() << ", not "
                << type_proto.enum_type().enum_file_name() << " as specified.";
       }
-      ZETASQL_RETURN_IF_ERROR(MakeEnumType(enum_descr, &enum_type));
+      const google::protobuf::RepeatedPtrField<std::string>& catalog_name_path =
+          type_proto.enum_type().catalog_name_path();
+      ZETASQL_RETURN_IF_ERROR(
+          MakeEnumType(enum_descr, &enum_type,
+                       {catalog_name_path.begin(), catalog_name_path.end()}));
       *type = enum_type;
     } break;
     case TYPE_PROTO: {
@@ -619,7 +733,11 @@ absl::Status TypeFactory::DeserializeFromProtoUsingExistingPools(
                << " found in " << proto_descr->file()->name() << ", not "
                << type_proto.proto_type().proto_file_name() << " as specified.";
       }
-      ZETASQL_RETURN_IF_ERROR(MakeProtoType(proto_descr, &proto_type));
+      const google::protobuf::RepeatedPtrField<std::string>& catalog_name_path =
+          type_proto.proto_type().catalog_name_path();
+      ZETASQL_RETURN_IF_ERROR(
+          MakeProtoType(proto_descr, &proto_type,
+                        {catalog_name_path.begin(), catalog_name_path.end()}));
       *type = proto_type;
     } break;
     default:
@@ -632,9 +750,8 @@ absl::Status TypeFactory::DeserializeFromProtoUsingExistingPools(
 }
 
 absl::Status TypeFactory::DeserializeFromSelfContainedProto(
-      const TypeProto& type_proto,
-      google::protobuf::DescriptorPool* pool,
-      const Type** type) {
+    const TypeProto& type_proto, google::protobuf::DescriptorPool* pool,
+    const Type** type) {
   if (type_proto.file_descriptor_set_size() > 1) {
     return MakeSqlError()
            << "DeserializeFromSelfContainedProto cannot be used to deserialize "
@@ -646,9 +763,8 @@ absl::Status TypeFactory::DeserializeFromSelfContainedProto(
 }
 
 absl::Status TypeFactory::DeserializeFromSelfContainedProtoWithDistinctFiles(
-      const TypeProto& type_proto,
-      const std::vector<google::protobuf::DescriptorPool*>& pools,
-      const Type** type) {
+    const TypeProto& type_proto,
+    const std::vector<google::protobuf::DescriptorPool*>& pools, const Type** type) {
   if (!type_proto.file_descriptor_set().empty() &&
       type_proto.file_descriptor_set_size() != pools.size()) {
     return MakeSqlError()
@@ -662,13 +778,13 @@ absl::Status TypeFactory::DeserializeFromSelfContainedProtoWithDistinctFiles(
         &type_proto.file_descriptor_set(i), pools[i]));
   }
   const std::vector<const google::protobuf::DescriptorPool*> const_pools(pools.begin(),
-                                                          pools.end());
+                                                               pools.end());
   return DeserializeFromProtoUsingExistingPools(type_proto, const_pools, type);
 }
 
 bool IsValidTypeKind(int kind) {
   return TypeKind_IsValid(kind) &&
-      kind != __TypeKind__switch_must_have_a_default__;
+         kind != __TypeKind__switch_must_have_a_default__;
 }
 
 namespace {
@@ -754,6 +870,12 @@ static const Type* s_datetime_type() {
   return s_datetime_type;
 }
 
+static const Type* s_interval_type() {
+  static const Type* s_interval_type =
+      new SimpleType(s_type_factory(), TYPE_INTERVAL);
+  return s_interval_type;
+}
+
 static const Type* s_geography_type() {
   static const Type* s_geography_type =
       new SimpleType(s_type_factory(), TYPE_GEOGRAPHY);
@@ -773,9 +895,14 @@ static const Type* s_bignumeric_type() {
 }
 
 static const Type* s_json_type() {
-  static const Type* s_json_type =
-      new SimpleType(s_type_factory(), TYPE_JSON);
+  static const Type* s_json_type = new SimpleType(s_type_factory(), TYPE_JSON);
   return s_json_type;
+}
+
+static const Type* s_tokenlist_type() {
+  static const Type* s_tokenlist_type =
+      new SimpleType(s_type_factory(), TYPE_TOKENLIST);
+  return s_tokenlist_type;
 }
 
 static const EnumType* s_date_part_enum_type() {
@@ -891,6 +1018,12 @@ static const ArrayType* s_time_array_type() {
   return s_time_array_type;
 }
 
+static const ArrayType* s_interval_array_type() {
+  static const ArrayType* s_interval_array_type =
+      MakeArrayType(s_type_factory()->get_interval());
+  return s_interval_array_type;
+}
+
 static const ArrayType* s_geography_array_type() {
   static const ArrayType* s_geography_array_type =
       MakeArrayType(s_type_factory()->get_geography());
@@ -915,6 +1048,12 @@ static const ArrayType* s_json_array_type() {
   return s_json_array_type;
 }
 
+static const ArrayType* s_tokenlist_array_type() {
+  static const ArrayType* s_tokenlist_array_type =
+      MakeArrayType(s_type_factory()->get_tokenlist());
+  return s_tokenlist_array_type;
+}
+
 }  // namespace
 
 namespace types {
@@ -932,10 +1071,12 @@ const Type* DateType() { return s_date_type(); }
 const Type* TimestampType() { return s_timestamp_type(); }
 const Type* TimeType() { return s_time_type(); }
 const Type* DatetimeType() { return s_datetime_type(); }
+const Type* IntervalType() { return s_interval_type(); }
 const Type* GeographyType() { return s_geography_type(); }
 const Type* NumericType() { return s_numeric_type(); }
 const Type* BigNumericType() { return s_bignumeric_type(); }
 const Type* JsonType() { return s_json_type(); }
+const Type* TokenListType() { return s_tokenlist_type(); }
 const StructType* EmptyStructType() { return s_empty_struct_type(); }
 const EnumType* DatePartEnumType() { return s_date_part_enum_type(); }
 const EnumType* NormalizeModeEnumType() { return s_normalize_mode_enum_type(); }
@@ -957,6 +1098,8 @@ const ArrayType* DatetimeArrayType() { return s_datetime_array_type(); }
 
 const ArrayType* TimeArrayType() { return s_time_array_type(); }
 
+const ArrayType* IntervalArrayType() { return s_interval_array_type(); }
+
 const ArrayType* GeographyArrayType() { return s_geography_array_type(); }
 
 const ArrayType* NumericArrayType() { return s_numeric_array_type(); }
@@ -964,6 +1107,8 @@ const ArrayType* NumericArrayType() { return s_numeric_array_type(); }
 const ArrayType* BigNumericArrayType() { return s_bignumeric_array_type(); }
 
 const ArrayType* JsonArrayType() { return s_json_array_type(); }
+
+const ArrayType* TokenListArrayType() { return s_tokenlist_array_type(); }
 
 const Type* TypeFromSimpleTypeKind(TypeKind type_kind) {
   switch (type_kind) {
@@ -993,6 +1138,8 @@ const Type* TypeFromSimpleTypeKind(TypeKind type_kind) {
       return TimeType();
     case TYPE_DATETIME:
       return DatetimeType();
+    case TYPE_INTERVAL:
+      return IntervalType();
     case TYPE_GEOGRAPHY:
       return GeographyType();
     case TYPE_NUMERIC:
@@ -1001,8 +1148,10 @@ const Type* TypeFromSimpleTypeKind(TypeKind type_kind) {
       return BigNumericType();
     case TYPE_JSON:
       return JsonType();
+    case TYPE_TOKENLIST:
+      return TokenListType();
     default:
-      VLOG(1) << "Could not build static Type from type: "
+      ZETASQL_VLOG(1) << "Could not build static Type from type: "
               << Type::TypeKindToString(type_kind, PRODUCT_INTERNAL);
       return nullptr;
   }
@@ -1036,6 +1185,8 @@ const ArrayType* ArrayTypeFromSimpleTypeKind(TypeKind type_kind) {
       return TimeArrayType();
     case TYPE_DATETIME:
       return DatetimeArrayType();
+    case TYPE_INTERVAL:
+      return IntervalArrayType();
     case TYPE_GEOGRAPHY:
       return GeographyArrayType();
     case TYPE_NUMERIC:
@@ -1044,8 +1195,10 @@ const ArrayType* ArrayTypeFromSimpleTypeKind(TypeKind type_kind) {
       return BigNumericArrayType();
     case TYPE_JSON:
       return JsonArrayType();
+    case TYPE_TOKENLIST:
+      return TokenListArrayType();
     default:
-      VLOG(1) << "Could not build static ArrayType from type: "
+      ZETASQL_VLOG(1) << "Could not build static ArrayType from type: "
               << Type::TypeKindToString(type_kind, PRODUCT_INTERNAL);
       return nullptr;
   }
@@ -1065,7 +1218,7 @@ void TypeFactory::AddDependency(const Type* other_type) {
     if (!zetasql_base::InsertIfNotPresent(&store_->depends_on_factories_, other_store)) {
       return;  // Already had it.
     }
-    VLOG(2) << "Added dependency from TypeFactory " << this << " to "
+    ZETASQL_VLOG(2) << "Added dependency from TypeFactory " << this << " to "
             << other_store << " which owns the type "
             << other_type->DebugString() << ":\n"
             ;
@@ -1074,7 +1227,7 @@ void TypeFactory::AddDependency(const Type* other_type) {
     // longer cycles, so those won't give this error message, but the
     // destructor error will still fire because no destruction order is safe.
     if (zetasql_base::ContainsKey(store_->factories_depending_on_this_, other_store)) {
-      LOG(DFATAL) << "Created cyclical dependency between TypeFactories, "
+      ZETASQL_LOG(DFATAL) << "Created cyclical dependency between TypeFactories, "
                      "which is not legal because there can be no safe "
                      "destruction order";
     }

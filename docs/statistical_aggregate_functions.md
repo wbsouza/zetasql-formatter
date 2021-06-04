@@ -18,13 +18,15 @@ is the dependent variable and the second number is the independent variable.
 The return result is between `-1` and `1`. A result of `0` indicates no
 correlation.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any input pairs that contain one or more NULL values. If
 there are fewer than two input pairs without NULL values, this function returns
 NULL.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -37,12 +39,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### COVAR_POP
 ```
@@ -56,13 +58,15 @@ a set of number pairs. The first number is the dependent variable; the second
 number is the independent variable. The return result is between `-Inf` and
 `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any input pairs that contain one or more NULL values. If
 there is no input pair without NULL values, this function returns NULL. If there
 is exactly one input pair without NULL values, this function returns 0.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -75,12 +79,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### COVAR_SAMP
 ```
@@ -94,13 +98,15 @@ set of number pairs. The first number is the dependent variable; the second
 number is the independent variable. The return result is between `-Inf` and
 `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any input pairs that contain one or more NULL values. If
 there are fewer than two input pairs without NULL values, this function returns
 NULL.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -113,12 +119,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### STDDEV_POP
 ```
@@ -130,14 +136,16 @@ STDDEV_POP([DISTINCT] expression [HAVING {MAX | MIN} expression2])  [OVER (...)]
 Returns the population (biased) standard deviation of the values. The return
 result is between `0` and `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any NULL inputs. If all inputs are ignored, this function
 returns NULL.
 
 If this function receives a single non-NULL input, it returns `0`.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -152,12 +160,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### STDDEV_SAMP
 ```
@@ -169,12 +177,14 @@ STDDEV_SAMP([DISTINCT] expression [HAVING {MAX | MIN} expression2])  [OVER (...)
 Returns the sample (unbiased) standard deviation of the values. The return
 result is between `0` and `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any NULL inputs. If there are fewer than two non-NULL
 inputs, this function returns NULL.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -189,12 +199,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### STDDEV
 ```
@@ -215,14 +225,16 @@ VAR_POP([DISTINCT] expression [HAVING {MAX | MIN} expression2])  [OVER (...)]
 Returns the population (biased) variance of the values. The return result is
 between `0` and `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any NULL inputs. If all inputs are ignored, this function
 returns NULL.
 
 If this function receives a single non-NULL input, it returns `0`.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -237,12 +249,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### VAR_SAMP
 ```
@@ -254,12 +266,14 @@ VAR_SAMP([DISTINCT] expression [HAVING {MAX | MIN} expression2])  [OVER (...)]
 Returns the sample (unbiased) variance of the values. The return result is
 between `0` and `+Inf`.
 
+All numeric types are supported. If the
+input is `NUMERIC` or `BIGNUMERIC` then the internal aggregation is
+stable with the final output converted to a `DOUBLE`.
+Otherwise the input is converted to a `DOUBLE`
+before aggregation, resulting in a potentially unstable result.
+
 This function ignores any NULL inputs. If there are fewer than two non-NULL
 inputs, this function returns NULL.
-
-**Supported Input Types**
-
-DOUBLE
 
 **Optional Clauses**
 
@@ -274,12 +288,12 @@ The clauses are applied *in the following order*:
     [HAVING MAX and HAVING MIN clause][max_min_clause] for details.
 
 [max_min_clause]: #max_min_clause
-[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts
-[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types#floating_point_semantics
+[analytic-functions]: https://github.com/google/zetasql/blob/master/docs/analytic-function-concepts.md
+[floating-point-semantics]: https://github.com/google/zetasql/blob/master/docs/data-types.md#floating_point_semantics
 
 **Return Data Type**
 
-DOUBLE
+`DOUBLE`
 
 ### VARIANCE
 ```

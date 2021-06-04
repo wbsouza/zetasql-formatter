@@ -25,10 +25,13 @@
 #include <vector>
 
 #include "zetasql/analyzer/expr_resolver_helper.h"
+#include "zetasql/analyzer/function_signature_matcher.h"
+#include "zetasql/analyzer/name_scope.h"
 #include "zetasql/parser/parse_tree.h"
 #include "zetasql/public/catalog.h"
 #include "zetasql/public/function.h"
 #include "zetasql/public/function.pb.h"
+#include "zetasql/public/function_signature.h"
 #include "zetasql/public/templated_sql_function.h"
 #include "zetasql/public/type.h"
 #include "zetasql/public/value.h"
@@ -42,7 +45,7 @@ class Coercer;
 class Resolver;
 class SignatureMatchResult;
 
-// This class perfoms function resolution during ZetaSQL analysis.
+// This class performs function resolution during ZetaSQL analysis.
 // The functions here generally traverse the function expressions recursively,
 // constructing and returning the ResolvedFunctionCall nodes bottom-up.
 class FunctionResolver {
@@ -58,6 +61,8 @@ class FunctionResolver {
   // handling is done for aggregate functions - they are resolved exactly like
   // scalar functions. <is_analytic> indicates whether an OVER clause follows
   // this function call.
+  // Lambda arguments should have a nullptr placeholder in <arguments> and are
+  // resolved during signature matching.
   // * Takes ownership of the ResolvedExprs in <arguments>.
   // * <named_arguments> is a vector of any named arguments passed into this
   //   function call along with each one's zero-based index of that argument as
@@ -67,6 +72,7 @@ class FunctionResolver {
   // * <expected_result_type> is optional and when specified should match the
   //   result_type of the function signature while resolving. Otherwise there is
   //   no match.
+  // * <name_scope> is used to resolve lambda.
   absl::Status ResolveGeneralFunctionCall(
       const ASTNode* ast_location,
       const std::vector<const ASTNode*>& arg_locations,
@@ -74,7 +80,7 @@ class FunctionResolver {
       bool is_analytic,
       std::vector<std::unique_ptr<const ResolvedExpr>> arguments,
       std::vector<std::pair<const ASTNamedArgument*, int>> named_arguments,
-      const Type* expected_result_type,
+      const Type* expected_result_type, const NameScope* name_scope,
       std::unique_ptr<ResolvedFunctionCall>* resolved_expr_out);
 
   // These are the same as previous but they take a (possibly multipart)
@@ -141,36 +147,60 @@ class FunctionResolver {
   // non-literal with respect to coercion). <return_null_on_error> indicates
   // whether the cast should return a NULL value of the <target_type> in case of
   // cast failures, which should only be set to true when using SAFE_CAST.
+  // <format> is the format string used for the conversion. It can be null.
+  // <time_zone> is used together with the format string when casting from/to
+  // timestamp type. It can be null. <type_params> holds the type parameters for
+  // the cast. If no type parameters exist, <type_params> should be an empty
+  // TypeParameters object.
   //
   // Note: <ast_location> is expected to refer to the location of <argument>,
   // and would be more appropriate as type ASTExpression, though this would
   // require refactoring some callers.
   absl::Status AddCastOrConvertLiteral(
-      const ASTNode* ast_location,
-      const Type* target_type,
+      const ASTNode* ast_location, const Type* target_type,
+      std::unique_ptr<const ResolvedExpr> format,
+      std::unique_ptr<const ResolvedExpr> time_zone,
+      const TypeParameters& type_params,
       const ResolvedScan* scan,  // May be null
-      bool set_has_explicit_type,
-      bool return_null_on_error,
+      bool set_has_explicit_type, bool return_null_on_error,
       std::unique_ptr<const ResolvedExpr>* argument) const;
 
   // Map an operator id from the parse tree to a ZetaSQL function name.
   static const std::string& UnaryOperatorToFunctionName(
       ASTUnaryExpression::Op op);
+
+  // Map a binary operator id from the parse tree to a ZetaSQL function name.
+  // <is_not> indicates whether IS NOT is used in the operator.
+  // Sets <*not_handled> to true if <is_not> is true and the returned function
+  // name already takes the "not" into account, avoiding the need to wrap the
+  // function call with an additional unary NOT operator.
+  //
+  // <not_handled> may be nullptr in code paths where <is_not> is known to
+  // be false.
   static const std::string& BinaryOperatorToFunctionName(
-      ASTBinaryExpression::Op op);
+      ASTBinaryExpression::Op op, bool is_not, bool* not_handled);
 
   // Returns the Coercer from <resolver_>.
   const Coercer& coercer() const;
 
   // Determines if the function signature matches the argument list, returning
-  // a non-templated signature if true.  If <allow_argument_coercion> is TRUE
+  // a non-templated signature if true. If <allow_argument_coercion> is TRUE
   // then function arguments can be coerced to the required signature
   // type(s), otherwise they must be an exact match.
-  bool SignatureMatches(const std::vector<InputArgumentType>& input_arguments,
-                        const FunctionSignature& signature,
-                        bool allow_argument_coercion,
-                        std::unique_ptr<FunctionSignature>* result_signature,
-                        SignatureMatchResult* signature_match_result) const;
+  // <name_scope> is used to resolve lambda. Resolved lambdas are put in
+  // <arg_overrides>. See
+  // <CheckResolveLambdaTypeAndCollectTemplatedArguments> about how lambda is
+  // resolved.
+  // Returns non-OK status only for internal errors, like ZETASQL_RET_CHECK failures.
+  // E.g., the ones in FunctionSignatureMatcher::GetConcreteArguments.
+  zetasql_base::StatusOr<bool> SignatureMatches(
+      const std::vector<const ASTNode*>& arg_ast_nodes,
+      const std::vector<InputArgumentType>& input_arguments,
+      const FunctionSignature& signature, bool allow_argument_coercion,
+      const NameScope* name_scope,
+      std::unique_ptr<FunctionSignature>* result_signature,
+      SignatureMatchResult* signature_match_result,
+      std::vector<FunctionArgumentOverride>* arg_overrides) const;
 
   // Perform post-processing checks on CREATE AGGREGATE FUNCTION statements at
   // initial declaration time or when the functions are called later.
@@ -183,133 +213,116 @@ class FunctionResolver {
       const ExprResolutionInfo* expr_info,
       QueryResolutionInfo* query_info);
 
-  // Iterates through <named_arguments> and compares them against <signature>,
-  // rearranging any of <arg_locations>, <expr_args>, <input_arg_types>, and/or
-  // <tvf_arg_types> to match the order of the given <named_arguments> or
-  // returning an error if an invariant is not satisfied. Sets
-  // <named_arguments_match_signature> to true if <named_arguments> are a match
-  // for <signature> or false otherwise. In the latter case, if
-  // <return_error_if_named_arguments_do_not_match_signature> is true, this
-  // method will return a descriptive error message.
+  // The element type of the output of the
+  // GetFunctionArgumentIndexMappingPerSignature function below. It represents
+  // a mapping from a function argument in the signature to the argument
+  // provided to the function call.
+  struct ArgIndexPair {
+    // The argument index into the function signature.
+    // The value always falls into the valid range (i.e., >= 0 && <
+    // function_signature.arguments().size()).
+    int signature_arg_index;
+    // The argument index to the function call.
+    // The value either falls into the valid range (i.e., >= 0 && <
+    // arg_locations.size()) or is -1 if the argument at <signature_arg_index>
+    // in the signature is not provided in the current call.
+    int call_arg_index;
+  };
+
+  // Iterates through <arg_locations> and <named_arguments> and compares them
+  // against <signature> to match the order of the arguments in the signature,
+  // or returns an error if the signature does not match.
   //
-  // The <arg_locations>, <expr_args>, <input_arg_types>, and <tvf_arg_types>
-  // are all optional and will be ignored if NULL; any combination is
-  // acceptable. In practice, (<expr_args>, <input_arg_types>) and
-  // <tvf_arg_types> are generally mutually exclusive. If we are resolving a
-  // scalar function call, <expr_args> and/or <input_arg_types> are provided.
-  // Otherwise, if we are resolving a TVF call, <tvf_arg_types> are provided.
+  // <num_repeated_args_repetitions> should be the number of repetitions of
+  // the repeated arguments. It is determined by the
+  // SignatureArgumentCountMatches function.
   //
-  // If <signature> contains any optional arguments whose values are not
-  // provided (either positionally in <expr_args> or <tvf_arg_types> or named
-  // in <named_arguments>) then this method may inject suitable default values
-  // in <expr_args>, <input_arg_types>, and/or <tvf_arg_types>. Currently this
-  // method injects a NULL value for such missing arguments as a default policy.
-  absl::Status ProcessNamedArguments(
+  // Returns the mapped function argument indexes in a list of <ArgIndexPair>
+  // structs. The list size will be the number of function call arguments plus
+  // the number of omitted optional arguments (i.e., #arguments in <signature>
+  // + (<num_repeated_args_repetitions> - 1) * #repeated arguments). It is
+  // guaranteed that the <signature_arg_index> is always increasing, except for
+  // the repeated arguments part. Indexes to repeated arguments appear
+  // <num_repeated_args_repetitions> times, while indexes to required and
+  // optional arguments appear exactly once in the list, even for the omitted
+  // optional arguments (whose index values depending on the
+  // <always_include_omitted_named_arguments_in_index_mapping> parameter below).
+  //
+  // <always_include_omitted_named_arguments_in_index_mapping> controls how to
+  // deal with trailing omitted arguments. When false and <named_arguments> is
+  // empty, trailing arguments in the signature that are omitted in the call and
+  // have no default values will also be omitted in the output <index_mapping>.
+  // Otherwise, their corresponding entries are included in <index_mapping>
+  // with <call_arg_index> as -1.
+  absl::Status GetFunctionArgumentIndexMappingPerSignature(
       const std::string& function_name, const FunctionSignature& signature,
       const ASTNode* ast_location,
+      const std::vector<const ASTNode*>& arg_locations,
       const std::vector<std::pair<const ASTNamedArgument*, int>>&
           named_arguments,
-      bool return_error_if_named_arguments_do_not_match_signature,
-      bool* named_arguments_match_signature,
+      int num_repeated_args_repetitions,
+      bool always_include_omitted_named_arguments_in_index_mapping,
+      std::vector<ArgIndexPair>* index_mapping) const;
+
+  // Reorders the given <input_argument_types> with respect to the given
+  // <index_mapping> which is the output of
+  // GetFunctionArgumentIndexMappingPerSignature, and also fills in default
+  // values for omitted arguments.
+  //
+  // As an input, <input_argument_types> represents the arguments provided to
+  // the original function call (i.e., matches the order of the input to
+  // GetFunctionArgumentIndexMappingPerSignature).
+  //
+  // Upon success, this function reorders the provided <input_argument_types>
+  // list, so that the elements match the argument order in the matching
+  // signature. For any optional arguments whose values are not provided
+  // (either positionally or named) the function may inject suitable default
+  // values into the list:
+  // - If a default value is present in the FunctionArgumentTypeOptions
+  //   corresponding to the omitted argument, this default value is injected.
+  // - Otherwise, a NULL value for this omitted argument might be injected.
+  //
+  // Note that a NULL value is only injected for omitted optional arguments that
+  // appear before a named argument or an argument with a default, and are not
+  // injected otherwise. The NULL injection is a temporary workaround to
+  // represent omitted arguments that do not have default values. This behavior
+  // is subject to change in the near future.
+  //
+  static absl::Status
+  ReorderInputArgumentTypesPerIndexMappingAndInjectDefaultValues(
+      const FunctionSignature& signature,
+      absl::Span<const ArgIndexPair> index_mapping,
+      std::vector<InputArgumentType>* input_argument_types);
+
+  // Reorders the given input argument representations <arg_locations>,
+  // <resolved_args> and <resolved_tvf_args> with the given <index_mapping>
+  // which is the output of
+  // GetFunctionArgumentIndexMappingPerSignature and the <input_argument_types>
+  // which is the output of
+  // ReorderInputArgumentTypesPerIndexMappingAndInjectDefaultValues.
+  //
+  // All of the <arg_locations>, <resolved_args> and <resolved_tvf_args> are
+  // optional. If provided, they represent the arguments provided to the
+  // original function call (i.e., matches the order of the input to
+  // GetFunctionArgumentIndexMappingPerSignature).
+  //
+  // Upon success, this function reorders the provided lists, so that they match
+  // the argument order in the matching signature. For any optional arguments
+  // whose values are not provided (either positionally or named) the function
+  // may inject suitable default values in the lists, which are already
+  // available in <input_argument_types>.
+  static absl::Status ReorderArgumentExpressionsPerIndexMapping(
+      absl::string_view function_name, const FunctionSignature& signature,
+      absl::Span<const ArgIndexPair> index_mapping, const ASTNode* ast_location,
+      const std::vector<InputArgumentType>& input_argument_types,
       std::vector<const ASTNode*>* arg_locations,
-      std::vector<std::unique_ptr<const ResolvedExpr>>* expr_args,
-      std::vector<InputArgumentType>* input_arg_types,
-      std::vector<ResolvedTVFArg>* tvf_arg_types) const;
+      std::vector<std::unique_ptr<const ResolvedExpr>>* resolved_args,
+      std::vector<ResolvedTVFArg>* resolved_tvf_args);
 
  private:
   Catalog* catalog_;           // Not owned.
   TypeFactory* type_factory_;  // Not owned.
   Resolver* resolver_;         // Not owned.
-
-  // Represents the argument types corresponding to a SignatureArgumentKind.
-  // There are three possibilities:
-  // 1) The object represents an untyped NULL.
-  // 2) The object represents an untyped empty array.
-  // 3) The object represents a list of typed arguments.
-  // An object in state i and can move to state j if i < j.
-  //
-  // The main purpose of this class is to keep track of the types associated
-  // with a templated SignatureArgumentKind in
-  // CheckArgumentTypesAndCollectTemplatedArguments(). There, if we encounter a
-  // typed argument for a templated SignatureArgumentKind, we add that to the
-  // set. But if there are no typed arguments, then we need to know whether
-  // there is an untyped NULL or empty array, because that affects the type we
-  // will infer for the SignatureArgumentKind.
-  class SignatureArgumentKindTypeSet {
-   public:
-    enum Kind { UNTYPED_NULL, UNTYPED_EMPTY_ARRAY, TYPED_ARGUMENTS };
-
-    // Creates a set with kind UNTYPED_NULL.
-    SignatureArgumentKindTypeSet() : kind_(UNTYPED_NULL) {}
-    SignatureArgumentKindTypeSet(const SignatureArgumentKindTypeSet&) = delete;
-    SignatureArgumentKindTypeSet& operator=(
-        const SignatureArgumentKindTypeSet&) = delete;
-
-    Kind kind() const { return kind_; }
-
-    // Changes the set to kind UNTYPED_EMPTY_ARRAY. Cannot be called if
-    // InsertTypedArgument() has already been called.
-    void SetToUntypedEmptyArray() {
-      DCHECK(kind_ != TYPED_ARGUMENTS);
-      kind_ = UNTYPED_EMPTY_ARRAY;
-    }
-
-    // Changes the set to kind TYPED_ARGUMENTS, and adds a typed argument to
-    // the set of typed arguments.
-    bool InsertTypedArgument(const InputArgumentType& input_argument) {
-      // Typed arguments have precedence over untyped arguments.
-      DCHECK(!input_argument.is_untyped());
-      kind_ = TYPED_ARGUMENTS;
-      return typed_arguments_.Insert(input_argument);
-    }
-
-    // Returns the set of typed arguments corresponding to this object. Can only
-    // be called if 'kind() == TYPED_ARGUMENTS'.
-    const InputArgumentTypeSet& typed_arguments() const {
-      DCHECK_EQ(kind_, TYPED_ARGUMENTS);
-      return typed_arguments_;
-    }
-
-    std::string DebugString() const;
-
-   private:
-    Kind kind_;
-    // Does not contain any untyped arguments. Only valid if 'kind_' is
-    // TYPED_ARGUMENTS.
-    InputArgumentTypeSet typed_arguments_;
-  };
-
-  // Maps templated arguments (ARG_TYPE_ANY_1, etc.) to a set of input argument
-  // types. See CheckArgumentTypesAndCollectTemplatedArguments() for details.
-  typedef std::map<SignatureArgumentKind, SignatureArgumentKindTypeSet>
-      ArgKindToInputTypesMap;
-
-  // Maps templated arguments (ARG_TYPE_ANY_1, etc.) to the
-  // resolved (possibly coerced) Type each resolved to in a particular function
-  // call.
-  typedef std::map<SignatureArgumentKind, const Type*> ArgKindToResolvedTypeMap;
-
-  static std::string ArgKindToInputTypesMapDebugString(
-      const ArgKindToInputTypesMap& map);
-
-  // Returns the concrete argument type for a given <function_argument_type>,
-  // using the mapping from templated to concrete argument types in
-  // <templated_argument_map>.  Also used for result types.
-  bool GetConcreteArgument(
-      const FunctionArgumentType& argument, int num_occurrences,
-      const ArgKindToResolvedTypeMap& templated_argument_map,
-      std::unique_ptr<FunctionArgumentType>* output_argument) const;
-
-  // Returns a list of concrete arguments by calling GetConcreteArgument()
-  // on each entry and setting num_occurrences_ with appropriate argument
-  // counts.
-  FunctionArgumentTypeList GetConcreteArguments(
-      const std::vector<InputArgumentType>& input_arguments,
-      const FunctionSignature& signature,
-      int repetitions,
-      int optionals,
-      const ArgKindToResolvedTypeMap& templated_argument_map)
-        const;
 
   // Returns a signature that matches the argument type list, returning
   // a concrete FunctionSignature if found.  If not found, returns NULL.
@@ -322,73 +335,39 @@ class FunctionResolver {
   // each of <named_arguments> comprises a pointer to the ASTNamedArgument
   // object that the parser produced for this named argument reference and also
   // an integer identifying the corresponding argument type by indexing into
-  // <input_arguments>.
+  // the passed-in list in <input_arguments>.
+  // <name_scope> is used to resolve lambda. Resolved lambdas are put in
+  // <arg_overrides>. See
+  // <CheckResolveLambdaTypeAndCollectTemplatedArguments> about how lambda is
+  // resolved.
+  // <input_arguments> is an in-out parameter. As an input, it represents the
+  // arguments provided to the function call to be resolved. As an output, it
+  // contains the argument list reordered to match the returned signature. For
+  // any optional arguments whose values are not provided (either positionally
+  // or named) elements are also injected into this list.
+  // <arg_index_mapping> is the output of
+  // GetFunctionArgumentIndexMappingPerSignature against the matching signature,
+  // so that the caller can reorder the input argument list representations
+  // accordingly.
   zetasql_base::StatusOr<const FunctionSignature*> FindMatchingSignature(
       const Function* function,
-      const std::vector<InputArgumentType>& input_arguments,
       const ASTNode* ast_location,
       const std::vector<const ASTNode*>& arg_locations,
       const std::vector<std::pair<const ASTNamedArgument*, int>>&
-          named_arguments) const;
+          named_arguments,
+      const NameScope* name_scope,
+      std::vector<InputArgumentType>* input_arguments,
+      std::vector<FunctionArgumentOverride>* arg_overrides,
+      std::vector<ArgIndexPair>* arg_index_mapping) const;
 
-  // Determines if the argument list count matches signature, returning the
-  // number of times each repeated argument repeats and the number of
-  // optional arguments present if true.
-  bool SignatureArgumentCountMatches(
-      const std::vector<InputArgumentType>& input_arguments,
-      const FunctionSignature& signature, int* repetitions,
-      int* optionals) const;
-
-  // Returns if input argument types match the signature argument types, and
-  // updates related templated argument type information.
-  //
-  // <repetitions> identifies the number of times that repeated arguments
-  // repeat.
-  //
-  // Also populates <templated_argument_map> with a key for every templated
-  // SignatureArgumentKind that appears in the signature (including the result
-  // type) and <input_arguments>.  The corresponding value is the list of typed
-  // arguments that occur for that SignatureArgumentKind. (The list may be empty
-  // in the case of untyped arguments.)
-  //
-  // There is also some special handling for ANY_K: if we see an argument (typed
-  // or untyped) for ARRAY_ANY_K, we act as if we also saw the corresponding
-  // array element argument for ANY_K, and add an entry to
-  // <templated_argument_map> even if ANY_K is not in the signature.
-  //
-  // Likewise for maps, if we see the map type, we also act as if we've seen
-  // the key and value types, and vice versa. Note that the key type does
-  // not imply we've seen the value type, nor does the value imply the key.
-  bool CheckArgumentTypesAndCollectTemplatedArguments(
-      const std::vector<InputArgumentType>& input_arguments,
-      const FunctionSignature& signature, int repetitions,
-      bool allow_argument_coercion,
-      ArgKindToInputTypesMap* templated_argument_map,
-      SignatureMatchResult* signature_match_result) const;
-
-  // Returns if a single input argument type matches the corresponding signature
-  // argument type, and updates related templated argument type information.
-  //
-  // Updates <templated_argument_map> for templated SignatureArgumentKind. The
-  // corresponding value is the list of typed arguments that occur for that
-  // SignatureArgumentKind. (The list may be empty in the case of untyped
-  // arguments.)
-  bool CheckSingleInputArgumentTypeAndCollectTemplatedArgument(
-      const int arg_idx, const InputArgumentType& input_argument,
-      const FunctionArgumentType& signature_argument,
-      bool allow_argument_coercion,
-      ArgKindToInputTypesMap* templated_argument_map,
-      SignatureMatchResult* signature_match_result) const;
-
-  // This method is only relevant for table-valued functions. It returns true in
-  // 'signature_matches' if a relation input argument type matches a signature
-  // argument type, and sets information in 'signature_match_result' either way.
-  absl::Status CheckRelationArgumentTypes(
-      int arg_idx, const InputArgumentType& input_argument,
-      const FunctionArgumentType& signature_argument,
-      bool allow_argument_coercion,
-      SignatureMatchResult* signature_match_result,
-      bool* signature_matches) const;
+  // Generates an error message for function call mismatching with the existing
+  // signatures, with <prefix_message> followed by a list of supported
+  // signatures of <function>.
+  // If <function> has no valid signatures, the returned message would be like
+  // "Function not found: <function name>".
+  std::string GenerateErrorMessageWithSupportedSignatures(
+    const Function* function,
+    const std::string& prefix_message) const;
 
   // Check a literal argument value against value constraints for a given
   // argument, and return an error if any are violated.
@@ -396,13 +375,6 @@ class FunctionResolver {
       const ASTNode* arg_location, int idx, const Value& value,
       const FunctionArgumentType& concrete_argument,
       const std::function<std::string(int)>& BadArgErrorPrefix) const;
-
-  // Determines the resolved Type related to all of the templated types present
-  // in a function signature. <templated_argument_map> must have been populated
-  // by CheckArgumentTypesAndCollectTemplatedArguments().
-  bool DetermineResolvedTypesForTemplatedArguments(
-      const ArgKindToInputTypesMap& templated_argument_map,
-      ArgKindToResolvedTypeMap* resolved_templated_arguments) const;
 
   // Converts <argument_literal> to <target_type> and replaces <coerced_literal>
   // with the new expression if successful. If <set_has_explicit_type> is true,

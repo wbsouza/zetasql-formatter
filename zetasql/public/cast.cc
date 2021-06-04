@@ -16,6 +16,7 @@
 
 #include "zetasql/public/cast.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -29,11 +30,14 @@
 #include "zetasql/common/utf_util.h"
 #include "zetasql/public/civil_time.h"
 #include "zetasql/public/coercer.h"
+#include "zetasql/public/functions/cast_date_time.h"
 #include "zetasql/public/functions/convert.h"
 #include "zetasql/public/functions/convert_proto.h"
 #include "zetasql/public/functions/convert_string.h"
+#include "zetasql/public/functions/convert_string_with_format.h"
 #include "zetasql/public/functions/date_time_util.h"
 #include "zetasql/public/functions/datetime.pb.h"
+#include "zetasql/public/functions/string.h"
 #include "zetasql/public/input_argument_type.h"
 #include "zetasql/public/language_options.h"
 #include "zetasql/public/numeric_value.h"
@@ -197,12 +201,12 @@ const CastHashMap* InitializeZetaSQLCasts() {
   ADD_TO_MAP(STRING,     TIMESTAMP,  EXPLICIT_OR_LITERAL_OR_PARAMETER);
   ADD_TO_MAP(STRING,     TIME,       EXPLICIT_OR_LITERAL_OR_PARAMETER);
   ADD_TO_MAP(STRING,     DATETIME,   EXPLICIT_OR_LITERAL_OR_PARAMETER);
+  ADD_TO_MAP(STRING,     INTERVAL,   EXPLICIT);
   ADD_TO_MAP(STRING,     ENUM,       EXPLICIT_OR_LITERAL_OR_PARAMETER);
   ADD_TO_MAP(STRING,     PROTO,      EXPLICIT_OR_LITERAL_OR_PARAMETER);
   ADD_TO_MAP(STRING,     BOOL,       EXPLICIT);
   ADD_TO_MAP(STRING,     NUMERIC,    EXPLICIT);
   ADD_TO_MAP(STRING,     BIGNUMERIC, EXPLICIT);
-  ADD_TO_MAP(STRING,     JSON,       EXPLICIT);
 
   ADD_TO_MAP(BYTES,      BYTES,      IMPLICIT);
   ADD_TO_MAP(BYTES,      STRING,     EXPLICIT);
@@ -230,10 +234,14 @@ const CastHashMap* InitializeZetaSQLCasts() {
   ADD_TO_MAP(DATETIME,   TIME,       EXPLICIT);
   ADD_TO_MAP(DATETIME,   TIMESTAMP,  EXPLICIT);
 
+  ADD_TO_MAP(INTERVAL,   INTERVAL,   IMPLICIT);
+  ADD_TO_MAP(INTERVAL,   STRING,     EXPLICIT);
+
   ADD_TO_MAP(GEOGRAPHY,  GEOGRAPHY,  IMPLICIT);
 
   ADD_TO_MAP(JSON,       JSON,       IMPLICIT);
-  ADD_TO_MAP(JSON,       STRING,     EXPLICIT);
+
+  ADD_TO_MAP(TOKENLIST,  TOKENLIST,   IMPLICIT);
 
   ADD_TO_MAP(ENUM,       STRING,     EXPLICIT);
 
@@ -405,7 +413,7 @@ zetasql_base::StatusOr<Value> DoMapEntryCast(const Value& from_value,
 
   absl::Cord bytes;
   std::string bytes_str;
-  CHECK(message->SerializeToString(&bytes_str));
+  ZETASQL_CHECK(message->SerializeToString(&bytes_str));
   bytes = absl::Cord(bytes_str);
   return Value::Proto(to_proto_type, bytes);
 }
@@ -434,11 +442,6 @@ bool SupportsExplicitCast(CastFunctionType type) {
          type == CastFunctionType::EXPLICIT_OR_LITERAL_OR_PARAMETER;
 }
 
-const CastHashMap& GetZetaSQLCasts() {
-  static const CastHashMap* cast_hash_map = InitializeZetaSQLCasts();
-  return *cast_hash_map;
-}
-
 namespace {
 
 // CastContext is an abstract class containing basic set of properties and
@@ -447,21 +450,55 @@ namespace {
 // (CastValueWithoutTypeValidation) casts.
 class CastContext {
  public:
+  // Deprecated. Use CastContext(default_timezone, current_timestamp,
+  // language_options) instead.
+  // Otherwise, if the cast is a cast from STRING to DATE, DATETIME or TIMESTAMP
+  // with a format string, the cast will fail with error that current timestamp
+  // is not set.
+  ABSL_DEPRECATED(
+      "Use CastContext(default_timezone, current_timestamp, language_options) "
+      "instead")
   CastContext(absl::TimeZone default_timezone,
               const LanguageOptions& language_options)
       : default_timezone_(default_timezone),
-        language_options_(language_options) {}
+        language_options_(language_options),
+        current_timestamp_(absl::nullopt) {}
+
+  CastContext(absl::TimeZone default_timezone,
+              absl::optional<absl::Time> current_timestamp,
+              const LanguageOptions& language_options)
+      : default_timezone_(default_timezone),
+        language_options_(language_options),
+        current_timestamp_(current_timestamp) {
+    if (current_timestamp_.has_value()) {
+      // Extracting the DATE from the current timestamp should never fail since
+      // it will be in the supported range 0001-01-01 to 9999-12-31.
+      int32_t current_date;
+      ZETASQL_CHECK_OK(functions::ExtractFromTimestamp(
+          functions::DATE, current_timestamp_.value(),
+          default_timezone_, &current_date));
+      current_date_ = current_date;
+    }
+  }
+
   virtual ~CastContext() {}
 
   CastContext(const CastContext&) = delete;
   CastContext& operator=(const CastContext&) = delete;
 
-  zetasql_base::StatusOr<Value> CastValue(const Value& from_value,
-                                  const Type* to_type) const;
+  zetasql_base::StatusOr<Value> CastValue(
+      const Value& from_value,
+      const Type* to_type,
+      const absl::optional<std::string>& format = absl::nullopt)
+      const;
 
  protected:
   const absl::TimeZone& default_timezone() const { return default_timezone_; }
   const LanguageOptions& language_options() const { return language_options_; }
+  const absl::optional<absl::Time> current_timestamp() const {
+    return current_timestamp_;
+  }
+  const absl::optional<int32_t> current_date() const { return current_date_; }
 
  private:
   // Executes a cast which involves extended types: source and/or destination
@@ -475,10 +512,64 @@ class CastContext {
 
   const absl::TimeZone default_timezone_;
   const LanguageOptions& language_options_;
+  const absl::optional<absl::Time> current_timestamp_;
+  absl::optional<int32_t> current_date_;
 };
 
-zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
-                                             const Type* to_type) const {
+static absl::Status ValidateFormatStringToDate(absl::string_view format) {
+  return functions::ValidateFormatStringForParsing(
+      format, zetasql::TypeKind::TYPE_DATE);
+}
+
+static absl::Status ValidateFormatStringToDatetime(absl::string_view format) {
+  return functions::ValidateFormatStringForParsing(
+      format, zetasql::TypeKind::TYPE_DATETIME);
+}
+
+static absl::Status ValidateFormatStringToTime(absl::string_view format) {
+  return functions::ValidateFormatStringForParsing(
+      format, zetasql::TypeKind::TYPE_TIME);
+}
+
+static absl::Status ValidateFormatStringToTimestamp(absl::string_view format) {
+  return functions::ValidateFormatStringForParsing(
+      format, zetasql::TypeKind::TYPE_TIMESTAMP);
+}
+
+static absl::Status ValidateFormatStringFromDate(absl::string_view format) {
+  return functions::ValidateFormatStringForFormatting(format, TYPE_DATE);
+}
+
+static absl::Status ValidateFormatStringFromTime(absl::string_view format) {
+  return functions::ValidateFormatStringForFormatting(format, TYPE_TIME);
+}
+
+static absl::Status ValidateFormatStringFromDateTime(absl::string_view format) {
+  return functions::ValidateFormatStringForFormatting(format, TYPE_DATETIME);
+}
+
+static absl::Status ValidateFormatStringFromTimestamp(
+    absl::string_view format) {
+  return functions::ValidateFormatStringForFormatting(format, TYPE_TIMESTAMP);
+}
+
+zetasql_base::StatusOr<Value> NumericToStringWithFormat(const Value& v,
+                                                absl::string_view format,
+                                                ProductMode product_mode) {
+  if (v.is_null()) {
+    return Value::NullString();
+  }
+
+  ZETASQL_ASSIGN_OR_RETURN(const std::string str,
+                   zetasql::functions::NumericalToStringWithFormat(
+                       v, format, product_mode));
+  return Value::String(str);
+}
+
+zetasql_base::StatusOr<Value> CastContext::CastValue(
+    const Value& from_value,
+    const Type* to_type,
+    const absl::optional<std::string>& format) const {
   ZETASQL_RET_CHECK(from_value.is_valid());
   // Use a shorter name inside the body of this method.
   const Value& v = from_value;
@@ -503,7 +594,7 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
   }
 
   // Check to see if the type kinds are castable.
-  if (!zetasql_base::ContainsKey(GetZetaSQLCasts(),
+  if (!zetasql_base::ContainsKey(internal::GetZetaSQLCasts(),
                         TypeKindPair(v.type_kind(), to_type->kind()))) {
     return MakeSqlError() << "Unsupported cast from " << v.type()->DebugString()
                           << " to " << to_type->DebugString();
@@ -529,77 +620,149 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
   // large.
   switch (FCT(v.type()->kind(), to_type->kind())) {
     // Numeric casts. Identity casts are handled above.
-    case FCT(TYPE_INT32, TYPE_INT64): return NumericCast<int32_t, int64_t>(v);
-    case FCT(TYPE_INT32, TYPE_UINT32): return NumericCast<int32_t, uint32_t>(v);
-    case FCT(TYPE_INT32, TYPE_UINT64): return NumericCast<int32_t, uint64_t>(v);
-    case FCT(TYPE_INT32, TYPE_BOOL): return NumericCast<int32_t, bool>(v);
-    case FCT(TYPE_INT32, TYPE_FLOAT): return NumericCast<int32_t, float>(v);
-    case FCT(TYPE_INT32, TYPE_DOUBLE): return NumericCast<int32_t, double>(v);
-    case FCT(TYPE_INT32, TYPE_STRING): return NumericToString<int32_t>(v);
+    case FCT(TYPE_INT32, TYPE_INT64):
+      return NumericCast<int32_t, int64_t>(v);
+    case FCT(TYPE_INT32, TYPE_UINT32):
+      return NumericCast<int32_t, uint32_t>(v);
+    case FCT(TYPE_INT32, TYPE_UINT64):
+      return NumericCast<int32_t, uint64_t>(v);
+    case FCT(TYPE_INT32, TYPE_BOOL):
+      return NumericCast<int32_t, bool>(v);
+    case FCT(TYPE_INT32, TYPE_FLOAT):
+      return NumericCast<int32_t, float>(v);
+    case FCT(TYPE_INT32, TYPE_DOUBLE):
+      return NumericCast<int32_t, double>(v);
+    case FCT(TYPE_INT32, TYPE_STRING):
+      if (format.has_value()) {
+        return NumericToStringWithFormat(v, format.value(),
+                                         language_options().product_mode());
+      } else {
+        return NumericToString<int32_t>(v);
+      }
     case FCT(TYPE_INT32, TYPE_NUMERIC):
       return NumericCast<int32_t, NumericValue>(v);
     case FCT(TYPE_INT32, TYPE_BIGNUMERIC):
       return NumericCast<int32_t, BigNumericValue>(v);
 
-    case FCT(TYPE_UINT32, TYPE_INT32): return NumericCast<uint32_t, int32_t>(v);
-    case FCT(TYPE_UINT32, TYPE_INT64): return NumericCast<uint32_t, int64_t>(v);
-    case FCT(TYPE_UINT32, TYPE_UINT64): return NumericCast<uint32_t, uint64_t>(v);
-    case FCT(TYPE_UINT32, TYPE_BOOL): return NumericCast<uint32_t, bool>(v);
-    case FCT(TYPE_UINT32, TYPE_FLOAT): return NumericCast<uint32_t, float>(v);
-    case FCT(TYPE_UINT32, TYPE_DOUBLE): return NumericCast<uint32_t, double>(v);
-    case FCT(TYPE_UINT32, TYPE_STRING): return NumericToString<uint32_t>(v);
+    case FCT(TYPE_UINT32, TYPE_INT32):
+      return NumericCast<uint32_t, int32_t>(v);
+    case FCT(TYPE_UINT32, TYPE_INT64):
+      return NumericCast<uint32_t, int64_t>(v);
+    case FCT(TYPE_UINT32, TYPE_UINT64):
+      return NumericCast<uint32_t, uint64_t>(v);
+    case FCT(TYPE_UINT32, TYPE_BOOL):
+      return NumericCast<uint32_t, bool>(v);
+    case FCT(TYPE_UINT32, TYPE_FLOAT):
+      return NumericCast<uint32_t, float>(v);
+    case FCT(TYPE_UINT32, TYPE_DOUBLE):
+      return NumericCast<uint32_t, double>(v);
+    case FCT(TYPE_UINT32, TYPE_STRING):
+      if (format.has_value()) {
+        return NumericToStringWithFormat(v, format.value(),
+                                         language_options().product_mode());
+      } else {
+        return NumericToString<uint32_t>(v);
+      }
     case FCT(TYPE_UINT32, TYPE_NUMERIC):
       return NumericCast<uint32_t, NumericValue>(v);
     case FCT(TYPE_UINT32, TYPE_BIGNUMERIC):
       return NumericCast<uint32_t, BigNumericValue>(v);
 
-    case FCT(TYPE_INT64, TYPE_INT32): return NumericCast<int64_t, int32_t>(v);
-    case FCT(TYPE_INT64, TYPE_UINT32): return NumericCast<int64_t, uint32_t>(v);
-    case FCT(TYPE_INT64, TYPE_UINT64): return NumericCast<int64_t, uint64_t>(v);
-    case FCT(TYPE_INT64, TYPE_BOOL): return NumericCast<int64_t, bool>(v);
-    case FCT(TYPE_INT64, TYPE_FLOAT): return NumericCast<int64_t, float>(v);
-    case FCT(TYPE_INT64, TYPE_DOUBLE): return NumericCast<int64_t, double>(v);
-    case FCT(TYPE_INT64, TYPE_STRING): return NumericToString<int64_t>(v);
+    case FCT(TYPE_INT64, TYPE_INT32):
+      return NumericCast<int64_t, int32_t>(v);
+    case FCT(TYPE_INT64, TYPE_UINT32):
+      return NumericCast<int64_t, uint32_t>(v);
+    case FCT(TYPE_INT64, TYPE_UINT64):
+      return NumericCast<int64_t, uint64_t>(v);
+    case FCT(TYPE_INT64, TYPE_BOOL):
+      return NumericCast<int64_t, bool>(v);
+    case FCT(TYPE_INT64, TYPE_FLOAT):
+      return NumericCast<int64_t, float>(v);
+    case FCT(TYPE_INT64, TYPE_DOUBLE):
+      return NumericCast<int64_t, double>(v);
+    case FCT(TYPE_INT64, TYPE_STRING):
+      if (format.has_value()) {
+        return NumericToStringWithFormat(v, format.value(),
+                                         language_options().product_mode());
+      } else {
+        return NumericToString<int64_t>(v);
+      }
     case FCT(TYPE_INT64, TYPE_NUMERIC):
       return NumericCast<int64_t, NumericValue>(v);
     case FCT(TYPE_INT64, TYPE_BIGNUMERIC):
       return NumericCast<int64_t, BigNumericValue>(v);
 
-    case FCT(TYPE_UINT64, TYPE_INT32): return NumericCast<uint64_t, int32_t>(v);
-    case FCT(TYPE_UINT64, TYPE_INT64): return NumericCast<uint64_t, int64_t>(v);
-    case FCT(TYPE_UINT64, TYPE_UINT32): return NumericCast<uint64_t, uint32_t>(v);
-    case FCT(TYPE_UINT64, TYPE_BOOL): return NumericCast<uint64_t, bool>(v);
-    case FCT(TYPE_UINT64, TYPE_FLOAT): return NumericCast<uint64_t, float>(v);
-    case FCT(TYPE_UINT64, TYPE_DOUBLE): return NumericCast<uint64_t, double>(v);
-    case FCT(TYPE_UINT64, TYPE_STRING): return NumericToString<uint64_t>(v);
+    case FCT(TYPE_UINT64, TYPE_INT32):
+      return NumericCast<uint64_t, int32_t>(v);
+    case FCT(TYPE_UINT64, TYPE_INT64):
+      return NumericCast<uint64_t, int64_t>(v);
+    case FCT(TYPE_UINT64, TYPE_UINT32):
+      return NumericCast<uint64_t, uint32_t>(v);
+    case FCT(TYPE_UINT64, TYPE_BOOL):
+      return NumericCast<uint64_t, bool>(v);
+    case FCT(TYPE_UINT64, TYPE_FLOAT):
+      return NumericCast<uint64_t, float>(v);
+    case FCT(TYPE_UINT64, TYPE_DOUBLE):
+      return NumericCast<uint64_t, double>(v);
+    case FCT(TYPE_UINT64, TYPE_STRING):
+      if (format.has_value()) {
+        return NumericToStringWithFormat(v, format.value(),
+                                         language_options().product_mode());
+      } else {
+        return NumericToString<uint64_t>(v);
+      }
     case FCT(TYPE_UINT64, TYPE_NUMERIC):
       return NumericCast<uint64_t, NumericValue>(v);
     case FCT(TYPE_UINT64, TYPE_BIGNUMERIC):
       return NumericCast<uint64_t, BigNumericValue>(v);
 
-    case FCT(TYPE_BOOL, TYPE_INT32): return NumericCast<bool, int32_t>(v);
-    case FCT(TYPE_BOOL, TYPE_INT64): return NumericCast<bool, int64_t>(v);
-    case FCT(TYPE_BOOL, TYPE_UINT32): return NumericCast<bool, uint32_t>(v);
-    case FCT(TYPE_BOOL, TYPE_UINT64): return NumericCast<bool, uint64_t>(v);
+    case FCT(TYPE_BOOL, TYPE_INT32):
+      return NumericCast<bool, int32_t>(v);
+    case FCT(TYPE_BOOL, TYPE_INT64):
+      return NumericCast<bool, int64_t>(v);
+    case FCT(TYPE_BOOL, TYPE_UINT32):
+      return NumericCast<bool, uint32_t>(v);
+    case FCT(TYPE_BOOL, TYPE_UINT64):
+      return NumericCast<bool, uint64_t>(v);
     case FCT(TYPE_BOOL, TYPE_STRING): return NumericToString<bool>(v);
 
-    case FCT(TYPE_FLOAT, TYPE_INT32): return NumericCast<float, int32_t>(v);
-    case FCT(TYPE_FLOAT, TYPE_INT64): return NumericCast<float, int64_t>(v);
-    case FCT(TYPE_FLOAT, TYPE_UINT32): return NumericCast<float, uint32_t>(v);
-    case FCT(TYPE_FLOAT, TYPE_UINT64): return NumericCast<float, uint64_t>(v);
+    case FCT(TYPE_FLOAT, TYPE_INT32):
+      return NumericCast<float, int32_t>(v);
+    case FCT(TYPE_FLOAT, TYPE_INT64):
+      return NumericCast<float, int64_t>(v);
+    case FCT(TYPE_FLOAT, TYPE_UINT32):
+      return NumericCast<float, uint32_t>(v);
+    case FCT(TYPE_FLOAT, TYPE_UINT64):
+      return NumericCast<float, uint64_t>(v);
     case FCT(TYPE_FLOAT, TYPE_DOUBLE): return NumericCast<float, double>(v);
-    case FCT(TYPE_FLOAT, TYPE_STRING): return NumericToString<float>(v);
+    case FCT(TYPE_FLOAT, TYPE_STRING):
+      if (format.has_value()) {
+        return NumericToStringWithFormat(v, format.value(),
+                                         language_options().product_mode());
+      } else {
+        return NumericToString<float>(v);
+      }
     case FCT(TYPE_FLOAT, TYPE_NUMERIC):
       return NumericCast<float, NumericValue>(v);
     case FCT(TYPE_FLOAT, TYPE_BIGNUMERIC):
       return NumericCast<float, BigNumericValue>(v);
 
-    case FCT(TYPE_DOUBLE, TYPE_INT32): return NumericCast<double, int32_t>(v);
-    case FCT(TYPE_DOUBLE, TYPE_INT64): return NumericCast<double, int64_t>(v);
-    case FCT(TYPE_DOUBLE, TYPE_UINT32): return NumericCast<double, uint32_t>(v);
-    case FCT(TYPE_DOUBLE, TYPE_UINT64): return NumericCast<double, uint64_t>(v);
+    case FCT(TYPE_DOUBLE, TYPE_INT32):
+      return NumericCast<double, int32_t>(v);
+    case FCT(TYPE_DOUBLE, TYPE_INT64):
+      return NumericCast<double, int64_t>(v);
+    case FCT(TYPE_DOUBLE, TYPE_UINT32):
+      return NumericCast<double, uint32_t>(v);
+    case FCT(TYPE_DOUBLE, TYPE_UINT64):
+      return NumericCast<double, uint64_t>(v);
     case FCT(TYPE_DOUBLE, TYPE_FLOAT): return NumericCast<double, float>(v);
-    case FCT(TYPE_DOUBLE, TYPE_STRING): return NumericToString<double>(v);
+    case FCT(TYPE_DOUBLE, TYPE_STRING):
+      if (format.has_value()) {
+        return NumericToStringWithFormat(v, format.value(),
+                                         language_options().product_mode());
+      } else {
+        return NumericToString<double>(v);
+      }
     case FCT(TYPE_DOUBLE, TYPE_NUMERIC):
       return NumericCast<double, NumericValue>(v);
     case FCT(TYPE_DOUBLE, TYPE_BIGNUMERIC):
@@ -629,10 +792,14 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
     }
 
     case FCT(TYPE_STRING, TYPE_BOOL): return StringToNumeric<bool>(v);
-    case FCT(TYPE_STRING, TYPE_INT32): return StringToNumeric<int32_t>(v);
-    case FCT(TYPE_STRING, TYPE_INT64): return StringToNumeric<int64_t>(v);
-    case FCT(TYPE_STRING, TYPE_UINT32): return StringToNumeric<uint32_t>(v);
-    case FCT(TYPE_STRING, TYPE_UINT64): return StringToNumeric<uint64_t>(v);
+    case FCT(TYPE_STRING, TYPE_INT32):
+      return StringToNumeric<int32_t>(v);
+    case FCT(TYPE_STRING, TYPE_INT64):
+      return StringToNumeric<int64_t>(v);
+    case FCT(TYPE_STRING, TYPE_UINT32):
+      return StringToNumeric<uint32_t>(v);
+    case FCT(TYPE_STRING, TYPE_UINT64):
+      return StringToNumeric<uint64_t>(v);
     case FCT(TYPE_STRING, TYPE_FLOAT): return StringToNumeric<float>(v);
     case FCT(TYPE_STRING, TYPE_DOUBLE): return StringToNumeric<double>(v);
     case FCT(TYPE_STRING, TYPE_NUMERIC):
@@ -652,7 +819,17 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
 
     case FCT(TYPE_STRING, TYPE_DATE): {
       int32_t date;
-      ZETASQL_RETURN_IF_ERROR(functions::ConvertStringToDate(v.string_value(), &date));
+      if (format.has_value()) {
+        if (!current_date().has_value()) {
+          return MakeEvalError() << "current timestamp is not set";
+        }
+
+        ZETASQL_RETURN_IF_ERROR(functions::CastStringToDate(
+            format.value(), v.string_value(), current_date().value(), &date));
+      } else {
+        ZETASQL_RETURN_IF_ERROR(
+            functions::ConvertStringToDate(v.string_value(), &date));
+      }
       return Value::Date(date);
     }
     case FCT(TYPE_STRING, TYPE_TIMESTAMP): {
@@ -662,43 +839,59 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
       // an error should be provided.
       if (language_options().LanguageFeatureEnabled(FEATURE_TIMESTAMP_NANOS)) {
         absl::Time timestamp;
-        ZETASQL_RETURN_IF_ERROR(functions::ConvertStringToTimestamp(
-            v.string_value(), default_timezone(), functions::kNanoseconds,
-            true /* allow_tz_in_str */, &timestamp));
+
+        if (format.has_value()) {
+          if (!current_timestamp().has_value()) {
+            return MakeEvalError() << "current timestamp is not set";
+          }
+
+          ZETASQL_RETURN_IF_ERROR(functions::CastStringToTimestamp(
+              format.value(),
+              v.string_value(), default_timezone(),
+              current_timestamp().value(),
+              &timestamp));
+        } else {
+          ZETASQL_RETURN_IF_ERROR(functions::ConvertStringToTimestamp(
+              v.string_value(), default_timezone(), functions::kNanoseconds,
+              /*allow_tz_in_str=*/true, &timestamp));
+        }
         return Value::Timestamp(timestamp);
       } else {
         int64_t timestamp;
-        ZETASQL_RETURN_IF_ERROR(functions::ConvertStringToTimestamp(
-            v.string_value(), default_timezone(), functions::kMicroseconds,
-            &timestamp));
+        if (format.has_value()) {
+          if (!current_timestamp().has_value()) {
+            return MakeEvalError() << "current timestamp is not set";
+          }
+
+          ZETASQL_RETURN_IF_ERROR(functions::CastStringToTimestamp(
+              format.value(),
+              v.string_value(), default_timezone(),
+              current_timestamp().value(),
+              &timestamp));
+        } else {
+          ZETASQL_RETURN_IF_ERROR(functions::ConvertStringToTimestamp(
+              v.string_value(), default_timezone(), functions::kMicroseconds,
+              &timestamp));
+        }
         return Value::TimestampFromUnixMicros(timestamp);
       }
     }
-    case FCT(TYPE_STRING, TYPE_JSON): {
-      if (language_options().LanguageFeatureEnabled(
-              FEATURE_JSON_NO_VALIDATION)) {
-        return Value::UnvalidatedJsonString(v.string_value());
-      } else {
-        auto json_value = JSONValue::ParseJSONString(
-            v.string_value(), language_options().LanguageFeatureEnabled(
-                                  FEATURE_JSON_LEGACY_PARSE));
-        if (!json_value.ok()) {
-          return MakeEvalError() << json_value.status().message();
-        }
-        return Value::Json(std::move(json_value.value()));
-      }
-    }
-
     case FCT(TYPE_TIMESTAMP, TYPE_STRING): {
       std::string timestamp;
-      if (language_options().LanguageFeatureEnabled(FEATURE_TIMESTAMP_NANOS)) {
-        ZETASQL_RETURN_IF_ERROR(functions::ConvertTimestampToString(
-            v.ToTime(), functions::kNanoseconds, default_timezone(),
-            &timestamp));
+      if (format.has_value()) {
+        ZETASQL_RETURN_IF_ERROR(functions::CastFormatTimestampToString(
+            format.value(), v.ToTime(), default_timezone(), &timestamp));
       } else {
-        ZETASQL_RETURN_IF_ERROR(functions::ConvertTimestampToStringWithTruncation(
-            v.ToUnixMicros(), functions::kMicroseconds, default_timezone(),
-            &timestamp));
+        if (language_options().LanguageFeatureEnabled(
+                FEATURE_TIMESTAMP_NANOS)) {
+          ZETASQL_RETURN_IF_ERROR(functions::ConvertTimestampToString(
+              v.ToTime(), functions::kNanoseconds, default_timezone(),
+              &timestamp));
+        } else {
+          ZETASQL_RETURN_IF_ERROR(functions::ConvertTimestampToStringWithTruncation(
+              v.ToUnixMicros(), functions::kMicroseconds, default_timezone(),
+              &timestamp));
+        }
       }
       return Value::String(timestamp);
     }
@@ -717,6 +910,13 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
       return Value::Date(date);
     }
     case FCT(TYPE_STRING, TYPE_BYTES):
+      if (format.has_value()) {
+        std::string output;
+        ZETASQL_RETURN_IF_ERROR(functions::StringToBytes(v.string_value(),
+                                                 format.value(), &output));
+        return Value::Bytes(output);
+      }
+
       return Value::Bytes(v.string_value());
 
     case FCT(TYPE_STRING, TYPE_PROTO): {
@@ -758,6 +958,13 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
     }
 
     case FCT(TYPE_BYTES, TYPE_STRING): {
+      if (format.has_value()) {
+        std::string output;
+        ZETASQL_RETURN_IF_ERROR(
+            functions::BytesToString(v.bytes_value(), format.value(), &output));
+        return Value::String(output);
+      }
+
       const std::string& utf8 = v.bytes_value();
       // No escaping is needed since the bytes value is already unescaped.
       if (!IsWellFormedUTF8(utf8)) {
@@ -772,7 +979,12 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
       return Value::Proto(to_type->AsProto(), absl::Cord(v.bytes_value()));
     case FCT(TYPE_DATE, TYPE_STRING): {
       std::string date;
-      ZETASQL_RETURN_IF_ERROR(functions::ConvertDateToString(v.date_value(), &date));
+      if (format.has_value()) {
+        ZETASQL_RETURN_IF_ERROR(functions::CastFormatDateToString(
+            format.value(), v.date_value(), &date));
+      } else {
+        ZETASQL_RETURN_IF_ERROR(functions::ConvertDateToString(v.date_value(), &date));
+      }
       return Value::String(date);
     }
 
@@ -806,14 +1018,25 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
 
     case FCT(TYPE_STRING, TYPE_TIME): {
       TimeValue time;
-      ZETASQL_RETURN_IF_ERROR(functions::ConvertStringToTime(
-          v.string_value(), GetTimestampScale(language_options()), &time));
+      if (format.has_value()) {
+        ZETASQL_RETURN_IF_ERROR(functions::CastStringToTime(
+            format.value(), v.string_value(),
+            GetTimestampScale(language_options()), &time));
+      } else {
+        ZETASQL_RETURN_IF_ERROR(functions::ConvertStringToTime(
+            v.string_value(), GetTimestampScale(language_options()), &time));
+      }
       return Value::Time(time);
     }
     case FCT(TYPE_TIME, TYPE_STRING): {
       std::string result;
-      ZETASQL_RETURN_IF_ERROR(functions::ConvertTimeToString(
-          v.time_value(), GetTimestampScale(language_options()), &result));
+      if (format.has_value()) {
+        ZETASQL_RETURN_IF_ERROR(functions::CastFormatTimeToString(
+            format.value(), v.time_value(), &result));
+      } else {
+        ZETASQL_RETURN_IF_ERROR(functions::ConvertTimeToString(
+            v.time_value(), GetTimestampScale(language_options()), &result));
+      }
       return Value::String(result);
     }
     case FCT(TYPE_TIMESTAMP, TYPE_TIME): {
@@ -825,14 +1048,32 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
 
     case FCT(TYPE_STRING, TYPE_DATETIME): {
       DatetimeValue datetime;
-      ZETASQL_RETURN_IF_ERROR(functions::ConvertStringToDatetime(
-          v.string_value(), GetTimestampScale(language_options()), &datetime));
+      if (format.has_value()) {
+        if (!current_date().has_value()) {
+          return MakeEvalError() << "current timestamp is not set";
+        }
+
+        ZETASQL_RETURN_IF_ERROR(functions::CastStringToDatetime(
+            format.value(), v.string_value(),
+            GetTimestampScale(language_options()), current_date().value(),
+            &datetime));
+      } else {
+        ZETASQL_RETURN_IF_ERROR(functions::ConvertStringToDatetime(
+            v.string_value(), GetTimestampScale(language_options()),
+            &datetime));
+      }
       return Value::Datetime(datetime);
     }
     case FCT(TYPE_DATETIME, TYPE_STRING): {
       std::string result;
-      ZETASQL_RETURN_IF_ERROR(functions::ConvertDatetimeToString(
-          v.datetime_value(), GetTimestampScale(language_options()), &result));
+      if (format.has_value()) {
+        ZETASQL_RETURN_IF_ERROR(functions::CastFormatDatetimeToString(
+            format.value(), v.datetime_value(), &result));
+      } else {
+        ZETASQL_RETURN_IF_ERROR(functions::ConvertDatetimeToString(
+            v.datetime_value(), GetTimestampScale(language_options()),
+            &result));
+      }
       return Value::String(result);
     }
     case FCT(TYPE_DATETIME, TYPE_TIMESTAMP): {
@@ -864,6 +1105,15 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
       ZETASQL_RETURN_IF_ERROR(
           functions::ExtractTimeFromDatetime(v.datetime_value(), &time));
       return Value::Time(time);
+    }
+
+    case FCT(TYPE_INTERVAL, TYPE_STRING): {
+      return Value::String(v.interval_value().ToString());
+    }
+    case FCT(TYPE_STRING, TYPE_INTERVAL): {
+      ZETASQL_ASSIGN_OR_RETURN(IntervalValue interval,
+                       IntervalValue::Parse(v.string_value()));
+      return Value::Interval(interval);
     }
 
     case FCT(TYPE_STRUCT, TYPE_STRUCT): {
@@ -956,8 +1206,12 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
     case FCT(TYPE_NUMERIC, TYPE_BIGNUMERIC):
       return NumericCast<NumericValue, BigNumericValue>(v);
     case FCT(TYPE_NUMERIC, TYPE_STRING):
-      return NumericToString<NumericValue>(v);
-
+      if (format.has_value()) {
+        return NumericToStringWithFormat(v, format.value(),
+                                         language_options().product_mode());
+      } else {
+        return NumericToString<NumericValue>(v);
+      }
     case FCT(TYPE_BIGNUMERIC, TYPE_INT32):
       return NumericCast<BigNumericValue, int32_t>(v);
     case FCT(TYPE_BIGNUMERIC, TYPE_INT64):
@@ -973,13 +1227,13 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
     case FCT(TYPE_BIGNUMERIC, TYPE_NUMERIC):
       return NumericCast<BigNumericValue, NumericValue>(v);
     case FCT(TYPE_BIGNUMERIC, TYPE_STRING):
-      return NumericToString<BigNumericValue>(v);
+      if (format.has_value()) {
+        return NumericToStringWithFormat(v, format.value(),
+                                         language_options().product_mode());
+      } else {
+        return NumericToString<BigNumericValue>(v);
+      }
 
-    case FCT(TYPE_JSON, TYPE_STRING): {
-      return Value::String(v.json_string());
-    }
-
-    // TODO: implement missing casts.
     default:
       return ::zetasql_base::UnimplementedErrorBuilder()
              << "Unimplemented cast from " << v.type()->DebugString() << " to "
@@ -991,9 +1245,11 @@ zetasql_base::StatusOr<Value> CastContext::CastValue(const Value& from_value,
 class CastContextWithValidation : public CastContext {
  public:
   CastContextWithValidation(absl::TimeZone default_timezone,
+                            absl::optional<absl::Time> current_timestamp,
                             const LanguageOptions& language_options,
                             Catalog* catalog)
-      : CastContext(default_timezone, language_options), catalog_(catalog) {}
+      : CastContext(default_timezone, current_timestamp, language_options),
+        catalog_(catalog) {}
 
  private:
   zetasql_base::StatusOr<Value> CastWithExtendedType(
@@ -1036,9 +1292,11 @@ class CastContextWithValidation : public CastContext {
 class CastContextWithoutValidation : public CastContext {
  public:
   CastContextWithoutValidation(
-      absl::TimeZone default_timezone, const LanguageOptions& language_options,
+      absl::TimeZone default_timezone,
+      absl::optional<absl::Time> current_timestamp,
+      const LanguageOptions& language_options,
       const ExtendedCompositeCastEvaluator* extended_cast_evaluator)
-      : CastContext(default_timezone, language_options),
+      : CastContext(default_timezone, current_timestamp, language_options),
         extended_cast_evaluator_(extended_cast_evaluator) {}
 
   zetasql_base::StatusOr<Value> CastWithExtendedType(
@@ -1067,19 +1325,98 @@ zetasql_base::StatusOr<Value> CastValue(const Value& from_value,
                                 absl::TimeZone default_timezone,
                                 const LanguageOptions& language_options,
                                 const Type* to_type, Catalog* catalog) {
-  return CastContextWithValidation(default_timezone, language_options, catalog)
-      .CastValue(from_value, to_type);
+  return CastValue(from_value, default_timezone, language_options, to_type,
+                   /*format=*/absl::nullopt, catalog);
+}
+
+zetasql_base::StatusOr<Value> CastValue(const Value& from_value,
+                                absl::TimeZone default_timezone,
+                                const LanguageOptions& language_options,
+                                const Type* to_type,
+                                const absl::optional<std::string>& format,
+                                Catalog* catalog) {
+  return CastContextWithValidation(default_timezone,
+                                   /*current_timestamp=*/absl::nullopt,
+                                   language_options, catalog)
+      .CastValue(from_value, to_type, format);
 }
 
 namespace internal {
 
 zetasql_base::StatusOr<Value> CastValueWithoutTypeValidation(
     const Value& from_value, absl::TimeZone default_timezone,
+    absl::optional<absl::Time> current_timestamp,
     const LanguageOptions& language_options, const Type* to_type,
+    const absl::optional<std::string>& format,
+    const absl::optional<std::string>& explicit_time_zone,
     const ExtendedCompositeCastEvaluator* extended_cast_evaluator) {
-  return CastContextWithoutValidation(default_timezone, language_options,
+  absl::TimeZone timezone = default_timezone;
+  if (explicit_time_zone.has_value()) {
+    ZETASQL_RETURN_IF_ERROR(
+        functions::MakeTimeZone(explicit_time_zone.value(), &timezone));
+  }
+  return CastContextWithoutValidation(timezone,
+                                      current_timestamp,
+                                      language_options,
                                       extended_cast_evaluator)
-      .CastValue(from_value, to_type);
+      .CastValue(from_value, to_type, format);
+}
+
+const CastHashMap& GetZetaSQLCasts() {
+  static const CastHashMap* cast_hash_map = InitializeZetaSQLCasts();
+  return *cast_hash_map;
+}
+
+const CastFormatMap& GetCastFormatMap() {
+  static const CastFormatMap* cast_format_map = nullptr;
+  if (cast_format_map == nullptr) {
+    CastFormatMap* map = new CastFormatMap();
+    map->insert(
+        {{TYPE_STRING, TYPE_BYTES}, functions::ValidateFormat});
+    map->insert(
+        {{TYPE_BYTES, TYPE_STRING}, functions::ValidateFormat});
+
+    // String to Date/DateTime/Time/Timestamp
+    map->insert(
+        {{TYPE_STRING, TYPE_DATE}, ValidateFormatStringToDate});
+    map->insert(
+        {{TYPE_STRING, TYPE_DATETIME}, ValidateFormatStringToDatetime});
+    map->insert(
+        {{TYPE_STRING, TYPE_TIME}, ValidateFormatStringToTime});
+    map->insert(
+        {{TYPE_STRING, TYPE_TIMESTAMP}, ValidateFormatStringToTimestamp});
+
+    // Date/DateTime/Time/Timestamp to String
+    map->insert(
+        {{TYPE_DATE, TYPE_STRING}, ValidateFormatStringFromDate});
+    map->insert(
+        {{TYPE_TIME, TYPE_STRING}, ValidateFormatStringFromTime});
+    map->insert(
+        {{TYPE_DATETIME, TYPE_STRING}, ValidateFormatStringFromDateTime});
+    map->insert(
+        {{TYPE_TIMESTAMP, TYPE_STRING}, ValidateFormatStringFromTimestamp});
+
+    // Numerical types to String
+    map->insert({{TYPE_INT32, TYPE_STRING},
+                 zetasql::functions::ValidateNumericalToStringFormat});
+    map->insert({{TYPE_UINT32, TYPE_STRING},
+                 zetasql::functions::ValidateNumericalToStringFormat});
+    map->insert({{TYPE_INT64, TYPE_STRING},
+                 zetasql::functions::ValidateNumericalToStringFormat});
+    map->insert({{TYPE_UINT64, TYPE_STRING},
+                 zetasql::functions::ValidateNumericalToStringFormat});
+    map->insert({{TYPE_FLOAT, TYPE_STRING},
+                 zetasql::functions::ValidateNumericalToStringFormat});
+    map->insert({{TYPE_DOUBLE, TYPE_STRING},
+                 zetasql::functions::ValidateNumericalToStringFormat});
+    map->insert({{TYPE_NUMERIC, TYPE_STRING},
+                 zetasql::functions::ValidateNumericalToStringFormat});
+    map->insert({{TYPE_BIGNUMERIC, TYPE_STRING},
+                 zetasql::functions::ValidateNumericalToStringFormat});
+
+    cast_format_map = map;
+  }
+  return *cast_format_map;
 }
 
 }  // namespace internal

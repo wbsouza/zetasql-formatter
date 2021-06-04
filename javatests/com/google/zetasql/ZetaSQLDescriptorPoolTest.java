@@ -20,11 +20,18 @@ package com.google.zetasql;
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.fail;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.common.testing.SerializableTester;
 import com.google.protobuf.DescriptorProtos.FileDescriptorSet;
+import com.google.protobuf.Descriptors.EnumDescriptor;
+import com.google.protobuf.Descriptors.FileDescriptor;
 import com.google.protobuf.TextFormat;
 import com.google.protobuf.TextFormat.ParseException;
+import com.google.zetasqltest.TestSchemaProto.TestEnum;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -49,6 +56,16 @@ public class ZetaSQLDescriptorPoolTest {
     }
   }
 
+  static void assertFileDescriptorsAreDependencyOrdered(DescriptorPool pool) {
+    Set<String> fileNames = new LinkedHashSet<>();
+    for (FileDescriptor file : pool.getAllFileDescriptorsInDependencyOrder()) {
+      fileNames.add(file.getFullName());
+      for (FileDescriptor dependency : file.getDependencies()) {
+        assertThat(fileNames).contains(dependency.getFullName());
+      }
+    }
+  }
+
   @Test
   public void testOneSelfContainedFileDescriptorSet() {
     pool.importFileDescriptorSet(
@@ -69,6 +86,7 @@ public class ZetaSQLDescriptorPoolTest {
     assertThat(pool.findFileByName("test/file.proto")).isNotNull();
     assertThat(pool.findFileByName("test/file2.proto")).isNull();
     assertThat(pool.findMessageTypeByName("test.msg")).isNotNull();
+    assertFileDescriptorsAreDependencyOrdered(pool);
   }
 
   @Test
@@ -178,6 +196,7 @@ public class ZetaSQLDescriptorPoolTest {
     assertThat(pool.findFileByName("test/file2.proto")).isNotNull();
     assertThat(pool.findMessageTypeByName("test.msg")).isNotNull();
     assertThat(pool.findMessageTypeByName("test.msg2")).isNotNull();
+    assertFileDescriptorsAreDependencyOrdered(pool);
   }
 
   @Test
@@ -215,6 +234,7 @@ public class ZetaSQLDescriptorPoolTest {
     assertThat(pool.findFileByName("test/file2.proto")).isNotNull();
     assertThat(pool.findMessageTypeByName("test.msg")).isNotNull();
     assertThat(pool.findMessageTypeByName("test.msg2")).isNotNull();
+    assertFileDescriptorsAreDependencyOrdered(pool);
   }
 
   @Test
@@ -271,6 +291,7 @@ public class ZetaSQLDescriptorPoolTest {
     assertThat(pool.findMessageTypeByName("test.msg.t")).isNotNull();
     assertThat(pool.findMessageTypeByName("test.msg2")).isNotNull();
     assertThat(pool.findEnumTypeByName("test.msg2.e")).isNotNull();
+    assertFileDescriptorsAreDependencyOrdered(pool);
   }
 
   @Test
@@ -310,6 +331,7 @@ public class ZetaSQLDescriptorPoolTest {
     assertThat(pool.findFileByName("test/file2.proto")).isNotNull();
     assertThat(pool.findMessageTypeByName("test.msg")).isNotNull();
     assertThat(pool.findMessageTypeByName("test.msg").findFieldByNumber(100)).isNotNull();
+    assertFileDescriptorsAreDependencyOrdered(pool);
   }
 
   @Test
@@ -360,6 +382,7 @@ public class ZetaSQLDescriptorPoolTest {
     assertThat(pool.findMessageTypeByName("test.msg")).isNotNull();
     assertThat(pool.findMessageTypeByName("test.msg2")).isNotNull();
     assertThat(pool.findMessageTypeByName("test.msg").findFieldByNumber(100)).isNotNull();
+    assertFileDescriptorsAreDependencyOrdered(pool);
   }
 
   @Test
@@ -417,6 +440,7 @@ public class ZetaSQLDescriptorPoolTest {
     assertThat(pool2.findMessageTypeByName("test.msg.t")).isNotNull();
     assertThat(pool2.findMessageTypeByName("test.msg2")).isNotNull();
     assertThat(pool2.findEnumTypeByName("test.msg2.e")).isNotNull();
+    assertFileDescriptorsAreDependencyOrdered(pool);
   }
 
   @Test
@@ -468,6 +492,81 @@ public class ZetaSQLDescriptorPoolTest {
     assertThat(pool2.findMessageTypeByName("test.msg")).isNotNull();
     assertThat(pool2.findMessageTypeByName("test.msg2")).isNotNull();
     assertThat(pool2.findMessageTypeByName("test.msg").findFieldByNumber(100)).isNotNull();
+    assertFileDescriptorsAreDependencyOrdered(pool);
+  }
+
+  @Test
+  public void testZetaSQLDescriptorPoolSerializableEmpty() {
+    ZetaSQLDescriptorPool emptyPool = new ZetaSQLDescriptorPool();
+    assertThat(emptyPool.getAllFileDescriptorsInDependencyOrder()).isEmpty();
+
+    ZetaSQLDescriptorPool reserializedPool = SerializableTester.reserialize(emptyPool);
+    assertThat(reserializedPool.getAllFileDescriptorsInDependencyOrder()).isEmpty();
+  }
+
+  private static Set<String> getFilenames(DescriptorPool pool) {
+    return pool.getAllFileDescriptorsInDependencyOrder().stream()
+        .map(FileDescriptor::getFullName)
+        .collect(Collectors.toSet());
+  }
+
+  @Test
+  public void testZetaSQLDescriptorPoolSerializable() {
+    ZetaSQLDescriptorPool pool = new ZetaSQLDescriptorPool();
+    pool.addFileDescriptor(TestEnum.getDescriptor().getFile());
+    EnumDescriptor testEnumDescriptor =
+        pool.findEnumTypeByName("zetasql_test.TestEnum").getDescriptor();
+    assertThat(testEnumDescriptor).isEqualTo(TestEnum.getDescriptor());
+
+    ImmutableSet<String> expectedDescriptorNames =
+        ImmutableSet.of(
+            "zetasql/public/proto/wire_format_annotation.proto",
+            "google/protobuf/descriptor.proto",
+            "zetasql/public/proto/type_annotation.proto",
+            "zetasql/testdata/test_schema.proto");
+    assertThat(getFilenames(pool)).containsExactlyElementsIn(expectedDescriptorNames);
+
+    ZetaSQLDescriptorPool reserializedPool = SerializableTester.reserialize(pool);
+    assertThat(getFilenames(reserializedPool)).containsExactlyElementsIn(expectedDescriptorNames);
+
+    EnumDescriptor reserializedTestEnumDescriptor =
+        reserializedPool.findEnumTypeByName("zetasql_test.TestEnum").getDescriptor();
+
+    // We expect that the descriptor will not be equal to the input.
+    assertThat(reserializedTestEnumDescriptor).isNotEqualTo(testEnumDescriptor);
+    // However, the proto should match
+    assertThat(reserializedTestEnumDescriptor.toProto()).isEqualTo(testEnumDescriptor.toProto());
+  }
+
+  @Test
+  public void testGeneratedDescriptorPoolSerializable() {
+    ZetaSQLDescriptorPool pool = ZetaSQLDescriptorPool.getGeneratedPool();
+    assertFileDescriptorsAreDependencyOrdered(ZetaSQLDescriptorPool.getGeneratedPool());
+    ZetaSQLDescriptorPool.importIntoGeneratedPool(TestEnum.getDescriptor());
+    EnumDescriptor testEnumDescriptor =
+        pool.findEnumTypeByName("zetasql_test.TestEnum").getDescriptor();
+    assertThat(testEnumDescriptor).isEqualTo(TestEnum.getDescriptor());
+
+    ImmutableSet<String> expectedDescriptorNames =
+        ImmutableSet.of(
+            "zetasql/public/proto/wire_format_annotation.proto",
+            "google/protobuf/descriptor.proto",
+            "zetasql/public/proto/type_annotation.proto",
+            "zetasql/testdata/test_schema.proto");
+    // Because the generated pool is a singleton, and other tests might add stuff to it, the
+    // best we can do is make sure it has at least what we are expecting.
+    assertThat(getFilenames(pool)).containsAtLeastElementsIn(expectedDescriptorNames);
+
+    ZetaSQLDescriptorPool reserializedPool = SerializableTester.reserialize(pool);
+    assertThat(getFilenames(reserializedPool)).containsAtLeastElementsIn(expectedDescriptorNames);
+
+    EnumDescriptor reserializedTestEnumDescriptor =
+        reserializedPool.findEnumTypeByName("zetasql_test.TestEnum").getDescriptor();
+
+    // We expect that the descriptor _will_ be equal to the input, because it is as singleton, and
+    // we dedup preserving the existing copy.
+    assertThat(reserializedTestEnumDescriptor).isEqualTo(testEnumDescriptor);
+    assertFileDescriptorsAreDependencyOrdered(ZetaSQLDescriptorPool.getGeneratedPool());
   }
 
   private static FileDescriptorSet fileDescriptorSetFromTextProto(String textProto) {

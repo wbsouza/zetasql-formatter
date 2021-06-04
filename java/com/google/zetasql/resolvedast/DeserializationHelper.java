@@ -25,6 +25,9 @@ import com.google.zetasql.Connection;
 import com.google.zetasql.ConnectionRefProto;
 import com.google.zetasql.Constant;
 import com.google.zetasql.ConstantRefProto;
+import com.google.zetasql.DescriptorPool;
+import com.google.zetasql.DescriptorPool.ZetaSQLDescriptor;
+import com.google.zetasql.DescriptorPool.ZetaSQLFieldDescriptor;
 import com.google.zetasql.FieldDescriptorRefProto;
 import com.google.zetasql.Function;
 import com.google.zetasql.FunctionProtos.FunctionSignatureProto;
@@ -32,17 +35,17 @@ import com.google.zetasql.FunctionProtos.ResolvedFunctionCallInfoProto;
 import com.google.zetasql.FunctionProtos.TVFSignatureProto;
 import com.google.zetasql.FunctionRefProto;
 import com.google.zetasql.FunctionSignature;
-import com.google.zetasql.ZetaSQLDescriptorPool;
-import com.google.zetasql.ZetaSQLDescriptorPool.ZetaSQLDescriptor;
-import com.google.zetasql.ZetaSQLDescriptorPool.ZetaSQLFieldDescriptor;
+import com.google.zetasql.ZetaSQLAnnotation.AnnotationMapProto;
 import com.google.zetasql.ZetaSQLType.ProtoTypeProto;
 import com.google.zetasql.ZetaSQLType.TypeProto;
+import com.google.zetasql.ZetaSQLTypeParameters.TypeParametersProto;
 import com.google.zetasql.Model;
 import com.google.zetasql.ModelRefProto;
 import com.google.zetasql.NotFoundException;
 import com.google.zetasql.OneofDescriptorRefProto;
 import com.google.zetasql.Procedure;
 import com.google.zetasql.ProcedureRefProto;
+import com.google.zetasql.ResolvedCollationProto;
 import com.google.zetasql.ResolvedColumnProto;
 import com.google.zetasql.ResolvedFunctionCallInfo;
 import com.google.zetasql.SimpleCatalog;
@@ -53,6 +56,7 @@ import com.google.zetasql.TableValuedFunction;
 import com.google.zetasql.TableValuedFunctionRefProto;
 import com.google.zetasql.Type;
 import com.google.zetasql.TypeFactory;
+import com.google.zetasql.TypeParameters;
 import com.google.zetasql.Value;
 import com.google.zetasql.ValueWithTypeProto;
 
@@ -63,14 +67,14 @@ import com.google.zetasql.ValueWithTypeProto;
  */
 public final class DeserializationHelper {
   private final TypeFactory typeFactory;
-  private final ImmutableList<ZetaSQLDescriptorPool> pools;
+  private final ImmutableList<? extends DescriptorPool> pools;
   // A reference to a SimpleCatalog is necessary to deserialize scalar functions and tables. These
   // should only be encountered in ASTs compiled from queries on catalogs.
   private final SimpleCatalog catalog;
 
   public DeserializationHelper(
       TypeFactory typeFactory,
-      ImmutableList<ZetaSQLDescriptorPool> pools,
+      ImmutableList<? extends DescriptorPool> pools,
       SimpleCatalog catalog) {
     this.typeFactory = checkNotNull(typeFactory);
     this.pools = checkNotNull(pools);
@@ -155,10 +159,13 @@ public final class DeserializationHelper {
   }
 
   Table deserialize(TableRefProto proto) {
-    return checkNotNull(
-        catalog.getTableById(proto.getSerializationId()),
-        "Could not find table '%s' in catalog.",
-        proto.getName());
+    if (proto.hasSerializationId()) {
+      return checkNotNull(
+          catalog.getTableById(proto.getSerializationId()),
+          "Could not find table '%s' in catalog.",
+          proto.getName());
+    }
+    return null;
   }
 
   Type deserialize(TypeProto proto) {
@@ -170,5 +177,18 @@ public final class DeserializationHelper {
       return new Value(); // Invalid value.
     }
     return Value.deserialize(deserialize(proto.getType()), proto.getValue());
+  }
+
+  AnnotationMap deserialize(AnnotationMapProto proto) {
+    // TODO: use TypeFactory to create AnnotatedType.
+    return null;
+  }
+
+  ResolvedCollation deserialize(ResolvedCollationProto proto) {
+    return ResolvedCollation.deserialize(proto);
+  }
+
+  TypeParameters deserialize(TypeParametersProto proto) {
+    return TypeParameters.deserialize(proto);
   }
 }

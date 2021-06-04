@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <stack>
 #include <utility>
@@ -41,6 +42,7 @@
 #include "zetasql/public/type.pb.h"
 #include "zetasql/public/types/type_factory.h"
 #include "zetasql/public/value_content.h"
+#include "absl/base/attributes.h"
 #include <cstdint>
 #include "absl/base/optimization.h"
 #include "absl/hash/hash.h"
@@ -78,6 +80,7 @@ using zetasql::types::Int64ArrayType;
 using zetasql::types::Int64Type;
 using zetasql::types::NumericArrayType;
 using zetasql::types::NumericType;
+using zetasql::types::JsonArrayType;
 using zetasql::types::StringArrayType;
 using zetasql::types::StringType;
 using zetasql::types::TimestampType;
@@ -101,14 +104,14 @@ std::ostream& operator<<(std::ostream& out, const Value& value) {
 
 void Value::SetMetadataForNonSimpleType(const Type* type, bool is_null,
                                         bool preserves_order) {
-  DCHECK(!type->IsSimpleType());
+  ZETASQL_DCHECK(!type->IsSimpleType());
   metadata_ = Metadata(type, is_null, preserves_order);
   internal::TypeStoreHelper::RefFromValue(type->type_store_);
 }
 
 // Null value constructor.
 Value::Value(const Type* type, bool is_null, OrderPreservationKind order_kind) {
-  CHECK(type != nullptr);
+  ZETASQL_CHECK(type != nullptr);
 
   if (type->IsSimpleType()) {
     metadata_ = Metadata(type->kind(), is_null, order_kind,
@@ -119,8 +122,8 @@ Value::Value(const Type* type, bool is_null, OrderPreservationKind order_kind) {
 }
 
 void Value::CopyFrom(const Value& that) {
-  // Self-copy check is done in the copy constructor. Here we just DCHECK that.
-  DCHECK_NE(this, &that);
+  // Self-copy check is done in the copy constructor. Here we just ZETASQL_DCHECK that.
+  ZETASQL_DCHECK_NE(this, &that);
   memcpy(this, &that, sizeof(Value));
   if (!is_valid()) {
     return;
@@ -132,29 +135,39 @@ void Value::CopyFrom(const Value& that) {
     // counter for their value. To improve performance of struct/array copying,
     // instead of incrementing types reference counter on each Value copy, we
     // can just do a single decrement when Value reference counter reaches zero.
-  }
 
-  if (!is_null()) {
-    ValueContent copied_content{};
-    that.type()->CopyValueContent(that.GetContent(), &copied_content);
-    SetContent(copied_content);
+    if (!is_null()) {
+      ValueContent copied_content{};
+      that.type()->CopyValueContent(that.GetContent(), &copied_content);
+      SetContent(copied_content);
+    }
+  } else {
+    // When we already have a type_kind, we know that we are a SimpleType.
+    // Dispatching directly to the SimpleType implementation avoids unnecessary
+    // virtual calls and switches.
+    if (!is_null()) {
+      ValueContent copied_content{};
+      SimpleType::CopyValueContent(metadata_.type_kind(), that.GetContent(),
+                                   &copied_content);
+      SetContent(copied_content);
+    }
   }
 }
 
 Value::Value(TypeKind type_kind, int64_t value) : metadata_(type_kind) {
   switch (type_kind) {
     case TYPE_DATE:
-      CHECK_LE(value, types::kDateMax);
-      CHECK_GE(value, types::kDateMin);
+      ZETASQL_CHECK_LE(value, types::kDateMax);
+      ZETASQL_CHECK_GE(value, types::kDateMin);
       int32_value_ = value;
       break;
     default:
-      LOG(FATAL) << "Invalid use of private constructor: " << type_kind;
+      ZETASQL_LOG(FATAL) << "Invalid use of private constructor: " << type_kind;
   }
 }
 
 Value::Value(absl::Time t) {
-  CHECK(functions::IsValidTime(t));
+  ZETASQL_CHECK(functions::IsValidTime(t));
   timestamp_seconds_ = absl::ToUnixSeconds(t);
   const int32_t subsecond_nanos =
       (t - absl::FromUnixSeconds(timestamp_seconds_)) / absl::Nanoseconds(1);
@@ -164,13 +177,13 @@ Value::Value(absl::Time t) {
 Value::Value(TimeValue time)
     : metadata_(TypeKind::TYPE_TIME, time.Nanoseconds()),
       bit_field_32_value_(time.Packed32TimeSeconds()) {
-  CHECK(time.IsValid());
+  ZETASQL_CHECK(time.IsValid());
 }
 
 Value::Value(DatetimeValue datetime)
     : metadata_(TypeKind::TYPE_DATETIME, datetime.Nanoseconds()),
       bit_field_64_value_(datetime.Packed64DatetimeSeconds()) {
-  CHECK(datetime.IsValid());
+  ZETASQL_CHECK(datetime.IsValid());
 }
 
 Value::Value(const EnumType* enum_type, int64_t value) {
@@ -203,7 +216,7 @@ Value::Value(const ProtoType* proto_type, absl::Cord value)
 }
 
 Value::Value(const ExtendedType* extended_type, const ValueContent& value) {
-  DCHECK_EQ(value.simple_type_extended_content_, 0);
+  ZETASQL_DCHECK_EQ(value.simple_type_extended_content_, 0);
   SetMetadataForNonSimpleType(extended_type);
   SetContent(value);
 }
@@ -223,7 +236,7 @@ Value Value::ArrayInternal(bool safe, const ArrayType* array_type,
   value_list = std::move(values);
   if (kDebugMode || safe) {
     for (const Value& v : value_list) {
-      CHECK(v.type()->Equals(array_type->element_type()))
+      ZETASQL_CHECK(v.type()->Equals(array_type->element_type()))
           << "Array element " << v << " must be of type "
           << array_type->element_type()->DebugString();
     }
@@ -239,11 +252,11 @@ Value Value::StructInternal(bool safe, const StructType* struct_type,
   value_list = std::move(values);
   if (kDebugMode || safe) {
     // Check that values are compatible with the type.
-    CHECK_EQ(struct_type->num_fields(), value_list.size());
+    ZETASQL_CHECK_EQ(struct_type->num_fields(), value_list.size());
     for (int i = 0; i < value_list.size(); ++i) {
       const Type* field_type = struct_type->field(i).type;
       const Type* value_type = value_list[i].type();
-      CHECK(field_type->Equals(value_type))
+      ZETASQL_CHECK(field_type->Equals(value_type))
           << "\nField type: " << field_type->DebugString()
           << "\nvs\nValue type: " << value_type->DebugString();
     }
@@ -252,30 +265,30 @@ Value Value::StructInternal(bool safe, const StructType* struct_type,
 }
 
 const Type* Value::type() const {
-  CHECK(is_valid()) << DebugString();
+  ZETASQL_CHECK(is_valid()) << DebugString();
   return metadata_.type();
 }
 
 const std::vector<Value>& Value::fields() const {
-  CHECK_EQ(TYPE_STRUCT, metadata_.type_kind());
-  CHECK(!is_null()) << "Null value";
+  ZETASQL_CHECK_EQ(TYPE_STRUCT, metadata_.type_kind());
+  ZETASQL_CHECK(!is_null()) << "Null value";
   return list_ptr_->values();
 }
 
 const std::vector<Value>& Value::elements() const {
-  CHECK_EQ(TYPE_ARRAY, metadata_.type_kind());
-  CHECK(!is_null()) << "Null value";
+  ZETASQL_CHECK_EQ(TYPE_ARRAY, metadata_.type_kind());
+  ZETASQL_CHECK(!is_null()) << "Null value";
   return list_ptr_->values();
 }
 
 Value Value::TimestampFromUnixMicros(int64_t v) {
-  CHECK(functions::IsValidTimestamp(v, functions::kMicroseconds)) << v;
+  ZETASQL_CHECK(functions::IsValidTimestamp(v, functions::kMicroseconds)) << v;
   return Value(absl::FromUnixMicros(v));
 }
 
 Value Value::TimeFromPacked64Micros(int64_t v) {
   TimeValue time = TimeValue::FromPacked64Micros(v);
-  CHECK(time.IsValid()) << "int64 " << v
+  ZETASQL_CHECK(time.IsValid()) << "int64 " << v
                         << " decodes to an invalid time value: "
                         << time.DebugString();
   return Value(time);
@@ -283,24 +296,24 @@ Value Value::TimeFromPacked64Micros(int64_t v) {
 
 Value Value::DatetimeFromPacked64Micros(int64_t v) {
   DatetimeValue datetime = DatetimeValue::FromPacked64Micros(v);
-  CHECK(datetime.IsValid())
+  ZETASQL_CHECK(datetime.IsValid())
       << "int64 " << v
       << " decodes to an invalid datetime value: " << datetime.DebugString();
   return Value(datetime);
 }
 
 const std::string& Value::enum_name() const {
-  CHECK_EQ(TYPE_ENUM, metadata_.type_kind()) << "Not an enum value";
-  CHECK(!is_null()) << "Null value";
+  ZETASQL_CHECK_EQ(TYPE_ENUM, metadata_.type_kind()) << "Not an enum value";
+  ZETASQL_CHECK(!is_null()) << "Null value";
   const std::string* enum_name = nullptr;
-  CHECK(type()->AsEnum()->FindName(enum_value(), &enum_name))
+  ZETASQL_CHECK(type()->AsEnum()->FindName(enum_value(), &enum_name))
       << "Value " << enum_value() << " not in "
       << type()->AsEnum()->enum_descriptor()->DebugString();
   return *enum_name;
 }
 
 int64_t Value::ToInt64() const {
-  CHECK(!is_null()) << "Null value";
+  ZETASQL_CHECK(!is_null()) << "Null value";
   switch (metadata_.type_kind()) {
     case TYPE_INT64: return int64_value_;
     case TYPE_INT32: return int32_value_;
@@ -319,25 +332,25 @@ int64_t Value::ToInt64() const {
     case TYPE_TIME:
     case TYPE_DATETIME:
     default:
-      LOG(FATAL) << "Cannot coerce " << TypeKind_Name(type_kind())
+      ZETASQL_LOG(FATAL) << "Cannot coerce " << TypeKind_Name(type_kind())
                  << " to int64";
   }
 }
 
 uint64_t Value::ToUint64() const {
-  CHECK(!is_null()) << "Null value";
+  ZETASQL_CHECK(!is_null()) << "Null value";
   switch (metadata_.type_kind()) {
     case TYPE_UINT64: return uint64_value_;
     case TYPE_UINT32: return uint32_value_;
     case TYPE_BOOL: return bool_value_;
     default:
-      LOG(FATAL) << "Cannot coerce to uint64";
+      ZETASQL_LOG(FATAL) << "Cannot coerce to uint64";
       return 0;
   }
 }
 
 double Value::ToDouble() const {
-  CHECK(!is_null()) << "Null value";
+  ZETASQL_CHECK(!is_null()) << "Null value";
   switch (metadata_.type_kind()) {
     case TYPE_BOOL: return bool_value_;
     case TYPE_DATE: return int32_value_;
@@ -363,7 +376,7 @@ double Value::ToDouble() const {
     case TYPE_TIME:
     case TYPE_DATETIME:
     default:
-      LOG(FATAL) << "Cannot coerce to double";
+      ZETASQL_LOG(FATAL) << "Cannot coerce to double";
   }
 }
 
@@ -381,7 +394,7 @@ uint64_t Value::physical_byte_size() const {
 }
 
 absl::Cord Value::ToCord() const {
-  CHECK(!is_null()) << "Null value";
+  ZETASQL_CHECK(!is_null()) << "Null value";
   switch (metadata_.type_kind()) {
     case TYPE_STRING:
     case TYPE_BYTES:
@@ -389,14 +402,14 @@ absl::Cord Value::ToCord() const {
     case TYPE_PROTO:
       return proto_ptr_->value();
     default:
-      LOG(FATAL) << "Cannot coerce to Cord";
+      ZETASQL_LOG(FATAL) << "Cannot coerce to Cord";
       return absl::Cord();
   }
 }
 
 absl::Time Value::ToTime() const {
-  CHECK(!is_null()) << "Null value";
-  CHECK_EQ(TYPE_TIMESTAMP, metadata_.type_kind()) << "Not a timestamp value";
+  ZETASQL_CHECK(!is_null()) << "Null value";
+  ZETASQL_CHECK_EQ(TYPE_TIMESTAMP, metadata_.type_kind()) << "Not a timestamp value";
   return absl::FromUnixSeconds(timestamp_seconds_) +
          absl::Nanoseconds(subsecond_nanos());
 }
@@ -423,15 +436,15 @@ absl::Status Value::ToUnixNanos(int64_t* nanos) const {
 }
 
 ValueContent Value::extended_value() const {
-  CHECK_EQ(type_kind(), TYPE_EXTENDED);
+  ZETASQL_CHECK_EQ(type_kind(), TYPE_EXTENDED);
   return GetContent();
 }
 
 google::protobuf::Message* Value::ToMessage(
     google::protobuf::DynamicMessageFactory* message_factory,
     bool return_null_on_error) const {
-  CHECK(type()->IsProto());
-  CHECK(!is_null());
+  ZETASQL_CHECK(type()->IsProto());
+  ZETASQL_CHECK(!is_null());
   std::unique_ptr<google::protobuf::Message> m(
       message_factory->GetPrototype(type()->AsProto()->descriptor())->New());
   const bool success = m->ParsePartialFromString(std::string(ToCord()));
@@ -440,8 +453,8 @@ google::protobuf::Message* Value::ToMessage(
 }
 
 const Value& Value::FindFieldByName(absl::string_view name) const {
-  CHECK(type()->IsStruct());
-  CHECK(!is_null()) << "Null value";
+  ZETASQL_CHECK(type()->IsStruct());
+  ZETASQL_CHECK(!is_null()) << "Null value";
   if (!name.empty()) {
     // Find field position.
     for (int i = 0; i < type()->AsStruct()->num_fields(); i++) {
@@ -487,7 +500,7 @@ void Value::DeepOrderKindSpec::FillSpec(const Value& v) {
       if (children.empty()) {
         children.resize(v.num_fields());
       }
-      DCHECK_EQ(children.size(), v.num_fields());
+      ZETASQL_DCHECK_EQ(children.size(), v.num_fields());
       for (int i = 0; i < v.num_fields(); i++) {
         children[i].FillSpec(v.field(i));
       }
@@ -625,7 +638,7 @@ bool Value::EqualElementMultiSet(const Value& x, const Value& y,
   InternalComparer comparer(float_margin, deep_order_spec);
   ValueCountMap x_multiset(x.num_elements(), hasher, comparer);
   ValueCountMap y_multiset(x.num_elements(), hasher, comparer);
-  DCHECK_EQ(x.num_elements(), y.num_elements());
+  ZETASQL_DCHECK_EQ(x.num_elements(), y.num_elements());
   for (int i = 0; i < x.num_elements(); i++) {
     x_multiset[x.element(i)]++;
     y_multiset[y.element(i)]++;
@@ -669,7 +682,7 @@ bool Value::EqualElementMultiSet(const Value& x, const Value& y,
                                x.DebugString()));
       }
     }
-    DCHECK(!reason->empty());
+    ZETASQL_DCHECK(!reason->empty());
   }
   return false;
 }
@@ -692,6 +705,7 @@ static bool TypesSupportSqlEquals(const Type* type1, const Type* type2) {
     case TYPE_KIND_PAIR(TYPE_TIMESTAMP, TYPE_TIMESTAMP):
     case TYPE_KIND_PAIR(TYPE_TIME, TYPE_TIME):
     case TYPE_KIND_PAIR(TYPE_DATETIME, TYPE_DATETIME):
+    case TYPE_KIND_PAIR(TYPE_INTERVAL, TYPE_INTERVAL):
     case TYPE_KIND_PAIR(TYPE_ENUM, TYPE_ENUM):
     case TYPE_KIND_PAIR(TYPE_NUMERIC, TYPE_NUMERIC):
     case TYPE_KIND_PAIR(TYPE_BIGNUMERIC, TYPE_BIGNUMERIC):
@@ -741,6 +755,7 @@ Value Value::SqlEquals(const Value& that) const {
     case TYPE_KIND_PAIR(TYPE_TIMESTAMP, TYPE_TIMESTAMP):
     case TYPE_KIND_PAIR(TYPE_TIME, TYPE_TIME):
     case TYPE_KIND_PAIR(TYPE_DATETIME, TYPE_DATETIME):
+    case TYPE_KIND_PAIR(TYPE_INTERVAL, TYPE_INTERVAL):
     case TYPE_KIND_PAIR(TYPE_ENUM, TYPE_ENUM):
     case TYPE_KIND_PAIR(TYPE_NUMERIC, TYPE_NUMERIC):
     case TYPE_KIND_PAIR(TYPE_BIGNUMERIC, TYPE_BIGNUMERIC):
@@ -813,12 +828,11 @@ Value Value::SqlEquals(const Value& that) const {
 size_t Value::HashCode() const { return absl::Hash<Value>()(*this); }
 
 // A dummy struct to allow an alternative hashing scheme within the
-// absl hashing framework.  This overrides all double and float hashes
-// to be constants, and overrides recursive hashes to use this hasher.
-// This is used for tests which want to be more lenient (i.e. use a float
-// margin) on float equality.
-// Note, this is not guaranteed to produce identical hash-values for float-less
-// Value objects.
+// absl hashing framework.  This overrides hashes for double, float and protos
+// with floating-point fields to be constants, and overrides recursive hashes to
+// use this hasher. This is used for tests which want to be more lenient (i.e.
+// use a float margin) on float equality. Note, this is not guaranteed to
+// produce identical hash-values for float-less Value objects.
 struct ValueHasherIgnoringFloat {
   const Value& v;
 
@@ -830,7 +844,11 @@ struct ValueHasherIgnoringFloat {
   template <typename H>
   static H HashInternal(H h, const Value& v) {
     static constexpr uint64_t kFloatApproximateHashCode = 0x1192AA60660CCFABull;
-    static constexpr uint64_t kDoubleApproximateHashCode = 0x520C31647E82D8E6ull;
+    static constexpr uint64_t kDoubleApproximateHashCode =
+        0x520C31647E82D8E6ull;
+    static constexpr uint64_t
+        kMessageWithFloatingPointFieldApproximateHashCode =
+            0x1F6432686AAF52A4ull;
     if (!v.is_valid() || v.is_null()) {
       // Check this first as type_kind() will crash in this case.
       return AbslHashValue(std::move(h), v);
@@ -860,9 +878,31 @@ struct ValueHasherIgnoringFloat {
         }
         return h;
       }
+      case TYPE_PROTO: {
+        if (HasFloatingPointFields(v.type()->AsProto()->descriptor())) {
+          return H::combine(std::move(h),
+                            kMessageWithFloatingPointFieldApproximateHashCode);
+        }
+        ABSL_FALLTHROUGH_INTENDED;
+      }
       default:
         return AbslHashValue(std::move(h), v);
     }
+  }
+
+ private:
+  static bool HasFloatingPointFields(const google::protobuf::Descriptor* d) {
+    for (int i = 0; i < d->field_count(); ++i) {
+      const google::protobuf::FieldDescriptor* f = d->field(i);
+      if (f->type() == google::protobuf::FieldDescriptor::TYPE_FLOAT ||
+          f->type() == google::protobuf::FieldDescriptor::TYPE_DOUBLE) {
+        return true;
+      } else if (f->type() == google::protobuf::FieldDescriptor::TYPE_MESSAGE &&
+                 HasFloatingPointFields(f->message_type())) {
+        return true;
+      }
+    }
+    return false;
   }
 };
 
@@ -929,6 +969,7 @@ static bool TypesSupportSqlLessThan(const Type* type1, const Type* type2) {
     case TYPE_KIND_PAIR(TYPE_TIMESTAMP, TYPE_TIMESTAMP):
     case TYPE_KIND_PAIR(TYPE_TIME, TYPE_TIME):
     case TYPE_KIND_PAIR(TYPE_DATETIME, TYPE_DATETIME):
+    case TYPE_KIND_PAIR(TYPE_INTERVAL, TYPE_INTERVAL):
     case TYPE_KIND_PAIR(TYPE_ENUM, TYPE_ENUM):
     case TYPE_KIND_PAIR(TYPE_NUMERIC, TYPE_NUMERIC):
     case TYPE_KIND_PAIR(TYPE_BIGNUMERIC, TYPE_BIGNUMERIC):
@@ -966,6 +1007,7 @@ Value Value::SqlLessThan(const Value& that) const {
     case TYPE_KIND_PAIR(TYPE_DATETIME, TYPE_DATETIME):
     case TYPE_KIND_PAIR(TYPE_ENUM, TYPE_ENUM):
     case TYPE_KIND_PAIR(TYPE_NUMERIC, TYPE_NUMERIC):
+    case TYPE_KIND_PAIR(TYPE_INTERVAL, TYPE_INTERVAL):
       return Value::Bool(LessThan(that));
     case TYPE_KIND_PAIR(TYPE_BIGNUMERIC, TYPE_BIGNUMERIC):
       return Value::Bool(LessThan(that));
@@ -1064,6 +1106,8 @@ static std::string CapitalizedNameForType(const Type* type) {
       return "Time";
     case TYPE_DATETIME:
       return "Datetime";
+    case TYPE_INTERVAL:
+      return "Interval";
     case TYPE_GEOGRAPHY:
       return "Geography";
     case TYPE_NUMERIC:
@@ -1072,6 +1116,8 @@ static std::string CapitalizedNameForType(const Type* type) {
       return "BigNumeric";
     case TYPE_JSON:
       return "Json";
+    case TYPE_TOKENLIST:
+      return "TokenList";
     case TYPE_ENUM:
       return absl::StrCat("Enum<",
                           type->AsEnum()->enum_descriptor()->full_name(), ">");
@@ -1083,7 +1129,7 @@ static std::string CapitalizedNameForType(const Type* type) {
     case TYPE_STRUCT:
       return "Struct";
     case TYPE_PROTO:
-      CHECK(type->AsProto()->descriptor() != nullptr);
+      ZETASQL_CHECK(type->AsProto()->descriptor() != nullptr);
       return absl::StrCat("Proto<", type->AsProto()->descriptor()->full_name(),
                           ">");
     case TYPE_EXTENDED:
@@ -1092,7 +1138,7 @@ static std::string CapitalizedNameForType(const Type* type) {
       return type->ShortTypeName(ProductMode::PRODUCT_EXTERNAL);
     case TYPE_UNKNOWN:
     case __TypeKind__switch_must_have_a_default__:
-      LOG(FATAL) << "Unexpected type kind expected internally only: "
+      ZETASQL_LOG(FATAL) << "Unexpected type kind expected internally only: "
                  << type->kind();
   }
 }
@@ -1109,8 +1155,8 @@ std::string Value::ComplexValueToDebugString(const Value* root, bool verbose) {
   do {
     const Entry top = stack.top();
     const Type* type = top.value->type();
-    DCHECK(type->kind() == TYPE_STRUCT || type->kind() == TYPE_ARRAY);
-    DCHECK(!top.value->is_null());
+    ZETASQL_DCHECK(type->kind() == TYPE_STRUCT || type->kind() == TYPE_ARRAY);
+    ZETASQL_DCHECK(!top.value->is_null());
     const std::vector<Value>* children = nullptr;
     char closure = '\0';
     const StructType* struct_type = nullptr;
@@ -1127,7 +1173,11 @@ std::string Value::ComplexValueToDebugString(const Value* root, bool verbose) {
     } else {
       if (top.next_child_index == 0) {
         if (verbose) {
-          result.append("Array");
+          if (top.value->elements().empty()) {
+            result.append(CapitalizedNameForType(type));
+          } else {
+            result.append("Array");
+          }
         }
         if (top.value->order_kind() == kIgnoresOrder) {
           result.append("[unordered: ");
@@ -1236,8 +1286,8 @@ std::string ComplexValueToString(
   do {
     const Entry top = stack.top();
     const Type* type = top.value->type();
-    DCHECK(type->kind() == TYPE_STRUCT || type->kind() == TYPE_ARRAY);
-    DCHECK(!top.value->is_null());
+    ZETASQL_DCHECK(type->kind() == TYPE_STRUCT || type->kind() == TYPE_ARRAY);
+    ZETASQL_DCHECK(!top.value->is_null());
     const std::vector<Value>* children = nullptr;
     char closure = '\0';
     if (type->kind() == TYPE_STRUCT) {
@@ -1335,7 +1385,7 @@ std::string Value::GetSQLInternal(ProductMode mode) const {
 }
 
 std::string RepeatString(const std::string& text, int times) {
-  CHECK_GE(times, 0);
+  ZETASQL_CHECK_GE(times, 0);
   std::string result;
   result.reserve(text.size() * times);
   for (int i = 0; i < times; ++i) {
@@ -1423,7 +1473,7 @@ std::string FormatBlock(absl::string_view block_template,
   int prefix_len = FindSubstitutionMarker(block_template);
   // The position of the last line-return before the substitution marker
   // or minus one.
-  int last_line_start = block_template.rfind("\n", prefix_len) + 1;
+  int last_line_start = block_template.rfind('\n', prefix_len) + 1;
   // The column at which "COLUMN" style will wrap.
   int column_wrap_len = block_indent_cols + prefix_len - last_line_start;
   // The column at which "INDENT" style will wrap.
@@ -1435,7 +1485,7 @@ std::string FormatBlock(absl::string_view block_template,
     size_t max_length = 0;
     bool multi_line_child = false;
     for (const std::string& elem : elements) {
-      int line_return_pos = elem.find("\n");
+      int line_return_pos = elem.find('\n');
       if (line_return_pos == std::string::npos) {
         sum_length += elem.size();
         max_length = std::max(max_length, elem.size());
@@ -1525,7 +1575,7 @@ std::string FormatType(const Type* type, ArrayElemFormat elem_format,
     }
     return FormatBlock("STRUCT<$0>", fields, ",", indent_cols, WrapStyle::AUTO);
   } else if (type->IsProto()) {
-    CHECK(type->AsProto()->descriptor() != nullptr);
+    ZETASQL_CHECK(type->AsProto()->descriptor() != nullptr);
     return Substitute("PROTO<$0>", type->AsProto()->descriptor()->full_name());
   } else if (type->IsEnum()) {
     return Substitute("ENUM<$0>",
@@ -1560,10 +1610,10 @@ std::string Value::FormatInternal(int indent, bool force_type) const {
     std::string templ = absl::StrCat(sanitized_type_string, "[$0]");
     // Force a wrap after the type if the type consumes multiple lines and
     // there is more than one element (or one element over multiple lines).
-    if (type_string.find("\n") != std::string::npos &&
+    if (type_string.find('\n') != std::string::npos &&
         (elements().size() > 1 ||
          (!elements().empty() &&
-          element_strings[0].find("\n") != std::string::npos))) {
+          element_strings[0].find('\n') != std::string::npos))) {
       templ = absl::StrCat(sanitized_type_string, "\n", Indent(indent), "[$0]");
     }
     return FormatBlock(templ, element_strings, ",", indent, WrapStyle::AUTO);
@@ -1731,6 +1781,22 @@ Value BigNumericArray(absl::Span<const BigNumericValue> values) {
   return Value::Array(BigNumericArrayType(), value_vector);
 }
 
+Value JsonArray(absl::Span<const JSONValue> values) {
+  std::vector<Value> value_vector;
+  for (const auto& v : values) {
+    value_vector.push_back(Value::Json(JSONValue::CopyFrom(v.GetConstRef())));
+  }
+  return Value::Array(JsonArrayType(), value_vector);
+}
+
+Value UnvalidatedJsonStringArray(absl::Span<const std::string> values) {
+  std::vector<Value> value_vector;
+  for (const auto& v : values) {
+    value_vector.push_back(Value::UnvalidatedJsonString(v));
+  }
+  return Value::Array(JsonArrayType(), value_vector);
+}
+
 }  // namespace values
 
 absl::Status Value::Serialize(ValueProto* value_proto) const {
@@ -1777,13 +1843,14 @@ zetasql_base::StatusOr<Value> Value::Deserialize(const ValueProto& value_proto,
         return type->TypeMismatchError(value_proto);
       }
       std::vector<Value> elements;
+      elements.reserve(value_proto.array_value().element().size());
       for (const auto& element : value_proto.array_value().element()) {
         auto status_or_value =
             Deserialize(element, type->AsArray()->element_type());
         ZETASQL_RETURN_IF_ERROR(status_or_value.status());
         elements.push_back(status_or_value.value());
       }
-      return Array(type->AsArray(), elements);
+      return ArraySafe(type->AsArray(), std::move(elements));
     }
     case TYPE_STRUCT: {
       if (!value_proto.has_struct_value()) {
@@ -1819,14 +1886,14 @@ zetasql_base::StatusOr<Value> Value::Deserialize(const ValueProto& value_proto,
 }
 
 ValueContent Value::GetContent() const {
-  DCHECK(has_content());
+  ZETASQL_DCHECK(has_content());
   return ValueContent(int64_value_, metadata_.can_store_value_extended_content()
                                         ? metadata_.value_extended_content()
                                         : 0);
 }
 
 void Value::SetContent(const ValueContent& content) {
-  DCHECK(metadata_.is_valid());
+  ZETASQL_DCHECK(metadata_.is_valid());
 
   int64_value_ = content.content_;
   metadata_ = metadata_.has_type_pointer()
@@ -1836,123 +1903,6 @@ void Value::SetContent(const ValueContent& content) {
                              metadata_.preserves_order(),
                              content.simple_type_extended_content_);
 }
-
-// ContentStorage<4> represents Metadata's field layout on 32-bit systems.
-// Layouts on 32 and 64 bit systems are different, because x64 pointer and two
-// boolean variables cannot reside in 8 bytes data structure and we need
-// to use pointer tagging (even though a pointer uses just 6 bytes, some
-// platforms checks that all bits in the remaining 2 bytes have the same value).
-// On 32-bit systems we have only 2-bits available for pointer tagging (which is
-// not enough for 3 flags that we keep), however (since pointer is only 4
-// bytes), we have enough space to store flags in the first 4 bytes of the
-// structure.
-template <>
-class Value::Metadata::ContentLayout<4> {
- protected:
-  int16_t kind_;
-  uint16_t is_null_ : 1;
-  uint16_t preserves_order_ : 1;
-  uint16_t has_type_ : 1;
-
-  union {
-    const Type* type_;
-    int32_t value_extended_content_;
-  };
-
- public:
-  int16_t kind() const { return kind_; }
-  void kind(int16_t val) { kind_ = val; }
-
-  const Type* type() const { return type_; }
-  void type(Type* type) {
-    type_ = type;
-    has_type_ = true;
-  }
-
-  int32_t value_extended_content() const { return value_extended_content_; }
-  void value_extended_content(int32_t val) { value_extended_content_ = val; }
-
-  bool is_null() const { return is_null_; }
-  void is_null(bool val) { is_null_ = val; }
-
-  bool preserves_order() const { return preserves_order_; }
-  void preserves_order(bool val) { preserves_order_ = val; }
-
-  bool has_type_pointer() const { return has_type_; }
-};
-
-// On 64-bit systems we need to use pointer tagging to distinguish between the
-// case when we store type pointer and type kind together with value. We expect
-// all Type pointers to be 8 bytes aligned (which should be the case if standard
-// allocation mechanism is used since std::malloc is required to return an
-// allocation that is suitably aligned for any scalar type). We use 3 lowest
-// bits to encode is_null, preserves_order and has_type. These bits must never
-// overlap with int32_t value_. Thus we use different structure layout depending
-// on system endianness.
-template <>
-class Value::Metadata::ContentLayout<8> {
-  static constexpr uint64_t kTagMask = static_cast<uint64_t>(7);
-  static constexpr uint64_t kTypeMask = ~static_cast<uint64_t>(kTagMask);
-  static constexpr uint64_t kHasTypeTag = 1;
-  static constexpr uint64_t kIsNullTag = 1 << 1;
-  static constexpr uint64_t kPreserverOrderTag = 1 << 2;
-
- protected:
-  union {
-    uint64_t type_;
-
-    struct {
-#if defined(ABSL_IS_BIG_ENDIAN)
-      int32_t value_extended_content_;
-      int16_t kind_;
-      int16_t place_holder_;
-#elif defined(ABSL_IS_LITTLE_ENDIAN)
-      int16_t place_holder_;
-      int16_t kind_;
-      int32_t value_extended_content_;
-#else  // !ABSL_IS_BIG_ENDIAN and !ABSL_IS_LITTLE_ENDIAN
-      static_assert(false,
-                    "Platform is not supported: neither big nor little endian");
-#endif
-    };
-  };
-
- public:
-  int16_t kind() const { return kind_; }
-
-  // Kind (if set) must be set before other fields.
-  void kind(int16_t val) { kind_ = val; }
-
-  const Type* type() const {
-    return reinterpret_cast<const Type*>(type_ & kTypeMask);
-  }
-
-  // Type (if set) must be set before other fields.
-  void type(const Type* type) {
-    const uint64_t type_ptr = reinterpret_cast<uint64_t>(type);
-    CHECK_EQ((type_ptr & kTagMask), 0);
-    type_ = type_ptr | kHasTypeTag;
-  }
-
-  static void SetTag(uint64_t* dst, uint64_t tag, bool value) {
-    if (value)
-      *dst |= tag;
-    else
-      *dst &= (~tag);
-  }
-
-  int32_t value_extended_content() const { return value_extended_content_; }
-  void value_extended_content(int32_t val) { value_extended_content_ = val; }
-
-  bool is_null() const { return type_ & kIsNullTag; }
-  void is_null(bool val) { SetTag(&type_, kIsNullTag, val); }
-
-  bool preserves_order() const { return type_ & kPreserverOrderTag; }
-  void preserves_order(bool val) { SetTag(&type_, kPreserverOrderTag, val); }
-
-  bool has_type_pointer() const { return type_ & kHasTypeTag; }
-  void has_type_pointer(bool val) { SetTag(&type_, kHasTypeTag, val); }
-};
 
 Value::Metadata::Content* Value::Metadata::content() {
   static_assert(sizeof(Content) == sizeof(int64_t));
@@ -1989,7 +1939,7 @@ bool Value::Metadata::can_store_value_extended_content() const {
 }
 
 int32_t Value::Metadata::value_extended_content() const {
-  CHECK(can_store_value_extended_content());
+  ZETASQL_CHECK(can_store_value_extended_content());
   return content()->value_extended_content();
 }
 
@@ -1998,32 +1948,13 @@ bool Value::Metadata::is_valid() const {
   return content()->kind() > 0;
 }
 
-void Value::Metadata::SetFlags(bool is_null, bool preserves_order) {
-  content()->is_null(is_null);
-  content()->preserves_order(preserves_order);
-
-  DCHECK(content()->is_null() == is_null);
-  DCHECK(content()->preserves_order() == preserves_order);
-}
-
 Value::Metadata::Metadata(const Type* type, bool is_null,
                           bool preserves_order) {
-  content()->type(type);
-  SetFlags(is_null, preserves_order);
-
-  DCHECK(content()->has_type_pointer());
-  DCHECK(content()->type() == type);
-}
-
-Value::Metadata::Metadata(TypeKind kind, bool is_null, bool preserves_order,
-                          int32_t value_extended_content) {
-  content()->kind(kind);
-  content()->value_extended_content(value_extended_content);
-  SetFlags(is_null, preserves_order);
-
-  DCHECK(!content()->has_type_pointer());
-  DCHECK(content()->kind() == kind);
-  DCHECK(content()->value_extended_content() == value_extended_content);
+  *content() = Content(type, is_null, preserves_order);
+  ZETASQL_DCHECK(content()->has_type_pointer());
+  ZETASQL_DCHECK(content()->type() == type);
+  ZETASQL_DCHECK(content()->preserves_order() == preserves_order);
+  ZETASQL_DCHECK(content()->is_null() == is_null);
 }
 
 }  // namespace zetasql

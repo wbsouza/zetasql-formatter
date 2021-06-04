@@ -42,6 +42,11 @@ class ZetaSqlLocalServiceGrpcImpl
                         const EvaluateRequest* req,
                         EvaluateResponse* resp) override;
 
+  grpc::Status EvaluateStream(
+      grpc::ServerContext* context,
+      grpc::ServerReaderWriter<EvaluateResponseBatch, EvaluateRequestBatch>*
+          stream) override;
+
   grpc::Status GetTableFromProto(grpc::ServerContext* context,
                                  const TableFromProtoRequest* req,
                                  SimpleTableProto* resp) override;
@@ -75,27 +80,18 @@ class ZetaSqlLocalServiceGrpcImpl
                                  const UnregisterRequest* req,
                                  google::protobuf::Empty* unused) override;
 
-  grpc::Status RegisterParseResumeLocation(
-      grpc::ServerContext* context,
-      const ParseResumeLocationProto* parse_resume_location,
-      RegisterResponse* resp) override;
-
-  grpc::Status UnregisterParseResumeLocation(
-      grpc::ServerContext* context, const UnregisterRequest* req,
-      google::protobuf::Empty* unused) override;
-
   grpc::Status GetBuiltinFunctions(
       grpc::ServerContext* context,
       const ZetaSQLBuiltinFunctionOptionsProto* options,
       GetBuiltinFunctionsResponse* resp) override;
 
-  grpc::Status AddSimpleTable(grpc::ServerContext* context,
-                              const AddSimpleTableRequest* req,
-                              google::protobuf::Empty* unused) override;
-
   grpc::Status GetLanguageOptions(grpc::ServerContext* context,
                                   const LanguageOptionsRequest* req,
                                   LanguageOptionsProto* resp) override;
+
+  grpc::Status GetAnalyzerOptions(grpc::ServerContext* context,
+                                  const AnalyzerOptionsRequest* req,
+                                  AnalyzerOptionsProto* resp) override;
 
  private:
   ZetaSqlLocalServiceImpl service_;

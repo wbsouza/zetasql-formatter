@@ -16,17 +16,22 @@
 
 #include "zetasql/public/types/type.h"
 
+#include <cstdint>
+
 #include "zetasql/public/language_options.h"
 #include "zetasql/public/strings.h"
 #include "zetasql/public/type.pb.h"
 #include "zetasql/public/types/simple_type.h"
 #include "zetasql/public/types/type_factory.h"
+#include "zetasql/public/types/type_parameters.h"
 #include "zetasql/public/value.pb.h"
 #include "zetasql/public/value_content.h"
+#include "absl/status/status.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_join.h"
 #include "zetasql/base/map_util.h"
 #include "zetasql/base/simple_reference_counted.h"
+#include "zetasql/base/ret_check.h"
 
 namespace zetasql {
 
@@ -106,8 +111,13 @@ static const TypeKindInfo kTypeKindInfo[]{
     {"EXTENDED",           25,          25,   false },
 
     // 26
-    {"JSON",               26,          26,    true }
+    {"JSON",               26,          26,    true },
 
+    // 27
+    {"INTERVAL",           27,          27,    true },
+
+     // 28
+    {"TOKENLIST",          28,          28,    true },
     // clang-format on
     // When a new entry is added here, update
     // TypeTest::VerifyCostAndSpecificity.
@@ -139,18 +149,18 @@ bool Type::IsSimpleType(TypeKind kind) {
 
 bool Type::IsSupportedSimpleTypeKind(TypeKind kind,
                                      const LanguageOptions& language_options) {
-  DCHECK(IsSimpleType(kind));
+  ZETASQL_DCHECK(IsSimpleType(kind));
   const zetasql::Type* type = types::TypeFromSimpleTypeKind(kind);
   return type->IsSupportedType(language_options);
 }
 
-TypeKind Type::GetTypeKindIfSimple(absl::string_view type_name,
-                                   ProductMode mode) {
+TypeKind Type::ResolveBuiltinTypeNameToKindIfSimple(absl::string_view type_name,
+                                                    ProductMode mode) {
   return SimpleType::GetTypeKindIfSimple(type_name, mode);
 }
 
-TypeKind Type::GetTypeKindIfSimple(absl::string_view type_name,
-                                   const LanguageOptions& language_options) {
+TypeKind Type::ResolveBuiltinTypeNameToKindIfSimple(
+    absl::string_view type_name, const LanguageOptions& language_options) {
   return SimpleType::GetTypeKindIfSimple(
       type_name, language_options.product_mode(),
       &language_options.GetEnabledLanguageFeatures());
@@ -195,7 +205,7 @@ int Type::KindSpecificity(TypeKind kind) {
     return kTypeKindInfo[kind].specificity;
   }
 
-  LOG(FATAL) << "Out of range: " << kind;
+  ZETASQL_LOG(FATAL) << "Out of range: " << kind;
 }
 
 static int KindCost(TypeKind kind) {
@@ -203,7 +213,7 @@ static int KindCost(TypeKind kind) {
     return kTypeKindInfo[kind].cost;
   }
 
-  LOG(FATAL) << "Out of range: " << kind;
+  ZETASQL_LOG(FATAL) << "Out of range: " << kind;
 }
 
 int Type::GetTypeCoercionCost(TypeKind kind1, TypeKind kind2) {
@@ -211,8 +221,8 @@ int Type::GetTypeCoercionCost(TypeKind kind1, TypeKind kind2) {
 }
 
 bool Type::KindSpecificityLess(TypeKind kind1, TypeKind kind2) {
-  DCHECK_NE(kind1, TypeKind::TYPE_EXTENDED);
-  DCHECK_NE(kind2, TypeKind::TYPE_EXTENDED);
+  ZETASQL_DCHECK_NE(kind1, TypeKind::TYPE_EXTENDED);
+  ZETASQL_DCHECK_NE(kind2, TypeKind::TYPE_EXTENDED);
 
   return KindSpecificity(kind1) < KindSpecificity(kind2);
 }
@@ -387,7 +397,8 @@ bool Type::SupportsPartitioning(const LanguageOptions& language_options,
 bool Type::SupportsPartitioningImpl(const LanguageOptions& language_options,
                                     const Type** no_partitioning_type) const {
   bool supports_partitioning =
-      !this->IsGeography() && !this->IsFloatingPoint() && !this->IsJson();
+      !this->IsGeography() && !this->IsFloatingPoint() && !this->IsJson() &&
+      !this->IsTokenList();
   if (no_partitioning_type != nullptr) {
     *no_partitioning_type = supports_partitioning ? nullptr : this;
   }
@@ -396,7 +407,7 @@ bool Type::SupportsPartitioningImpl(const LanguageOptions& language_options,
 
 bool Type::SupportsOrdering(const LanguageOptions& language_options,
                             std::string* type_description) const {
-  if (IsGeography() || IsJson()) {
+  if (IsGeography() || IsJson() || IsTokenList()) {
     if (type_description != nullptr) {
       *type_description = TypeKindToString(this->kind(),
                                            language_options.product_mode());
@@ -486,6 +497,20 @@ size_t TypeHash::operator()(const Type* const type) const {
   }
 
   return absl::Hash<Type>()(*type);
+}
+
+zetasql_base::StatusOr<TypeParameters> Type::ValidateAndResolveTypeParameters(
+    const std::vector<TypeParameterValue>& type_parameter_values,
+    ProductMode mode) const {
+  return MakeSqlError() << "Type " << ShortTypeName(mode)
+                        << "does not support type parameters";
+}
+
+absl::Status Type::ValidateResolvedTypeParameters(
+    const TypeParameters& type_parameters, ProductMode mode) const {
+  ZETASQL_RET_CHECK(type_parameters.IsEmpty())
+      << "Type " << ShortTypeName(mode) << "does not support type parameters";
+  return absl::OkStatus();
 }
 
 }  // namespace zetasql

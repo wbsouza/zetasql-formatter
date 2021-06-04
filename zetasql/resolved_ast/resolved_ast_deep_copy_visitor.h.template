@@ -217,7 +217,7 @@ class ResolvedASTDeepCopyVisitor : public ResolvedASTVisitor {
   // The stack must be non-empty for this to be valid.
   template <typename ResolvedNodeType>
   ResolvedNodeType* GetUnownedTopOfStack() const {
-    DCHECK(!stack_.empty());
+    ZETASQL_DCHECK(!stack_.empty());
     return static_cast<ResolvedNodeType*>(stack_.top().get());
   }
 
@@ -225,18 +225,18 @@ class ResolvedASTDeepCopyVisitor : public ResolvedASTVisitor {
   // the top of the stack.
   template <typename ResolvedNodeType>
   std::unique_ptr<ResolvedNodeType> ConsumeTopOfStack() {
-    DCHECK(!stack_.empty());
+    ZETASQL_DCHECK(!stack_.empty());
     std::unique_ptr<ResolvedNodeType> node(
         static_cast<ResolvedNodeType*>(stack_.top().release()));
     stack_.pop();
-    return std::move(node);
+    return node;
   }
 
   // Calls Visit on the node, pops the result off of the stack, and returns it.
   template <typename ResolvedNodeType>
   zetasql_base::StatusOr<std::unique_ptr<ResolvedNodeType>> ProcessNode(
       const ResolvedNodeType* node) {
-    DCHECK(stack_.empty());
+    ZETASQL_DCHECK(stack_.empty());
     if (node == nullptr) {
       return std::unique_ptr<ResolvedNodeType>();
     }
@@ -289,6 +289,22 @@ class ResolvedASTDeepCopyVisitor : public ResolvedASTVisitor {
       ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<zetasql::ResolvedOption> copied_hint,
                        ProcessNode(hint.get()));
       to->add_hint_list(std::move(copied_hint));
+    }
+    return absl::OkStatus();
+  }
+
+  // Copies the WITH GROUP_ROWS parameter list from the original node to the
+  // copied node. This is required, as with_group_rows_parameter_list is not a
+  // constructor arg, and the only way to transfer ownership is to explicitly
+  // set it after constructing the copy.
+  template <typename ResolvedNodeType>
+  absl::Status CopyWithGroupRowsParameterList(const ResolvedNodeType* from,
+                                              ResolvedNodeType* to) {
+    for (const std::unique_ptr<const ResolvedColumnRef>& param :
+         from->with_group_rows_parameter_list()) {
+      ZETASQL_ASSIGN_OR_RETURN(std::unique_ptr<ResolvedColumnRef> copied_ref,
+                       ProcessNode(param.get()));
+      to->add_with_group_rows_parameter_list(std::move(copied_ref));
     }
     return absl::OkStatus();
   }

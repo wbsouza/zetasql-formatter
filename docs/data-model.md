@@ -162,7 +162,8 @@ quickly. You can specify that sort order is ascending or descending. A unique
 or primary key index defines an indexed column that is subject to the uniqueness
 constraint.
 
-## Pseudo-columns {: #pseudo-columns }
+## Pseudo-columns 
+<a id="pseudo-columns"></a>
 
 ZetaSQL tables support pseudo-columns. Pseudo-columns contain data elements
 that you can query like regular columns, but are not considered real columns in
@@ -431,7 +432,7 @@ value does not have a field called `ROWNUM`.
 
 [value-table-example]: #value-table-example
 [pseudo-columns]: #pseudo-columns
-[data-types]: https://github.com/google/zetasql/blob/master/docs/data-types
-[data-manipulation-language]: https://github.com/google/zetasql/blob/master/docs/data-manipulation-language
-[query-syntax-value-tables]: https://github.com/google/zetasql/blob/master/docs/query-syntax#value_tables
+[data-types]: https://github.com/google/zetasql/blob/master/docs/data-types.md
+[data-manipulation-language]: https://github.com/google/zetasql/blob/master/docs/data-manipulation-language.md
+[query-syntax-value-tables]: https://github.com/google/zetasql/blob/master/docs/query-syntax.md#value_tables
 

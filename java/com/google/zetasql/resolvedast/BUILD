@@ -27,9 +27,11 @@ gen_resolved_ast_files(
     name = "run_gen_resolved_ast_java",
     srcs = [
         "ResolvedNodes.java.template",
+        "RewritingVisitor.java.template",
     ],
     outs = [
         "ResolvedNodes.java",
+        "RewritingVisitor.java",
     ],
 )
 
@@ -41,17 +43,21 @@ java_library(
         "ResolvedColumn.java",
         "ResolvedNode.java",
         "ResolvedNodes.java",
+        "RewritingVisitor.java",
     ],
     deps = [
         "//java/com/google/zetasql:client",
         "//java/com/google/zetasql:types",
         "//zetasql/proto:function_java_proto",
+        "//zetasql/public:annotation_java_proto",
+        "//zetasql/public:type_parameters_java_proto",
         "//zetasql/public:type_proto_java_proto",
         "//zetasql/public/proto:type_annotation_java_proto",
         "//zetasql/resolved_ast:resolved_ast_enums_java_proto",
         "//zetasql/resolved_ast:resolved_ast_java_proto",
         "//zetasql/resolved_ast:resolved_node_kind_java_proto",
         "//zetasql/resolved_ast:serialization_java_proto",
+        "@com_google_code_findbugs_jsr305//jar",
         "@com_google_guava_guava//jar",
         "@com_google_protobuf//:protobuf_java",
     ],

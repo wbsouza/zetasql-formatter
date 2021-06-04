@@ -220,7 +220,7 @@ the generated column holds the first and last name of an author.
 CREATE TABLE authors(
   firstName STRING HIDDEN,
   lastName STRING HIDDEN,
-  fullName STRING CONCAT(firstName, " ", lastName)
+  fullName STRING AS CONCAT(firstName, " ", lastName)
 );
 ```
 
@@ -456,6 +456,7 @@ CREATE
   VIEW
   [IF NOT EXISTS]
   view_name
+  [SQL SECURITY { INVOKER | DEFINER }]
   [OPTIONS (key=value, ...)]
 AS query;
 ```
@@ -472,6 +473,14 @@ The `CREATE VIEW` statement creates a view based on a specific query.
     system-specific.
 +   `IF NOT EXISTS`: If any view exists with the same name, the `CREATE`
     statement will have no effect. Cannot appear with `OR REPLACE`.
++   `SQL SECURITY`: Specifies how data access control lists (ACLs) are applied
+    with respect to schema objects referenced within the view's query.
+    +  `DEFINER`: The privileges of the role (user) that created the view are
+       used to run the view, and are applied to each schema object the view
+       accesses.
+    +  `INVOKER`: The privileges of the role (user) that is running the query
+       that invoked the view are used to run the view, and are applied to each
+       schema object the view accesses.
 
 ## CREATE EXTERNAL TABLE
 
@@ -841,7 +850,7 @@ CREATE TABLE books (title STRING, name STRING, PRIMARY KEY (title, name));
 
 [primary-key]: #primary-key
 [create-table]: #create-table
-[hints]: lexical#hints
+[hints]: lexical.md#hints
 [defining-columns]: #defining-columns
 [defining-constraints]: #defining-table-constraints
 [defining-foreign-reference]: #defining-foreign-references

@@ -26,7 +26,7 @@
 #include "zetasql/parser/ast_node_kind.h"
 #include "zetasql/parser/parse_tree.h"
 #include "zetasql/parser/parse_tree_errors.h"
-#include "zetasql/public/analyzer.h"
+#include "zetasql/public/analyzer_options.h"
 #include "zetasql/public/coercer.h"
 #include "zetasql/public/function.h"
 #include "zetasql/public/language_options.h"
@@ -63,7 +63,7 @@ static absl::Status CompareWindowBoundaryValues(
                 "the ending framing expression value for PRECEDING";
     }
   } else {
-    DCHECK_EQ(ast_start_frame_expr->boundary_type(),
+    ZETASQL_DCHECK_EQ(ast_start_frame_expr->boundary_type(),
               ASTWindowFrameExpr::OFFSET_FOLLOWING);
     if (start_boundary_offset > end_boudary_offset) {
       return MakeSqlErrorAt(ast_start_frame_expr)
@@ -150,7 +150,7 @@ AnalyticFunctionResolver::AnalyticFunctionResolver(
 
 AnalyticFunctionResolver::~AnalyticFunctionResolver() {
   if (is_create_analytic_scan_successful_) {
-    DCHECK(window_columns_to_compute_.empty())
+    ZETASQL_DCHECK(window_columns_to_compute_.empty())
         << "Output columns for window expressions have not been attached to "
            "the tree";
   }
@@ -190,7 +190,7 @@ AnalyticFunctionResolver::NamedWindowInfoMap*
 
 void AnalyticFunctionResolver::DisableNamedWindowRefs(
     const char* clause_name) {
-  CHECK_NE(clause_name[0], '\0');
+  ZETASQL_CHECK_NE(clause_name[0], '\0');
   named_window_not_allowed_here_name_ = clause_name;
 }
 
@@ -234,7 +234,7 @@ absl::Status AnalyticFunctionResolver::ResolveOverClauseAndCreateAnalyticColumn(
       expr_resolution_info,
       expr_resolution_info->name_scope,
       expr_resolution_info->clause_name,
-      false /* allows_analytic_in */);
+      /*allows_analytic_in=*/false);
   WindowExprInfoList* partition_by_info = nullptr;  // Not owned.
   if (ast_partition_by != nullptr) {
     ZETASQL_RETURN_IF_ERROR(ResolveWindowPartitionByPreAggregation(
@@ -332,6 +332,7 @@ absl::Status AnalyticFunctionResolver::ResolveOverClauseAndCreateAnalyticColumn(
       resolved_function_call->type(), resolved_function_call->function(),
       resolved_function_call->signature(),
       resolved_function_call->release_argument_list(),
+      resolved_function_call->release_generic_argument_list(),
       resolved_function_call->error_mode(), is_distinct,
       resolved_null_handling_modifier_kind, std::move(resolved_window_frame));
   const ResolvedColumn resolved_column(
@@ -589,7 +590,7 @@ absl::Status AnalyticFunctionResolver::ResolveWindowExpression(
 absl::Status AnalyticFunctionResolver::ValidateOrderByInRangeBasedWindow(
     const ASTOrderBy* ast_order_by, const ASTWindowFrame* ast_window_frame,
     WindowExprInfoList* order_by_info) {
-  DCHECK_EQ(ast_window_frame->frame_unit(), ASTWindowFrame::RANGE);
+  ZETASQL_DCHECK_EQ(ast_window_frame->frame_unit(), ASTWindowFrame::RANGE);
   if (order_by_info == nullptr) {
     if (ast_window_frame->start_expr()->boundary_type() ==
             ASTWindowFrameExpr::UNBOUNDED_PRECEDING &&
@@ -783,19 +784,21 @@ absl::Status AnalyticFunctionResolver::ResolveWindowFrameOffsetExpr(
     if (!(*resolved_offset_expr)->type()->IsInt64()) {
       ZETASQL_RETURN_IF_ERROR(resolver_->function_resolver_->AddCastOrConvertLiteral(
           ast_frame_expr->expression(), resolver_->type_factory_->get_int64(),
-          nullptr /* scan */, false /* set_has_explicit_type */,
-          false /* return_null_on_error */, resolved_offset_expr));
+          /*format=*/nullptr,
+          /*time_zone=*/nullptr, TypeParameters(), /*scan=*/nullptr,
+          /*set_has_explicit_type=*/false, /*return_null_on_error=*/false,
+          resolved_offset_expr));
     }
   } else {
-    DCHECK_EQ(frame_unit, ResolvedWindowFrame::RANGE);
-    DCHECK(ordering_expr_type != nullptr);
+    ZETASQL_DCHECK_EQ(frame_unit, ResolvedWindowFrame::RANGE);
+    ZETASQL_DCHECK(ordering_expr_type != nullptr);
 
     if (!(*resolved_offset_expr)->type()->Equals(ordering_expr_type)) {
       SignatureMatchResult result;
       const InputArgumentType input_argument_type =
           GetInputArgumentTypeForExpr((*resolved_offset_expr).get());
       if (!coercer().CoercesTo(input_argument_type, ordering_expr_type,
-                               false /* is_explicit */, &result)) {
+                               /*is_explicit=*/false, &result)) {
         return MakeSqlErrorAt(ast_frame_expr)
                << "Window framing expression has type "
                << Type::TypeKindToString(
@@ -810,8 +813,9 @@ absl::Status AnalyticFunctionResolver::ResolveWindowFrameOffsetExpr(
       // Coerce the framing expression to match the target (ORDER BY) expression
       // type.
       ZETASQL_RETURN_IF_ERROR(resolver_->function_resolver_->AddCastOrConvertLiteral(
-          ast_frame_expr->expression(), ordering_expr_type, nullptr /* scan */,
-          false /* set_has_explicit_type */, false /* return_null_on_error */,
+          ast_frame_expr->expression(), ordering_expr_type, /*format=*/nullptr,
+          /*time_zone=*/nullptr, TypeParameters(), /*scan=*/nullptr,
+          /*set_has_explicit_type=*/false, /*return_null_on_error=*/false,
           resolved_offset_expr));
     }
   }
@@ -1243,7 +1247,7 @@ absl::Status AnalyticFunctionResolver::CheckForConflictsWithReferencedWindow(
 }
 
 const Coercer& AnalyticFunctionResolver::coercer() const {
-  DCHECK(resolver_ != nullptr);
+  ZETASQL_DCHECK(resolver_ != nullptr);
   return resolver_->coercer_;
 }
 

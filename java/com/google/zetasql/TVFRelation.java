@@ -65,15 +65,14 @@ public class TVFRelation implements Serializable {
     return isValueTable;
   }
 
-  public TVFRelationProto serialize() {
+  public TVFRelationProto serialize(FileDescriptorSetsBuilder fileDescriptorSetsBuilder) {
     TVFRelationProto.Builder protoBuilder = TVFRelationProto.newBuilder();
     for (Column col : columns) {
-      protoBuilder
-          .addColumn(
-              TVFRelationColumnProto.newBuilder()
-                  .setName(col.getName())
-                  .setType(col.getType().serialize())
-                  .setIsPseudoColumn(col.isPseudoColumn));
+      protoBuilder.addColumn(
+          TVFRelationColumnProto.newBuilder()
+              .setName(col.getName())
+              .setType(col.getType().serialize(fileDescriptorSetsBuilder))
+              .setIsPseudoColumn(col.isPseudoColumn));
     }
     protoBuilder.setIsValueTable(isValueTable);
     return protoBuilder.build();
@@ -81,7 +80,7 @@ public class TVFRelation implements Serializable {
 
   public static TVFRelation deserialize(
       TVFRelationProto proto,
-      ImmutableList<ZetaSQLDescriptorPool> pools,
+      ImmutableList<? extends DescriptorPool> pools,
       TypeFactory typeFactory) {
     if (proto.getIsValueTable()) {
       Type type = typeFactory.deserialize(proto.getColumn(0).getType(), pools);
