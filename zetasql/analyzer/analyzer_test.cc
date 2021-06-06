@@ -1631,7 +1631,7 @@ TEST(SQLBuilderTest, TableScanPrefersColumnIndexList) {
   ZETASQL_ASSERT_OK(FormatSql(sql_builder.sql(), &formatted_sql));
   EXPECT_EQ(
       "SELECT\n  t1_2.a_1 AS a_1\nFROM\n  (\n"
-      "    SELECT\n      T1.C AS a_1\n    FROM\n      T1\n  ) AS t1_2;",
+      "    SELECT\n      T1.C AS a_1\n    FROM\n      T1\n  ) AS t1_2;\n",
       formatted_sql);
 }
 
