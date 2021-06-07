@@ -39,6 +39,15 @@ cc_binary(
 cc_test(
     name = "format_test",
     srcs = ["format_test.cc"],
+    copts = [
+        "-Wno-char-subscripts",
+        "-Wno-return-type",
+        "-Wno-sign-compare",
+        "-Wno-switch",
+        "-Wno-unused-but-set-parameter",
+        "-Wno-unused-function",
+        "-Wnonnull-compare",
+    ],
     deps = [
         "//zetasql/public:sql_formatter",
         "//zetasql/base/testing:status_matchers",
