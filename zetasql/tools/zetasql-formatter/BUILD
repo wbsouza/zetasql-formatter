@@ -23,10 +23,7 @@ package(
 
 cc_binary(
     name = "format",
-    testonly = 1,
-    srcs = [
-        "format.cc",
-    ],
+    srcs = ["format.cc"],
     deps = [
         "//zetasql/public:sql_formatter",
         "@com_google_absl//absl/flags:flag",
@@ -39,15 +36,6 @@ cc_binary(
 cc_test(
     name = "format_test",
     srcs = ["format_test.cc"],
-    copts = [
-        "-Wno-char-subscripts",
-        "-Wno-return-type",
-        "-Wno-sign-compare",
-        "-Wno-switch",
-        "-Wno-unused-but-set-parameter",
-        "-Wno-unused-function",
-        "-Wnonnull-compare",
-    ],
     deps = [
         "//zetasql/public:sql_formatter",
         "//zetasql/base/testing:status_matchers",

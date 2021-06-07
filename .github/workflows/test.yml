@@ -4,6 +4,7 @@ jobs:
   test:
     name: Test the repository
     runs-on: ubuntu-latest
+    container: l.gcr.io/google/bazel:1.0.0
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v2
@@ -11,4 +12,12 @@ jobs:
           ref: ${{ github.ref }}
       - name: Test the repository
         run: |
-            make test
+          apt-get update && \
+            apt-get install build-essential software-properties-common -y && \
+            add-apt-repository ppa:ubuntu-toolchain-r/test -y && \
+            apt-get update && \
+            # Use gcc-9 for using std::filesystem api
+            apt-get install --no-install-recommends -y make gcc-9 g++-9 && \
+            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 900 \
+                --slave /usr/bin/g++ g++ /usr/bin/g++-9
+          make test
