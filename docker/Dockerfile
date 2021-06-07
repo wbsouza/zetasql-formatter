@@ -13,12 +13,12 @@ ENV CC /usr/bin/gcc
 COPY . /work/zetasql
 WORKDIR /work/zetasql
 
-RUN bazel build //zetasql/experimental:format && \
-    cp ./bazel-bin/zetasql/experimental/format .
+RUN bazel build //zetasql/tools/zetasql-formatter:format && \
+    cp ./bazel-bin/zetasql/tools/zetasql-formatter/format .
 
 
 FROM gcr.io/distroless/cc
-COPY --from=builder /work/zetasql/bazel-bin/zetasql/experimental/format /usr/bin/format
+COPY --from=builder /work/zetasql/bazel-bin/zetasql/tools/zetasql-formatter/format /usr/bin/format
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libstdc++.so.6
 WORKDIR /home
 ENTRYPOINT [ "format" ]

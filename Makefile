@@ -12,9 +12,11 @@ build-formatter: build
 push: build
 	docker push matts966/zetasql-formatter:latest
 osx:
-	CC=g++ bazel build //zetasql/experimental:format
-	sudo cp ./bazel-bin/zetasql/experimental/format ./bin/osx/zetasql-formatter
+	CC=g++ bazel build //zetasql/tools/zetasql-formatter:format
+	sudo cp ./bazel-bin/zetasql/tools/zetasql-formatter/format ./bin/osx/zetasql-formatter
 	sudo cp ./bin/osx/zetasql-formatter /usr/local/bin
 linux: build
 	./docker/linux-copy-bin.sh
-.PHONY: run build build-formatter osx push
+test:
+		CC=g++ bazel test --test_output=errors //zetasql/tools/...
+.PHONY: run build build-formatter osx push test

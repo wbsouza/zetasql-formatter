@@ -41,6 +41,9 @@ docker run -it --rm -v `pwd`:/home:Z matts966/zetasql-formatter:latest [paths]
 ```bash
 # To build (with heavy work load in disk, memory and CPU)
 make build
+
+# To test
+make test
 ```
 
 ## License
