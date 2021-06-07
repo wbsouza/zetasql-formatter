@@ -11,5 +11,4 @@ jobs:
           ref: ${{ github.ref }}
       - name: Test the repository
         run: |
-            sudo apt update && sudo apt install bazel-1.0.0
             make test
