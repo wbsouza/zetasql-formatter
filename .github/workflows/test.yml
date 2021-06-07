@@ -19,5 +19,5 @@ jobs:
             # Use gcc-9 for using std::filesystem api
             apt-get install --no-install-recommends -y make gcc-9 g++-9 && \
             update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 900 \
-                --slave /usr/bin/g++ g++ /usr/bin/g++-9
-          make test
+              --slave /usr/bin/g++ g++ /usr/bin/g++-9
+          bazel test //zetasql/tools/...
