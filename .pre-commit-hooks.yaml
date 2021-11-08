@@ -3,4 +3,4 @@
     description: Formatter for BigQuery and SpanSQL
     args: .
     language: docker_image
-    entry: matts966/zetasql-formatter:latest
+    entry: wbsouza/zetasql-formatter:latest

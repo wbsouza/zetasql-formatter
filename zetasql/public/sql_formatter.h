@@ -39,6 +39,10 @@ namespace zetasql {
 // 2. Comments are stripped in the formatted output.
 absl::Status FormatSql(const std::string& sql, std::string* formatted_sql);
 
+
+absl::Status PrintTokens(const std::string& sql, const std::string& tokens_filter);
+
+
 }  // namespace zetasql
 
 #endif  // ZETASQL_PUBLIC_SQL_FORMATTER_H_

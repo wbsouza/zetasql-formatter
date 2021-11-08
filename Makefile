@@ -1,16 +1,16 @@
 update: osx linux push
 	@echo "all artifacts are updated"
 run: build
-	docker run -it --rm -v `pwd`:/home:Z matts966/zetasql-formatter:latest
+	docker run -it --rm -v `pwd`:/home:Z wbsouza/zetasql-formatter:latest
 build:
-	DOCKER_BUILDKIT=1 docker build -t matts966/zetasql-formatter:latest -f ./docker/Dockerfile .
+	DOCKER_BUILDKIT=1 docker build -t wbsouza/zetasql-formatter:latest -f ./docker/Dockerfile .
 build-formatter: build
 	mv ./zetasql-kotlin/build/*_jar.jar ~/.Trash/
 	docker run -it --rm -v `pwd`:/work/zetasql/ \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		bazel
 push: build
-	docker push matts966/zetasql-formatter:latest
+	docker push wbsouza/zetasql-formatter:latest
 osx:
 	CC=g++ bazelisk build //zetasql/tools/zetasql-formatter:format
 	sudo cp ./bazel-bin/zetasql/tools/zetasql-formatter/format ./bin/osx/zetasql-formatter

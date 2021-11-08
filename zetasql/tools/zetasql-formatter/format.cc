@@ -31,6 +31,9 @@
 #include "absl/strings/strip.h"
 #include "absl/strings/str_join.h"
 
+ABSL_FLAG(std::string, tokens, "",
+          "Filter the tokens to print (k = Keywords, i = Identifiers, v = Values, c = Comments).");
+
 int format(const std::filesystem::path& file_path) {
   std::string formatted;
   if (file_path.extension() == ".bq" || file_path.extension() == ".sql") {
@@ -54,32 +57,64 @@ int format(const std::filesystem::path& file_path) {
   return 0;
 }
 
+int print_tokens(const std::filesystem::path& file_path, const std::string& tokens) {
+  if (file_path.extension() == ".bq" || file_path.extension() == ".sql") {
+    std::cout << std::endl << file_path << ":";
+    std::ifstream file(file_path, std::ios::in);
+    std::string sql(std::istreambuf_iterator<char>(file), {});
+    const absl::Status status = zetasql::PrintTokens(sql, tokens);
+  }
+  return 0;
+}
+
 // format formats all sql files in specified directory and returns code 0
 // if all files are formatted and 1 if error occurs or any file is formatted.
 int main(int argc, char* argv[]) {
+
   const char kUsage[] =
-      "Usage: format <directory paths...>\n";
+      "Usage: format [--print-tokens=kivc] <directory paths...>\n";
+
   std::vector<char*> args = absl::ParseCommandLine(argc, argv);
   if (argc <= 1) {
     ZETASQL_LOG(QFATAL) << kUsage;
   }
+
+  // check if has print tokens arguments
+  std::string flags_tokens = absl::GetFlag(FLAGS_tokens);
+
   std::vector<char*> remaining_args(args.begin() + 1, args.end());
 
   int rc = 0;
   for (const auto& path : remaining_args) {
+
+    // ignoring flag arguments
+    std::string argument = path;
+    if (argument.rfind("--", 0) == 0) {
+      continue;
+    }
+
+    std::cout << "\n" << path;
+
     if (std::filesystem::is_regular_file(path)) {
       std::filesystem::path file_path(path);
       return format(file_path);
     }
-    std::filesystem::recursive_directory_iterator file_path(path,
-                                                  std::filesystem::directory_options::skip_permission_denied)
-                                                  , end;
+    std::filesystem::recursive_directory_iterator file_path(path, std::filesystem::directory_options::skip_permission_denied);
+    std::filesystem::recursive_directory_iterator end;
     std::error_code err;
+
     for (; file_path != end; file_path.increment(err)) {
+
       if (err) {
         std::cout << "WARNING: " << err << std::endl;
       }
-      rc |= format(file_path->path());
+
+      std::cout << file_path->path().filename();
+      if (flags_tokens != "") {
+        rc |= print_tokens(file_path->path(), flags_tokens);
+      } else {
+        rc |= format(file_path->path());
+      }
     }
   }
   return rc;

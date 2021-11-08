@@ -1,7 +1,7 @@
 ## ZetaSQL Formatter
 
-[![release](https://github.com/Matts966/zetasql-formatter/workflows/release/badge.svg?event=create)](https://github.com/Matts966/zetasql-formatter/actions?query=event%3Acreate+workflow%3Arelease+)
-[![test](https://github.com/Matts966/zetasql-formatter/workflows/test/badge.svg?branch=formatter)](https://github.com/Matts966/zetasql-formatter/actions?query=branch%3Aformatter+workflow%3Atest+)
+[![release](https://github.com/wbsouza/zetasql-formatter/workflows/release/badge.svg?event=create)](https://github.com/wbsouza/zetasql-formatter/actions?query=event%3Acreate+workflow%3Arelease+)
+[![test](https://github.com/wbsouza/zetasql-formatter/workflows/test/badge.svg?branch=formatter)](https://github.com/wbsouza/zetasql-formatter/actions?query=branch%3Aformatter+workflow%3Atest+)
 
 <p align="center">
   <img src="./docs/changes.png">
@@ -21,13 +21,13 @@ cd ./path/to/your/project && pre-commit install
 
 ```bash
 # To install for MacOSX
-wget https://github.com/Matts966/zetasql-formatter/releases/latest/download/zetasql-formatter_darwin_amd64.zip \
+wget https://github.com/wbsouza/zetasql-formatter/releases/latest/download/zetasql-formatter_darwin_amd64.zip \
   && sudo unzip zetasql-formatter_darwin_amd64.zip -d /usr/local/bin
 ```
 
 ```bash
 # To install for Linux
-wget https://github.com/Matts966/zetasql-formatter/releases/latest/download/zetasql-formatter_linux_x86_64.zip \
+wget https://github.com/wbsouza/zetasql-formatter/releases/latest/download/zetasql-formatter_linux_x86_64.zip \
   && sudo unzip zetasql-formatter_linux_x86_64.zip -d /usr/local/bin
 ```
 
@@ -35,7 +35,7 @@ wget https://github.com/Matts966/zetasql-formatter/releases/latest/download/zeta
 # To apply formatter
 zetasql-formatter [paths]
 # To apply formatter using Docker
-docker run -it --rm -v `pwd`:/home:Z matts966/zetasql-formatter:latest [paths]
+docker run -it --rm -v `pwd`:/home:Z wbsouza/zetasql-formatter:latest [paths]
 ```
 
 ```bash

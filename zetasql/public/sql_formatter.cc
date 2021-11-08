@@ -38,6 +38,7 @@
 
 namespace zetasql {
 
+
 absl::Status FormatSql(const std::string& sql, std::string* formatted_sql) {
   ZETASQL_RET_CHECK_NE(formatted_sql, nullptr);
   formatted_sql->clear();
@@ -70,6 +71,60 @@ absl::Status FormatSql(const std::string& sql, std::string* formatted_sql) {
   }
 
   return absl::OkStatus();
+}
+
+bool contains_char(std::string s, char ch) {
+  bool found = false;
+  const char* ss = s.c_str();
+  size_t max_length = s.length();
+  for (int i = 0; !found && i < max_length; i++) {
+    found = ss[i] == ch;
+  }
+  return found;
+}
+
+
+absl::Status PrintTokens(const std::string& sql, const std::string& tokens_filter) {
+
+  ParseTokenOptions options;
+  options.include_comments = true;
+
+  std::unique_ptr<ParserOutput> parser_output;
+
+  ZETASQL_RETURN_IF_ERROR(ParseScript(sql, ParserOptions(),
+                          ErrorMessageMode::ERROR_MESSAGE_MULTI_LINE_WITH_CARET, &parser_output));
+  std::deque<std::pair<std::string, ParseLocationPoint>> comments;
+  std::vector<ParseToken> parse_tokens;
+
+  ParseResumeLocation location = ParseResumeLocation::FromStringView(sql);
+  const absl::Status token_status = GetParseTokens(options, &location, &parse_tokens);
+  
+  std::string delimiter = "";
+  if (token_status.ok()) {
+    
+    for (const auto& parse_token : parse_tokens) {
+
+      std::string value = parse_token.GetSQL();
+      if (value == "") {
+        continue;
+      }
+
+      if (
+        (parse_token.IsIdentifier() && (contains_char(tokens_filter, 'i'))) ||
+        (parse_token.IsKeyword() && (contains_char(tokens_filter, 'k'))) ||
+        (parse_token.IsValue() && (contains_char(tokens_filter, 'v'))) ||
+        (parse_token.IsComment() && (contains_char(tokens_filter, 'c')))
+      ) {
+        std::cout << delimiter << value;
+        delimiter = ",";
+      }
+      if (parse_token.IsEndOfInput()) break;
+    }
+
+  }
+  return absl::OkStatus();
+
+
 }
 
 }  // namespace zetasql
