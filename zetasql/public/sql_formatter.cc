@@ -91,20 +91,40 @@ bool contains_char(std::string s, char ch) {
 }
 
 
+std::string replace(std::string data, std::string to_search, std::string to_replace) {
+  size_t pos = data.find(to_search);
+  std::string ss = data;
+  while(pos != std::string::npos) {
+    ss.replace(pos, to_search.size(), to_replace);
+    pos = ss.find(to_search, pos + to_replace.size());
+  }
+  return ss;
+}
+
 const std::string WHITESPACE = " \n\r\t\f\v";
  
-std::string get_token_value(const ParseToken* parse_token) {
-  std::string s = parse_token->GetSQL();
+std::string ltrim(const std::string &s) {
   size_t start = s.find_first_not_of(WHITESPACE);
-  s = (start == std::string::npos) ? "" : s.substr(start);
+  return (start == std::string::npos) ? "" : s.substr(start);
+}
+ 
+std::string rtrim(const std::string &s) {
   size_t end = s.find_last_not_of(WHITESPACE);
-  s = (end == std::string::npos) ? "" : s.substr(0, end + 1);
+  return (end == std::string::npos) ? "" : s.substr(0, end + 1);
+}
+ 
+std::string trim(const std::string &s) {
+  return rtrim(ltrim(s));
+}
+ 
+std::string get_token_value(const ParseToken* parse_token) {
+  std::string s = trim(parse_token->GetSQL());
+  s = replace(s, "\r\n", "; "); // Windows new line
+  s = replace(s, "\n", "; ");   // *nix new line
   std::string result = "";
   for (int i = 0; i < s.length(); i++) {
-    if (s[i] == '"') {
-      if (i > 0) {
-        if (s[i-1] != '\\') result.push_back('\\');
-      } else result.push_back('\\');
+    if (s[i] == '"' && i > 0 && i < s.length() -1 && s[i-1] != '\\') {
+      result.push_back('\\');
     }
     result.push_back(s[i]);
   }
@@ -120,8 +140,12 @@ std::string get_token_item(const ParseToken* parse_token) {
   else if (parse_token->IsComment()) token_type = "comment";
   std::string token_value = get_token_value(parse_token);
   std::string result = "";
-  if (token_type != "") {
-    result = "{\"type\": \"" + token_type + "\", \"value\": \"" + token_value + "\"}";
+  if (token_type != "" && token_value != "") {
+    if (token_type == "value") {
+      result = "{\"type\": \"" + token_type + "\", \"value\": " + token_value + "}";
+    } else {
+      result = "{\"type\": \"" + token_type + "\", \"value\": \"" + token_value + "\"}";
+    }
   }
   return result;
 }
