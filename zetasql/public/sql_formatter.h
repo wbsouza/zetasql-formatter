@@ -17,7 +17,10 @@
 #ifndef ZETASQL_PUBLIC_SQL_FORMATTER_H_
 #define ZETASQL_PUBLIC_SQL_FORMATTER_H_
 
-#include <string>
+#include <iostream>
+#include <fstream>
+#include <chrono>
+#include <filesystem>
 
 #include "zetasql/base/status.h"
 
@@ -40,7 +43,7 @@ namespace zetasql {
 absl::Status FormatSql(const std::string& sql, std::string* formatted_sql);
 
 
-absl::Status PrintTokens(const std::string& sql, const std::string& tokens_filter);
+absl::Status ShowTokens(const std::filesystem::path& file_path, const std::string& tokens_filter, std::string* tokens);
 
 
 }  // namespace zetasql

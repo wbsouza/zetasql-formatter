@@ -19,6 +19,12 @@
 #include <memory>
 #include <vector>
 #include <deque>
+#include <string>
+
+#include <iostream>
+#include <algorithm>
+#include <filesystem>
+
 
 #include "zetasql/base/logging.h"
 #include "zetasql/parser/parse_tree.h"
@@ -73,6 +79,7 @@ absl::Status FormatSql(const std::string& sql, std::string* formatted_sql) {
   return absl::OkStatus();
 }
 
+
 bool contains_char(std::string s, char ch) {
   bool found = false;
   const char* ss = s.c_str();
@@ -84,46 +91,91 @@ bool contains_char(std::string s, char ch) {
 }
 
 
-absl::Status PrintTokens(const std::string& sql, const std::string& tokens_filter) {
+const std::string WHITESPACE = " \n\r\t\f\v";
+ 
+std::string get_token_value(const ParseToken* parse_token) {
+  std::string s = parse_token->GetSQL();
+  size_t start = s.find_first_not_of(WHITESPACE);
+  s = (start == std::string::npos) ? "" : s.substr(start);
+  size_t end = s.find_last_not_of(WHITESPACE);
+  s = (end == std::string::npos) ? "" : s.substr(0, end + 1);
+  std::string result = "";
+  for (int i = 0; i < s.length(); i++) {
+    if (s[i] == '"') {
+      if (i > 0) {
+        if (s[i-1] != '\\') result.push_back('\\');
+      } else result.push_back('\\');
+    }
+    result.push_back(s[i]);
+  }
+  return result;
+}
+
+
+std::string get_token_item(const ParseToken* parse_token) {
+  std::string token_type = "";
+  if (parse_token->IsIdentifier()) token_type = "identifier";
+  else if (parse_token->IsKeyword()) token_type = "keyword";
+  else if (parse_token->IsValue()) token_type = "value";
+  else if (parse_token->IsComment()) token_type = "comment";
+  std::string token_value = get_token_value(parse_token);
+  std::string result = "";
+  if (token_type != "") {
+    result = "{\"type\": \"" + token_type + "\", \"value\": \"" + token_value + "\"}";
+  }
+  return result;
+}
+
+
+absl::Status ShowTokens(const std::filesystem::path& file_path, const std::string& tokens_filter, std::string* tokens_output) {
 
   ParseTokenOptions options;
   options.include_comments = true;
 
   std::unique_ptr<ParserOutput> parser_output;
 
+  std::ifstream file(file_path, std::ios::in);
+  std::string sql(std::istreambuf_iterator<char>(file), {});
+
   ZETASQL_RETURN_IF_ERROR(ParseScript(sql, ParserOptions(),
                           ErrorMessageMode::ERROR_MESSAGE_MULTI_LINE_WITH_CARET, &parser_output));
+
   std::deque<std::pair<std::string, ParseLocationPoint>> comments;
   std::vector<ParseToken> parse_tokens;
 
   ParseResumeLocation location = ParseResumeLocation::FromStringView(sql);
   const absl::Status token_status = GetParseTokens(options, &location, &parse_tokens);
   
+  std::string tokens = "";
   std::string delimiter = "";
   if (token_status.ok()) {
-    
-    for (const auto& parse_token : parse_tokens) {
 
-      std::string value = parse_token.GetSQL();
-      if (value == "") {
-        continue;
-      }
+    tokens += "{ \"filename\": ";
+    tokens += file_path;
+    tokens += ", \"tokens\": [";
+
+    for (const auto& parse_token : parse_tokens) {
 
       if (
         (parse_token.IsIdentifier() && (contains_char(tokens_filter, 'i'))) ||
         (parse_token.IsKeyword() && (contains_char(tokens_filter, 'k'))) ||
-        (parse_token.IsValue() && (contains_char(tokens_filter, 'v'))) ||
-        (parse_token.IsComment() && (contains_char(tokens_filter, 'c')))
+        (parse_token.IsValue() && (contains_char(tokens_filter, 'v')))||
+        (parse_token.IsComment() && (contains_char(tokens_filter, 'c'))) 
       ) {
-        std::cout << delimiter << value;
-        delimiter = ",";
+
+        std::string token_item = get_token_item(&parse_token);
+        if (token_item != "") {
+          tokens += delimiter;
+          tokens += token_item;
+          delimiter = ", ";
+        }
       }
       if (parse_token.IsEndOfInput()) break;
     }
-
+    tokens += "]}";
   }
+  *tokens_output = tokens;
   return absl::OkStatus();
-
 
 }
 

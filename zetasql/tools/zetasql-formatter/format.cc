@@ -57,12 +57,9 @@ int format(const std::filesystem::path& file_path) {
   return 0;
 }
 
-int print_tokens(const std::filesystem::path& file_path, const std::string& tokens) {
+int show_tokens(const std::filesystem::path& file_path, const std::string& tokens_filter, std::string* tokens_output) {
   if (file_path.extension() == ".bq" || file_path.extension() == ".sql") {
-    std::cout << std::endl << file_path << ":";
-    std::ifstream file(file_path, std::ios::in);
-    std::string sql(std::istreambuf_iterator<char>(file), {});
-    const absl::Status status = zetasql::PrintTokens(sql, tokens);
+    const absl::Status status = zetasql::ShowTokens(file_path, tokens_filter, tokens_output);
   }
   return 0;
 }
@@ -93,26 +90,61 @@ int main(int argc, char* argv[]) {
       continue;
     }
 
-    std::cout << "\n" << path;
-
+    // argument is a file ...   
     if (std::filesystem::is_regular_file(path)) {
       std::filesystem::path file_path(path);
-      return format(file_path);
+
+      // show the token contents
+      if (flags_tokens != "") {
+        std::string tokens_content = "";
+        rc = show_tokens(file_path, flags_tokens, &tokens_content);
+        std::string result = "[";
+        if (tokens_content != "") {
+          result += tokens_content;
+        }
+        result += "]";
+        std::cout << result << std::endl;
+        return rc;
+      } 
+      
+      // format the file content
+      else {
+        return format(file_path);
+      }
     }
+
+    // argument is a directory ...
     std::filesystem::recursive_directory_iterator file_path(path, std::filesystem::directory_options::skip_permission_denied);
     std::filesystem::recursive_directory_iterator end;
     std::error_code err;
 
-    for (; file_path != end; file_path.increment(err)) {
-
-      if (err) {
-        std::cout << "WARNING: " << err << std::endl;
+    // show the token contents ...
+    if (flags_tokens != "") {
+      std::string result = "[";
+      std::string separator = "";
+      
+      for (; file_path != end; file_path.increment(err)) {
+        if (err) {
+          std::cout << "WARNING: " << err << std::endl;
+        }
+        std::string tokens_content = "";
+        rc |= show_tokens(file_path->path(), flags_tokens, &tokens_content);
+        if (tokens_content != "") {
+          result += separator;
+          result += tokens_content;
+          separator = ", ";
+        }
       }
-
-      std::cout << file_path->path().filename();
-      if (flags_tokens != "") {
-        rc |= print_tokens(file_path->path(), flags_tokens);
-      } else {
+      result += "]";
+      std::cout << result << std::endl;
+    } 
+    
+    // format the file content ...
+    else {
+      for (; file_path != end; file_path.increment(err)) {
+        if (err) {
+          std::cout << "WARNING: " << err << std::endl;
+        }
         rc |= format(file_path->path());
       }
     }
