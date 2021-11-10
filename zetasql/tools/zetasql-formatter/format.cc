@@ -101,6 +101,8 @@ int main(int argc, char* argv[]) {
         std::string result = "[";
         if (tokens_content != "") {
           result += tokens_content;
+        } else {
+          result += "[{\"filename\":\"" + file_path.string() + "\",\"error\":\"Error parsing the SQL script\"}]";
         }
         result += "]";
         std::cout << result << std::endl;
@@ -109,6 +111,7 @@ int main(int argc, char* argv[]) {
       
       // format the file content
       else {
+        std::cerr << "======= WARNING: Ivalid SQL script: " << file_path << " =======" << std::endl;
         return format(file_path);
       }
     }
@@ -133,6 +136,9 @@ int main(int argc, char* argv[]) {
           result += separator;
           result += tokens_content;
           separator = ", ";
+        } else {
+          std::cerr << "======= WARNING: Ivalid SQL script: " << file_path->path() << " =======" << std::endl;
+          result += "[{\"filename\":\"" + file_path->path().string() + "\",\"error\":\"Error parsing the SQL script\"}]";
         }
       }
       result += "]";

@@ -128,14 +128,19 @@ std::string get_token_item(const ParseToken* parse_token) {
   else if (parse_token->IsKeyword()) token_type = "keyword";
   else if (parse_token->IsValue()) token_type = "value";
   else if (parse_token->IsComment()) token_type = "comment";
+
+  // int line;
+  // int column;
+  // parse_token->GetLocationRange().start().GetLineAndColumn(&line, &column);
+
   std::string token_value = get_token_value(parse_token);
   std::string result = "";
   if (token_type != "" && token_value != "") {
-    if (token_type == "value") {
-      result = "{\"type\": \"" + token_type + "\", \"value\": " + token_value + "}";
-    } else {
-      result = "{\"type\": \"" + token_type + "\", \"value\": \"" + token_value + "\"}";
+    std::string delimiter = "";
+    if (token_type != "value") {
+      delimiter = "\"";
     }
+    result = "{\"type\": \"" + token_type + "\", \"value\": " + delimiter + token_value + delimiter + "}";
   }
   return result;
 }
@@ -159,15 +164,15 @@ absl::Status ShowTokens(const std::filesystem::path& file_path, const std::strin
 
   ParseResumeLocation location = ParseResumeLocation::FromStringView(sql);
   const absl::Status token_status = GetParseTokens(options, &location, &parse_tokens);
-  
+
   std::string tokens = "";
   std::string delimiter = "";
+  std::string filename = file_path;
+  if (filename[0] != '\"') {
+    filename = "\"" + filename + "\"";
+  }
+  
   if (token_status.ok()) {
-
-    std::string filename = file_path;
-    if (filename[0] != '\"') {
-      filename = "\"" + filename + "\"";
-    }
 
     tokens += "{ \"filename\": " + filename + ", \"tokens\": [";
 
