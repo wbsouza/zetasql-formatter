@@ -156,6 +156,8 @@ absl::Status ShowTokens(const std::filesystem::path& file_path, const std::strin
   std::ifstream file(file_path, std::ios::in);
   std::string sql(std::istreambuf_iterator<char>(file), {});
 
+  absl::Status result = absl::OkStatus();
+
   ZETASQL_RETURN_IF_ERROR(ParseScript(sql, ParserOptions(),
                           ErrorMessageMode::ERROR_MESSAGE_MULTI_LINE_WITH_CARET, &parser_output));
 
@@ -195,10 +197,12 @@ absl::Status ShowTokens(const std::filesystem::path& file_path, const std::strin
       if (parse_token.IsEndOfInput()) break;
     }
     tokens += "]}";
+  } else {
+    std::string message = "WARNING: Error processing the file " + filename;
+    result = absl::InvalidArgumentError(message);
   }
   *tokens_output = tokens;
-  return absl::OkStatus();
-
+  return result;
 }
 
 }  // namespace zetasql

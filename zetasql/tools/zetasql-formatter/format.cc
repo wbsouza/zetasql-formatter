@@ -60,6 +60,13 @@ int format(const std::filesystem::path& file_path) {
 int show_tokens(const std::filesystem::path& file_path, const std::string& tokens_filter, std::string* tokens_output) {
   if (file_path.extension() == ".bq" || file_path.extension() == ".sql") {
     const absl::Status status = zetasql::ShowTokens(file_path, tokens_filter, tokens_output);
+    if (status.ok()) {
+      std::cout << *tokens_output << std::endl;
+      return EXIT_SUCCESS;
+    } else {
+      *tokens_output = "{\"filename\":\"" + file_path.string() + "\",\"error\":\"Error parsing the SQL script\"}";
+      return EXIT_FAILURE;
+    }
   }
   return 0;
 }
@@ -98,22 +105,11 @@ int main(int argc, char* argv[]) {
       if (flags_tokens != "") {
         std::string tokens_content = "";
         rc = show_tokens(file_path, flags_tokens, &tokens_content);
-        std::string result = "[";
         if (tokens_content != "") {
-          result += tokens_content;
-        } else {
-          result += "[{\"filename\":\"" + file_path.string() + "\",\"error\":\"Error parsing the SQL script\"}]";
+          std::cout << "[" << tokens_content << "]" << std::endl;
         }
-        result += "]";
-        std::cout << result << std::endl;
         return rc;
       } 
-      
-      // format the file content
-      else {
-        std::cerr << "======= WARNING: Ivalid SQL script: " << file_path << " =======" << std::endl;
-        return format(file_path);
-      }
     }
 
     // argument is a directory ...
@@ -128,17 +124,17 @@ int main(int argc, char* argv[]) {
       
       for (; file_path != end; file_path.increment(err)) {
         if (err) {
-          std::cout << "WARNING: " << err << std::endl;
-        }
-        std::string tokens_content = "";
-        rc |= show_tokens(file_path->path(), flags_tokens, &tokens_content);
-        if (tokens_content != "") {
           result += separator;
-          result += tokens_content;
+          result += "{\"filename\":\"" + file_path->path().string() + "\",\"error\":\"" + err.message() + "\"}";
           separator = ", ";
         } else {
-          std::cerr << "======= WARNING: Ivalid SQL script: " << file_path->path() << " =======" << std::endl;
-          result += "[{\"filename\":\"" + file_path->path().string() + "\",\"error\":\"Error parsing the SQL script\"}]";
+          std::string tokens_content = "";
+          rc |= show_tokens(file_path->path(), flags_tokens, &tokens_content);
+          if (tokens_content != "") {
+            result += separator;
+            result += tokens_content;
+            separator = ", ";
+          }
         }
       }
       result += "]";
