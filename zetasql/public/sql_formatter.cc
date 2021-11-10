@@ -103,22 +103,12 @@ std::string replace(std::string data, std::string to_search, std::string to_repl
 
 const std::string WHITESPACE = " \n\r\t\f\v";
  
-std::string ltrim(const std::string &s) {
-  size_t start = s.find_first_not_of(WHITESPACE);
-  return (start == std::string::npos) ? "" : s.substr(start);
-}
- 
-std::string rtrim(const std::string &s) {
-  size_t end = s.find_last_not_of(WHITESPACE);
-  return (end == std::string::npos) ? "" : s.substr(0, end + 1);
-}
- 
-std::string trim(const std::string &s) {
-  return rtrim(ltrim(s));
-}
- 
 std::string get_token_value(const ParseToken* parse_token) {
-  std::string s = trim(parse_token->GetSQL());
+  std::string s = parse_token->GetSQL();
+  size_t start = s.find_first_not_of(WHITESPACE);
+  s = (start == std::string::npos) ? "" : s.substr(start);
+  size_t end = s.find_last_not_of(WHITESPACE);
+  s = (end == std::string::npos) ? "" : s.substr(0, end + 1);
   s = replace(s, "\r\n", "; "); // Windows new line
   s = replace(s, "\n", "; ");   // *nix new line
   std::string result = "";
@@ -174,9 +164,12 @@ absl::Status ShowTokens(const std::filesystem::path& file_path, const std::strin
   std::string delimiter = "";
   if (token_status.ok()) {
 
-    tokens += "{ \"filename\": ";
-    tokens += file_path;
-    tokens += ", \"tokens\": [";
+    std::string filename = file_path;
+    if (filename[0] != '\"') {
+      filename = "\"" + filename + "\"";
+    }
+
+    tokens += "{ \"filename\": " + filename + ", \"tokens\": [";
 
     for (const auto& parse_token : parse_tokens) {
 
