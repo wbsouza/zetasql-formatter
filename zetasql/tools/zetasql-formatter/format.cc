@@ -61,7 +61,6 @@ int show_tokens(const std::filesystem::path& file_path, const std::string& token
   if (file_path.extension() == ".bq" || file_path.extension() == ".sql") {
     const absl::Status status = zetasql::ShowTokens(file_path, tokens_filter, tokens_output);
     if (status.ok()) {
-      std::cout << *tokens_output << std::endl;
       return EXIT_SUCCESS;
     } else {
       *tokens_output = "{\"filename\":\"" + file_path.string() + "\",\"error\":\"Error parsing the SQL script\"}";
