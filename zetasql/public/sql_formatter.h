@@ -45,6 +45,7 @@ absl::Status FormatSql(const std::string& sql, std::string* formatted_sql);
 
 absl::Status ShowTokens(const std::filesystem::path& file_path, const std::string& tokens_filter, std::string* tokens);
 
+std::string EscapeValue(const std::string& s);
 
 }  // namespace zetasql
 

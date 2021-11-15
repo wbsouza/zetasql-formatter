@@ -63,7 +63,9 @@ int show_tokens(const std::filesystem::path& file_path, const std::string& token
     if (status.ok()) {
       return EXIT_SUCCESS;
     } else {
-      *tokens_output = "{\"filename\":\"" + file_path.string() + "\",\"error\":\"Error parsing the SQL script\"}";
+      std::string message = std::string{status.message()};
+      message = zetasql::EscapeValue(message);
+      *tokens_output = "{\"filename\":\"" + file_path.string() + "\",\"error\":\"" + message + "\"}";
       return EXIT_FAILURE;
     }
   }

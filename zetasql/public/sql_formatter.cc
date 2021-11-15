@@ -34,6 +34,9 @@
 #include "zetasql/public/parse_location.h"
 #include "zetasql/public/parse_resume_location.h"
 #include "zetasql/public/parse_tokens.h"
+
+#include "zetasql/public/language_options.h"
+
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
@@ -41,6 +44,8 @@
 #include "zetasql/base/ret_check.h"
 #include "zetasql/base/status.h"
 #include "zetasql/base/status_builder.h"
+
+
 
 namespace zetasql {
 
@@ -103,8 +108,8 @@ std::string replace(std::string data, std::string to_search, std::string to_repl
 
 const std::string WHITESPACE = " \n\r\t\f\v";
  
-std::string get_token_value(const ParseToken* parse_token) {
-  std::string s = parse_token->GetSQL();
+std::string EscapeValue(const std::string& ss) {
+  std::string s = ss;
   size_t start = s.find_first_not_of(WHITESPACE);
   s = (start == std::string::npos) ? "" : s.substr(start);
   size_t end = s.find_last_not_of(WHITESPACE);
@@ -132,8 +137,8 @@ std::string get_token_item(const ParseToken* parse_token) {
   // int line;
   // int column;
   // parse_token->GetLocationRange().start().GetLineAndColumn(&line, &column);
-
-  std::string token_value = get_token_value(parse_token);
+  std::string s = parse_token->GetSQL();
+  std::string token_value = EscapeValue(s);
   std::string result = "";
   if (token_type != "" && token_value != "") {
     std::string delimiter = "";
@@ -144,6 +149,7 @@ std::string get_token_item(const ParseToken* parse_token) {
   }
   return result;
 }
+
 
 
 absl::Status ShowTokens(const std::filesystem::path& file_path, const std::string& tokens_filter, std::string* tokens_output) {
@@ -158,7 +164,15 @@ absl::Status ShowTokens(const std::filesystem::path& file_path, const std::strin
 
   absl::Status result = absl::OkStatus();
 
-  ZETASQL_RETURN_IF_ERROR(ParseScript(sql, ParserOptions(),
+  LanguageOptions language_options;
+  language_options.EnableMaximumLanguageFeaturesForDevelopment();
+  language_options.EnableLanguageFeature(FEATURE_ANALYTIC_FUNCTIONS);
+  language_options.EnableLanguageFeature(FEATURE_TOKENIZED_SEARCH);
+  ParserOptions parser_options;
+  parser_options.set_language_options(&language_options);
+
+  // Checking syntax errors and getting tokens
+  ZETASQL_RETURN_IF_ERROR(ParseScript(sql, parser_options,
                           ErrorMessageMode::ERROR_MESSAGE_MULTI_LINE_WITH_CARET, &parser_output));
 
   std::deque<std::pair<std::string, ParseLocationPoint>> comments;
